@@ -476,6 +476,8 @@ model PreviewToken {
   id           String    @id @default(cuid())
   websiteId    String    @map("website_id")
   tokenHash    String    @unique @map("token_hash")
+  /// Encrypted token so the share URL can be shown again to authorized editors.
+  tokenEnc     String?   @map("token_enc")
   passwordHash String?   @map("password_hash")
   label        String?
   expiresAt    DateTime  @map("expires_at")

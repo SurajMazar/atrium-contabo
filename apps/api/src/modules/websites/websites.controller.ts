@@ -6,7 +6,7 @@ import type { Response } from 'express';
 import { z } from 'zod';
 import { AccessService } from '../../common/access.service';
 import { Access, CurrentAccess, CurrentUser, type AccessContext, type AppRequest, type AuthUser } from '../../common/decorators';
-import { badRequest } from '../../common/errors';
+import { badRequest, forbidden } from '../../common/errors';
 import { ZodBody } from '../../common/zod.pipe';
 import { PublishingService } from '../publishing/publishing.service';
 import { TemplatesService } from '../templates/templates.service';
@@ -70,7 +70,7 @@ export class WebsitesController {
   @Access('website.update', 'website', 'id')
   @Patch('websites/:id')
   async update(@Param('id') id: string, @Body(new ZodBody(UpdateBody)) body: z.infer<typeof UpdateBody>, @CurrentUser() user: AuthUser, @CurrentAccess() access: AccessContext) {
-    if ((body.deploymentMode || body.deploymentIntegrationId !== undefined) && !this.access.can(access, 'deployment.publish')) throw badRequest('Changing deployment settings requires deployment.publish');
+    if ((body.deploymentMode || body.deploymentIntegrationId !== undefined) && !this.access.can(access, 'deployment.publish')) throw forbidden('Changing deployment settings requires deployment.publish');
     return this.websites.update(id, body, user);
   }
 
@@ -93,11 +93,18 @@ export class WebsitesController {
     return this.drafts.load(id);
   }
 
-  @Access('website.update', 'website', 'id')
+  @Access('website.read', 'website', 'id')
   @Put('websites/:id/draft/site')
   async saveSite(@Param('id') id: string, @Body(new ZodBody(SiteBody)) body: z.infer<typeof SiteBody>, @CurrentUser() user: AuthUser, @CurrentAccess() access: AccessContext) {
-    if ((body.navigation || body.header || body.footer) && !this.access.can(access, 'navigation.update')) throw badRequest('Editing navigation requires navigation.update');
-    if (body.settings && !this.access.can(access, 'website.update')) throw badRequest('Editing settings requires website.update');
+    if ((body.navigation || body.header || body.footer) && !this.access.can(access, 'navigation.update')) throw forbidden('Editing navigation requires navigation.update');
+    if (body.settings && !this.access.can(access, 'website.update')) {
+      // SEO managers may change settings.seo only
+      const { definition } = await this.drafts.load(id);
+      const { seo: _a, ...rest } = body.settings;
+      const { seo: _b, ...current } = definition.settings;
+      if (!this.access.can(access, 'seo.manage') || JSON.stringify(rest) !== JSON.stringify(current)) throw forbidden('Editing site settings requires website.update');
+    }
+    if (body.customCss !== undefined && !body.settings && !body.navigation && !body.header && !body.footer && !this.access.can(access, 'website.update') && !this.access.can(access, 'code.manage')) throw forbidden('Editing custom CSS requires code.manage');
     return this.websites.saveSite(id, body, user, this.access.can(access, 'code.manage'));
   }
 

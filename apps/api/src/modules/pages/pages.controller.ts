@@ -64,6 +64,12 @@ export class PagesController {
     return this.pages.versions(pageId);
   }
 
+  @Access('page.read', 'page', 'pageId')
+  @Get('pages/:pageId/versions/:versionId')
+  version(@Param('pageId') pageId: string, @Param('versionId') versionId: string) {
+    return this.pages.version(pageId, versionId);
+  }
+
   @Access('page.update', 'page', 'pageId')
   @Post('pages/:pageId/versions')
   createVersion(@Param('pageId') pageId: string, @Body(new ZodBody(z.object({ message: z.string().trim().min(1).max(200) }))) body: { message: string }, @CurrentUser() user: AuthUser) {

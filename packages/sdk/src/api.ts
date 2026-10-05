@@ -98,6 +98,7 @@ export function createAtriumClient(opts: AtriumClientOptions) {
       duplicate: (pageId: string, body: { title?: string; slug?: string } = {}) => http.post<T.PageWithDocument>(`/pages/${pageId}/duplicate`, body),
       setHomepage: (pageId: string) => http.post<void>(`/pages/${pageId}/homepage`),
       versions: (pageId: string) => http.get<T.PageVersion[]>(`/pages/${pageId}/versions`),
+      version: (pageId: string, versionId: string) => http.get<T.PageVersion & { slug: string; document: PageDocument }>(`/pages/${pageId}/versions/${versionId}`),
       createVersion: (pageId: string, message: string) => http.post<T.PageVersion>(`/pages/${pageId}/versions`, { message }),
       restoreVersion: (pageId: string, versionId: string) => http.post<T.PageWithDocument>(`/pages/${pageId}/versions/${versionId}/restore`),
       lock: (pageId: string) => http.post<{ lockedById: string; lockedUntil: string }>(`/pages/${pageId}/lock`),

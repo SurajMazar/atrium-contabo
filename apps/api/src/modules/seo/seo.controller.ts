@@ -32,7 +32,7 @@ export class SeoController {
     const dup = sources.find((s, i) => sources.indexOf(s) !== i);
     if (dup) throw validation(`Duplicate source ${dup}`);
     const loops = findRedirectLoops(redirects);
-    if (loops.length) throw validation('Redirect loop detected', loops.map((l) => l.join(' → ')));
+    if (loops.length) throw validation(`Redirect loop detected: ${loops.map((l) => l.join(' → ')).join('; ')}`, { loops, sources: [...new Set(loops.flat())] });
     const res = await this.drafts.transform(id, (d) => void (d.redirects = redirects), { userId: user.id });
     return res.after.redirects;
   }

@@ -90,7 +90,10 @@ export class PublicService {
     if (c.provider !== 'none' && !honeypot) {
       const token = body.captchaToken ?? (body['g-recaptcha-response'] as string) ?? (body['cf-turnstile-response'] as string) ?? (body['h-captcha-response'] as string);
       if (!token) throw validation('Please complete the verification challenge', [{ field: '_captcha', message: 'Verification required' }]);
-      const verifier = await this.resolver.resolver.captcha({ organizationId: row.website.organizationId, websiteId: row.websiteId, integrationId: c.integrationId, kind: c.provider });
+      const verifier = await this.resolver.resolver.captcha({ organizationId: row.website.organizationId, websiteId: row.websiteId, integrationId: c.integrationId, kind: c.provider }).catch((err: Error) => {
+        this.logger.warn(`captcha not configured for form ${formId}: ${err.message}`);
+        throw new ApiError(424, 'NOT_CONFIGURED', 'This form is temporarily unavailable. Please contact us another way.');
+      });
       const res = await verifier.verify({ token, remoteIp: meta.ip, action: c.provider === 'recaptcha-v3' ? c.action : undefined, minScore: c.minScore });
       if (!res.success) throw validation('Verification failed. Please try again.', [{ field: '_captcha', message: 'Verification failed', codes: res.errorCodes }]);
       captchaScore = res.score;

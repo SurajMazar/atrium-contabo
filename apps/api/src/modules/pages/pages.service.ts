@@ -164,6 +164,12 @@ export class PagesService {
     return rows.map((v) => ({ id: v.id, number: v.number, title: v.title, message: v.message, source: v.source, createdAt: v.createdAt.toISOString(), createdBy: v.createdById ? (users.get(v.createdById) ?? null) : null }));
   }
 
+  async version(pageId: string, versionId: string) {
+    const v = await this.db.pageVersion.findFirst({ where: { id: versionId, pageId } });
+    if (!v) throw notFound('Version');
+    return { id: v.id, number: v.number, title: v.title, slug: v.slug, message: v.message, source: v.source, createdAt: v.createdAt.toISOString(), document: v.document };
+  }
+
   async createVersion(pageId: string, message: string, user: AuthUser) {
     const row = await this.db.page.findUniqueOrThrow({ where: { id: pageId } });
     const last = await this.db.pageVersion.findFirst({ where: { pageId }, orderBy: { number: 'desc' } });

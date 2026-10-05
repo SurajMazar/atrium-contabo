@@ -96,7 +96,8 @@ export class FormsService {
     if (q.status === 'all') delete where.status;
     if (q.tag) where.tags = { has: q.tag };
     if (q.unread === 'true') where.read = false;
-    if (q.assignedTo) where.assignedToId = q.assignedTo === 'me' ? undefined : q.assignedTo;
+    if (q.assignedTo === 'unassigned') where.assignedToId = null;
+    else if (q.assignedTo) where.assignedToId = q.assignedTo;
     if (q.from || q.to) where.createdAt = { ...(q.from ? { gte: new Date(q.from) } : {}), ...(q.to ? { lte: new Date(q.to) } : {}) };
     if (q.search) where.values = { some: { value: { contains: q.search, mode: 'insensitive' } } };
     return where;

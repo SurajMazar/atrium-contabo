@@ -82,6 +82,7 @@ Base URL: `${API_URL}/v1`. The admin app proxies `/api/*` → `${API_URL}/*` so 
 | POST | `/pages/:pageId/duplicate` | `{ title?, slug? }` |
 | POST | `/pages/:pageId/homepage` | set as homepage |
 | GET/POST | `/pages/:pageId/versions` | POST `{ message }` named checkpoint |
+| GET | `/pages/:pageId/versions/:versionId` | version incl. `document` (for compare) |
 | POST | `/pages/:pageId/versions/:versionId/restore` | restores into draft (creates a RESTORE version first) |
 | POST/DELETE | `/pages/:pageId/lock` | soft edit lock (collaboration-ready) |
 | GET | `/pages/:pageId/seo` | `SeoReport` |
@@ -141,7 +142,7 @@ Base URL: `${API_URL}/v1`. The admin app proxies `/api/*` → `${API_URL}/*` so 
 |---|---|---|
 | GET/POST | `/websites/:id/forms` | POST `FormDefinition` (id optional) |
 | GET/PUT/DELETE | `/forms/:formId` | PUT full `FormDefinition` (fields + rules + settings) |
-| GET | `/websites/:id/submissions` | `?formId&status&search&tag&unread&assignedTo&from&to&cursor` → `[{ id, formId, formName, status, read, tags, assignedTo, summary, createdAt, spamScore }]` |
+| GET | `/websites/:id/submissions` | `?formId&status&search&tag&unread&assignedTo(=userId|unassigned)&from&to&cursor` → `[{ id, formId, formName, status, read, tags, assignedTo, summary, createdAt, spamScore }]` |
 | GET | `/submissions/:id` | `{ ..., values: [{ fieldName, fieldLabel, fieldType, value }], notes, actionsLog }` |
 | PATCH | `/submissions/:id` | `{ status?, read?, tags?, assignedToId? }` |
 | POST | `/submissions/:id/notes` | `{ body }` |

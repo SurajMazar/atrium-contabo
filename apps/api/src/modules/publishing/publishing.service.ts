@@ -12,6 +12,7 @@ import { QueueService } from '../../common/queue.service';
 import { hashToken, randomToken } from '../../common/tokens';
 import { DraftService } from '../websites/draft.service';
 import { DeploymentsService } from '../deployments/deployments.service';
+import { SecretsService } from '../../common/secrets.service';
 
 @Injectable()
 export class PublishingService {
@@ -22,6 +23,7 @@ export class PublishingService {
     private readonly queues: QueueService,
     private readonly audit: AuditService,
     private readonly deployments: DeploymentsService,
+    private readonly secrets: SecretsService,
   ) {}
 
   private get db() {
@@ -189,13 +191,13 @@ export class PublishingService {
   async createPreviewToken(websiteId: string, body: { expiresInHours?: number; password?: string; label?: string }, user: AuthUser) {
     const token = randomToken(24);
     const expiresAt = new Date(Date.now() + (body.expiresInHours ?? 72) * 3_600_000);
-    const row = await this.db.previewToken.create({ data: { websiteId, tokenHash: hashToken(token), passwordHash: body.password ? await argon2.hash(body.password) : null, label: body.label, expiresAt, createdById: user.id } });
+    const row = await this.db.previewToken.create({ data: { websiteId, tokenHash: hashToken(token), tokenEnc: this.secrets.encrypt(token), passwordHash: body.password ? await argon2.hash(body.password) : null, label: body.label, expiresAt, createdById: user.id } });
     return { id: row.id, url: this.previewUrl(token), token, label: row.label, expiresAt: expiresAt.toISOString(), hasPassword: !!body.password };
   }
 
   async previewTokens(websiteId: string) {
     const rows = await this.db.previewToken.findMany({ where: { websiteId, revokedAt: null, expiresAt: { gt: new Date() } }, orderBy: { createdAt: 'desc' } });
-    return rows.map((r) => ({ id: r.id, url: '', label: r.label, expiresAt: r.expiresAt.toISOString(), hasPassword: !!r.passwordHash }));
+    return rows.map((r) => ({ id: r.id, url: r.tokenEnc ? this.previewUrl(this.secrets.decrypt<string>(r.tokenEnc)) : '', label: r.label, expiresAt: r.expiresAt.toISOString(), hasPassword: !!r.passwordHash }));
   }
 
   async revokePreviewToken(websiteId: string, id: string) {
