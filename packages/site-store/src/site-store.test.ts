@@ -54,7 +54,10 @@ describe('site-store', () => {
     const def = input();
     const site = await createWebsiteFromDefinition(prisma, { organizationId: orgId, name: 'Round Trip', slug: `rt-${Date.now()}`, definition: def });
     const loaded = await loadDraft(prisma, site.id);
-    expect(loaded.definition).toEqual(def);
+    // new websites get fresh ids; everything else round-trips exactly
+    const strip = (d: typeof def) => JSON.parse(JSON.stringify(d, (k, v) => (['id', 'pageId', 'formId'].includes(k) ? undefined : v)));
+    expect(strip(loaded.definition)).toEqual(strip(def));
+    expect(loaded.definition.pages[0]!.id).not.toBe(def.pages[0]!.id);
 
     const home = loaded.definition.pages[0]!;
     const edited = produce(loaded.definition, (d) => {

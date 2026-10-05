@@ -32,9 +32,9 @@ function demoSites(): DemoEntry[] {
     const raw = lib.DEMO_SITES;
     const entries = Array.isArray(raw) ? raw.map((d: { key?: string; id?: string }, i: number) => [d.key ?? d.id ?? String(i), d] as const) : Object.entries((raw ?? {}) as Record<string, unknown>);
     return entries.map(([key, v]) => {
-      const t = v as { name?: string; definition?: WebsiteInput; data?: WebsiteInput; settings?: unknown };
-      const definition = (t.definition ?? t.data ?? (t.settings ? (t as unknown as WebsiteInput) : undefined)) as WebsiteInput;
-      return { key, name: t.name ?? (definition.settings as { name: string }).name, definition };
+      const t = v as { name?: string; slug?: string; definition?: WebsiteInput; data?: WebsiteInput; settings?: unknown };
+      const definition = (t.definition ?? (t as { website?: WebsiteInput }).website ?? t.data ?? (t.settings ? (t as unknown as WebsiteInput) : undefined)) as WebsiteInput;
+      return { key: t.slug ?? key, name: t.name ?? (definition.settings as { name: string }).name, definition };
     });
   } catch (err) {
     log(`@atrium/templates not available (${(err as Error).message.split('\n')[0]}); seeding blank demo sites`);

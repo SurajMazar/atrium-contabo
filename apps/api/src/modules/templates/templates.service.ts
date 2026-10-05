@@ -81,7 +81,7 @@ function demoSites(): Array<{ key: string; name: string; description?: string; c
   const entries = Array.isArray(raw) ? raw.map((d, i) => [d.key ?? d.id ?? String(i), d] as const) : Object.entries(raw);
   return entries.map(([key, v]) => {
     const t = v as NamedTemplate<WebsiteInput> & Partial<WebsiteInput>;
-    const definition = (t.definition ?? t.data ?? (t.settings ? (t as unknown as WebsiteInput) : undefined)) as WebsiteInput;
+    const definition = (t.definition ?? (t as { website?: WebsiteInput }).website ?? t.data ?? (t.settings ? (t as unknown as WebsiteInput) : undefined)) as WebsiteInput;
     return { key, name: t.name ?? (definition?.settings as { name?: string })?.name ?? key, description: t.description, category: t.category, tags: t.tags, thumbnail: t.thumbnail, definition };
   });
 }

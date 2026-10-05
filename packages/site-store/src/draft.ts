@@ -1,5 +1,6 @@
 import type { Prisma, PrismaClient } from '@atrium/db';
 import {
+  createId,
   SCHEMA_VERSION, WebsiteDefinitionSchema, type CollectionDefinition, type FormDefinition, type Node, type PageDocument,
   type Redirect, type SiteSettings, type ThemeTokens, type WebsiteDefinition,
 } from '@atrium/schema';
@@ -264,9 +265,39 @@ export interface CreateWebsiteInput {
   presetKey?: string;
 }
 
+const REF_KEYS = new Set(['pageId', 'formId', 'ref', 'notFoundPageId', 'newsletterFormId']);
+
+/**
+ * Give every globally-keyed entity (pages, forms, collections, items, global sections,
+ * redirects) a fresh id and remap references. Templates and imports reuse ids, but
+ * database primary keys are global, so each new website needs its own.
+ */
+export function reidentify(def: WebsiteDefinition): WebsiteDefinition {
+  const map = new Map<string, string>();
+  def.pages.forEach((p) => map.set(p.id, createId('pg')));
+  def.forms.forEach((f) => map.set(f.id, createId('form')));
+  def.globalSections.forEach((g) => map.set(g.id, createId('gs')));
+  const remap = (v: unknown, key?: string): unknown => {
+    if (typeof v === 'string') return key && REF_KEYS.has(key) && map.has(v) ? map.get(v) : v;
+    if (Array.isArray(v)) return v.map((x) => remap(x));
+    if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, remap(x, k)]));
+    return v;
+  };
+  const out = remap(def) as WebsiteDefinition;
+  out.pages.forEach((p, i) => (p.id = map.get(def.pages[i]!.id)!));
+  out.forms.forEach((f, i) => (f.id = map.get(def.forms[i]!.id)!));
+  out.globalSections.forEach((g, i) => (g.id = map.get(def.globalSections[i]!.id)!));
+  out.collections.forEach((c) => {
+    c.id = createId('col');
+    c.items.forEach((it) => (it.id = createId()));
+  });
+  out.redirects.forEach((r) => (r.id = createId()));
+  return out;
+}
+
 /** Create a website with its full draft in one transaction-friendly sequence. */
 export async function createWebsiteFromDefinition(db: Db, input: CreateWebsiteInput) {
-  const def = WebsiteDefinitionSchema.parse({ ...input.definition, settings: { ...input.definition.settings, name: input.name } });
+  const def = reidentify(WebsiteDefinitionSchema.parse({ ...input.definition, settings: { ...input.definition.settings, name: input.name } }));
   const website = await db.website.create({
     data: {
       organizationId: input.organizationId,

@@ -190,6 +190,10 @@ const nextConfig: NextConfig = {
   ...(staticExport ? { output: 'export' as const, trailingSlash: true } : {}),
   poweredByHeader: false,
   reactStrictMode: true,
+  // Exported projects are single-site (file mode): exclude the multi-tenant *.platform.ts(x) routes.
+  pageExtensions: ['tsx', 'ts'],
+  // app/global-not-found.tsx renders the site's own 404 (also the exported 404.html).
+  experimental: { globalNotFound: true },
   // Workspace sources are vendored under ./packages and compiled as part of this app.
   images: {
     unoptimized: staticExport,
