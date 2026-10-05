@@ -7,7 +7,14 @@ export type AiContentPart =
   | { type: 'text'; text: string }
   | { type: 'image'; url: string; mediaType?: string }
   | { type: 'tool_call'; id: string; name: string; input: Record<string, unknown> }
-  | { type: 'tool_result'; toolCallId: string; content: string; isError?: boolean };
+  | { type: 'tool_result'; toolCallId: string; content: string; isError?: boolean }
+  /**
+   * Opaque provider-specific block that MUST be echoed back unchanged in later turns
+   * (e.g. Anthropic `thinking` / `redacted_thinking` / `fallback` blocks, OpenAI Responses
+   * `reasoning` items, Gemini thought signatures). History is append-only: never edit or
+   * reorder earlier turns. Adapters for other providers skip parts whose `provider` differs.
+   */
+  | { type: 'provider_raw'; provider: string; data: unknown };
 
 export interface AiMessage {
   role: AiRole;
@@ -38,12 +45,28 @@ export interface AiChatRequest {
   temperature?: number;
   /** Hint to the provider to cache the system prompt + tools. */
   cache?: boolean;
+  /**
+   * Reasoning depth for providers that support it (Anthropic `output_config.effort`,
+   * OpenAI `reasoning_effort`, Gemini thinking level). Adapters pick a sensible default.
+   */
+  effort?: AiEffort;
+  /** Free-form metadata forwarded where supported (e.g. user id for abuse monitoring). */
+  metadata?: { userId?: string };
   signal?: AbortSignal;
 }
 
+export type AiEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
 export interface AiChatResponse {
   content: AiContentPart[];
-  stopReason: 'end' | 'tool_use' | 'max_tokens' | 'other';
+  /**
+   * `end` — finished; `tool_use` — execute tool calls and continue; `max_tokens` — truncated;
+   * `pause` — the provider paused a long turn: append the assistant content as-is and call again;
+   * `other` — anything else (see `rawStopReason`). Refusals throw `ProviderError` (code `refusal`).
+   */
+  stopReason: 'end' | 'tool_use' | 'max_tokens' | 'pause' | 'other';
+  /** Provider's own stop reason string, for logging. */
+  rawStopReason?: string;
   usage: AiUsage;
   model: string;
   provider: string;
@@ -64,6 +87,7 @@ export interface StructuredRequest<T> {
   /** Validate/parse (e.g. zod.parse); thrown errors trigger a repair attempt. */
   parse: (value: unknown) => T;
   maxTokens?: number;
+  effort?: AiEffort;
   signal?: AbortSignal;
 }
 
@@ -73,7 +97,14 @@ export interface ModelInfo {
   /** USD per million tokens, used for cost estimation. */
   inputPrice: number;
   outputPrice: number;
+  /** USD per million cached input tokens read (when the provider discounts cache hits). */
+  cacheReadPrice?: number;
+  /** USD per million tokens written to the cache (when billed separately). */
+  cacheWritePrice?: number;
   contextWindow?: number;
+  maxOutputTokens?: number;
+  supportsImages?: boolean;
+  supportsTools?: boolean;
   default?: boolean;
 }
 
@@ -82,7 +113,7 @@ export interface AIProvider {
   readonly models: ModelInfo[];
   chat(req: AiChatRequest): Promise<AiChatResponse>;
   stream(req: AiChatRequest): AsyncIterable<AiStreamEvent>;
-  generateText(req: { model?: string; system?: string; prompt: string; maxTokens?: number; signal?: AbortSignal }): Promise<{ text: string; usage: AiUsage; model: string }>;
+  generateText(req: { model?: string; system?: string; prompt: string; maxTokens?: number; effort?: AiEffort; signal?: AbortSignal }): Promise<{ text: string; usage: AiUsage; model: string }>;
   generateStructuredData<T>(req: StructuredRequest<T>): Promise<{ data: T; usage: AiUsage; model: string }>;
   /** Optional image generation; results are ingested into the normal media library. */
   generateImage?(req: { prompt: string; size?: string; model?: string }): Promise<{ data: Buffer; mimeType: string; usage?: AiUsage }>;

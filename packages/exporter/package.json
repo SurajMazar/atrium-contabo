@@ -22,7 +22,8 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "smoke": "tsx scripts/smoke.ts"
   },
   "dependencies": {
     "@atrium/schema": "workspace:*",
@@ -33,6 +34,11 @@
     "tsup": "^8.5.1",
     "typescript": "5.9.3",
     "vitest": "^5.0.3",
-    "@types/node": "^24.0.0"
+    "@types/node": "^24.0.0",
+    "@atrium/builder-core": "workspace:*",
+    "@atrium/component-registry": "workspace:*",
+    "@atrium/design-tokens": "workspace:*",
+    "@atrium/templates": "workspace:*",
+    "tsx": "^4.20.0"
   }
 }

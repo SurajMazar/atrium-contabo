@@ -63,8 +63,8 @@ export class MediaService {
     return this.prisma.client;
   }
 
-  async dto(m: { id: string; key: string; organizationId: string; filename: string; mimeType: string; size: number; width: number | null; height: number | null; alt: string | null; title: string | null; caption: string | null; tags: string[]; folderId: string | null; websiteId: string | null; variants: unknown; blurDataUrl: string | null; status: string; createdAt: Date }) {
-    const storage = await this.resolver.resolver.storage({ organizationId: m.organizationId });
+  async dto(m: { id: string; key: string; organizationId: string; storageProviderId?: string | null; filename: string; mimeType: string; size: number; width: number | null; height: number | null; alt: string | null; title: string | null; caption: string | null; tags: string[]; folderId: string | null; websiteId: string | null; variants: unknown; blurDataUrl: string | null; status: string; createdAt: Date }) {
+    const storage = await this.resolver.resolver.storage({ organizationId: m.organizationId, providerId: m.storageProviderId });
     const variants = ((m.variants as Array<{ width: number; format: string; key?: string; url?: string; size?: number }>) ?? []).map((v) => ({ width: v.width, format: v.format, url: v.url ?? (v.key ? storage.getPublicUrl(v.key) : ''), size: v.size }));
     return {
       id: m.id, url: storage.getPublicUrl(m.key), filename: m.filename, mimeType: m.mimeType, size: m.size, width: m.width, height: m.height, alt: m.alt, title: m.title, caption: m.caption,
@@ -117,7 +117,7 @@ export class MediaService {
     const isRaster = /^image\/(jpeg|png|webp|avif)$/.test(file.mimetype);
     const m = await this.db.media.create({
       data: {
-        organizationId: orgId, websiteId: meta.websiteId ?? null, folderId: meta.folderId ?? null, key, filename: file.originalname, mimeType: file.mimetype, size: buffer.length,
+        organizationId: orgId, websiteId: meta.websiteId ?? null, folderId: meta.folderId ?? null, storageProviderId: storage.id, key, filename: file.originalname, mimeType: file.mimetype, size: buffer.length,
         width: dims?.width, height: dims?.height, alt: meta.alt, checksum, status: isRaster ? 'PROCESSING' : 'READY', uploadedById: user.id,
       },
     });
@@ -136,7 +136,7 @@ export class MediaService {
   async replace(id: string, file: UploadFile) {
     const m = await this.db.media.findUniqueOrThrow({ where: { id } });
     const { buffer, checksum, dims } = this.prepare(file);
-    const storage = await this.resolver.resolver.storage({ organizationId: m.organizationId });
+    const storage = await this.resolver.resolver.storage({ organizationId: m.organizationId, providerId: m.storageProviderId });
     const key = this.key(m.organizationId, file.originalname);
     await storage.upload({ key, body: buffer, contentType: file.mimetype, contentLength: buffer.length, cacheControl: 'public, max-age=31536000, immutable', visibility: 'public' });
     await storage.delete(m.key).catch(() => undefined);
@@ -148,7 +148,7 @@ export class MediaService {
 
   async remove(id: string, user: AuthUser) {
     const m = await this.db.media.update({ where: { id }, data: { deletedAt: new Date() } });
-    const storage = await this.resolver.resolver.storage({ organizationId: m.organizationId });
+    const storage = await this.resolver.resolver.storage({ organizationId: m.organizationId, providerId: m.storageProviderId });
     const variantKeys = ((m.variants as Array<{ key?: string }>) ?? []).map((v) => v.key).filter(Boolean) as string[];
     await Promise.all([m.key, ...variantKeys].map((k) => storage.delete(k).catch(() => undefined)));
     await this.audit.log({ organizationId: m.organizationId, websiteId: m.websiteId, actor: user, action: 'media.deleted', resourceType: 'media', resourceId: id, summary: `${user.name} deleted ${m.filename}` });
