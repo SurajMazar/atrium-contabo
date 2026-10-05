@@ -38,7 +38,7 @@ export const REWRITE_MODES: Array<{ mode: RewriteMode; label: string }> = [
 export function aiErrorMessage(err: unknown): { text: string; notConfigured: boolean } {
   if (err instanceof AtriumApiError) {
     const notConfigured =
-      /not.?configured|no (ai )?provider|provider.*(missing|not)|integration/i.test(`${err.code} ${err.message}`) || err.code === 'AI_NOT_CONFIGURED' || err.status === 424 || err.status === 412;
+      /not.?configured|no (ai )?provider|provider.*(missing|not)|integration/i.test(`${err.code} ${err.message}`) || err.code === 'AI_NOT_CONFIGURED' || err.code === 'NOT_CONFIGURED' || err.status === 424 || err.status === 412;
     if (notConfigured) return { text: 'Connect an AI provider in Integrations to use AI editing.', notConfigured: true };
     if (err.status === 429 || err.code === 'RATE_LIMITED') return { text: 'AI usage limit reached for now. Try again later or upgrade your plan.', notConfigured: false };
     if (err.status === 403) return { text: 'Your role does not allow AI editing on this website.', notConfigured: false };

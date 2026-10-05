@@ -25,7 +25,9 @@ export function SaveIndicator() {
     const t = setInterval(() => setNow(Date.now()), 15_000);
     return () => clearInterval(t);
   }, []);
-  useEffect(() => setNow(Date.now()), [lastSavedAt]);
+  useEffect(() => {
+    setNow(Date.now());
+  }, [lastSavedAt]);
 
   let icon = <Check className="size-3.5" />;
   let text = lastSavedAt ? `Saved · ${ago(lastSavedAt, now)}` : 'All changes saved';

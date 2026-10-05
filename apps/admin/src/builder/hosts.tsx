@@ -35,7 +35,9 @@ export function PromptHost() {
   const prompt = useUiStore((s) => s.prompt);
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
-  useEffect(() => setValue(prompt?.initial ?? ''), [prompt]);
+  useEffect(() => {
+    setValue(prompt?.initial ?? '');
+  }, [prompt]);
   const close = () => useUiStore.setState({ prompt: null });
   const confirm = async () => {
     if (!prompt || !value.trim()) return;

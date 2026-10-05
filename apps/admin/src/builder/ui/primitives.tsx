@@ -159,7 +159,9 @@ export function CommitInput({ value, onCommit, multiline, rows, mono, ...props }
 
 export function NumberInput({ value, onCommit, min, max, step = 1, unit, placeholder, disabled, className }: { value: number | undefined; onCommit: (v: number | undefined) => void; min?: number; max?: number; step?: number; unit?: string; placeholder?: string; disabled?: boolean; className?: string }) {
   const [text, setText] = useState(value === undefined ? '' : String(value));
-  useEffect(() => setText(value === undefined ? '' : String(value)), [value]);
+  useEffect(() => {
+    setText(value === undefined ? '' : String(value));
+  }, [value]);
   const commit = (t: string) => {
     if (t.trim() === '') return onCommit(undefined);
     let n = Number(t);

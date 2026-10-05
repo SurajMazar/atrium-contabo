@@ -28,6 +28,9 @@ export function Canvas() {
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
+    // Measure synchronously first; ResizeObserver only reports on the next rendering step.
+    const r = el.getBoundingClientRect();
+    setSize({ w: r.width, h: r.height });
     const ro = new ResizeObserver(([entry]) => {
       const r = entry!.contentRect;
       setSize({ w: r.width, h: r.height });
@@ -47,12 +50,16 @@ export function Canvas() {
   const scaledW = frameWidth * zoom;
   const scaledH = frameHeight * zoom;
 
-  // Drops onto the canvas margins append to the page.
+  // Drops onto the canvas margins append to the page. React events bubble through the
+  // iframe portal, so ignore anything that originated inside the canvas document.
+  const fromFrame = (e: { target: EventTarget }) => (e.target as Node).ownerDocument !== document;
   const onDragOver = (e: DragEvent) => {
+    if (fromFrame(e)) return;
     const p = useDragStore.getState().payload;
     if (p && (p.kind === 'template' || p.kind === 'component')) e.preventDefault();
   };
   const onDrop = (e: DragEvent) => {
+    if (fromFrame(e)) return;
     const p = useDragStore.getState().payload;
     e.preventDefault();
     endDrag();

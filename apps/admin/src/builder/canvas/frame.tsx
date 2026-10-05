@@ -1,6 +1,6 @@
 'use client';
 
-import { createRenderContext, getSiteCss, PageView, RENDERER_CSS, siteRootAttrs } from '@atrium/renderer-core';
+import { createRenderContext, getSiteCss, PageView, siteRootAttrs } from '@atrium/renderer-core';
 import { googleFontsUrl } from '@atrium/design-tokens';
 import type { PageDocument, WebsiteDefinition } from '@atrium/schema';
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type HTMLAttributes } from 'react';
@@ -48,7 +48,6 @@ export function CanvasFrame({ width, height }: { width: number; height: number }
       const win = iframe.contentWindow;
       if (!doc || !win || !doc.body) return;
       if (doc.getElementById('atrium-canvas-root')) return;
-      ensureStyle(doc, 'atrium-renderer-css').textContent = RENDERER_CSS ?? '';
       ensureStyle(doc, 'atrium-site-css');
       ensureStyle(doc, 'atrium-editor-chrome').textContent = EDITOR_CHROME_CSS;
       const root = doc.createElement('div');

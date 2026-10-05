@@ -38,7 +38,9 @@ export function AiPanel() {
     const el = inputRef.current;
     if (el) el.setSelectionRange(el.value.length, el.value.length);
   }, [focusTick, draft]);
-  useEffect(() => endRef.current?.scrollIntoView({ block: 'end' }), [messages.length, pending]);
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ block: 'end' });
+  }, [messages.length, pending]);
 
   if (!perms.ai) {
     return (
