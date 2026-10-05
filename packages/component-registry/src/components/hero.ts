@@ -42,7 +42,7 @@ export const hero = defineComponent({
     heading: 'A quiet place, *beautifully* considered',
     subheading: 'Introduce the essence of the business in one or two sentences.',
     buttons: [{ label: 'Explore', link: '#about', style: 'primary', iconPosition: 'end' }],
-    image: { src: 'https://images.unsplash.com/photo-1501117716987-c8e1ecb2101d?w=2400&q=80', alt: 'Scenic view' },
+    image: { src: 'https://images.unsplash.com/photo-1501785888041-af3ef285b470?w=2400&q=80&auto=format&fit=crop', alt: 'Calm lake framed by forested mountains' },
     tone: 'inverse',
     spacingTop: 'none',
     spacingBottom: 'none',

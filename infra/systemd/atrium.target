@@ -1,0 +1,10 @@
+# Groups all Atrium services: `systemctl start atrium.target` / `systemctl stop atrium.target`.
+# Install: copy infra/systemd/*.{service,target,timer} to /etc/systemd/system/, then
+#   systemctl daemon-reload && systemctl enable --now atrium.target atrium-backup.timer
+[Unit]
+Description=Atrium website platform
+Wants=atrium-migrate.service atrium-api.service atrium-worker.service atrium-renderer.service atrium-admin.service
+After=network-online.target postgresql.service redis-server.service redis.service
+
+[Install]
+WantedBy=multi-user.target

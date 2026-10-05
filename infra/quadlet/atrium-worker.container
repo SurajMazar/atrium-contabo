@@ -1,0 +1,21 @@
+[Unit]
+Description=Atrium worker (BullMQ)
+Requires=atrium-migrate.service atrium-redis.service atrium-postgres.service
+After=atrium-migrate.service atrium-redis.service atrium-postgres.service
+
+[Container]
+ContainerName=atrium-worker
+Image=ghcr.io/your-org/atrium-worker:latest
+AutoUpdate=registry
+Network=atrium.network
+NetworkAlias=worker
+EnvironmentFile=%h/.config/atrium/atrium.env
+Environment=MALLOC_ARENA_MAX=2
+
+[Service]
+Restart=always
+TimeoutStartSec=300
+TimeoutStopSec=45
+
+[Install]
+WantedBy=default.target

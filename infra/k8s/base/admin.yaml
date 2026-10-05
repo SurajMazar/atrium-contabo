@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: atrium-admin
+  labels: { app.kubernetes.io/name: atrium-admin, app.kubernetes.io/component: admin }
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }
+  selector:
+    matchLabels: { app.kubernetes.io/name: atrium-admin }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: atrium-admin, app.kubernetes.io/component: admin }
+    spec:
+      serviceAccountName: atrium
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: admin
+          # Built with --build-arg ATRIUM_API_INTERNAL_URL=http://atrium-api:4000 (rewrites are build-time).
+          image: ghcr.io/your-org/atrium-admin
+          ports: [{ name: http, containerPort: 3000 }]
+          envFrom:
+            - configMapRef: { name: atrium-config }
+          env:
+            - { name: PORT, value: "3000" }
+            - { name: HOSTNAME, value: "0.0.0.0" }
+          startupProbe:
+            tcpSocket: { port: http }
+            periodSeconds: 3
+            failureThreshold: 40
+          livenessProbe:
+            tcpSocket: { port: http }
+            periodSeconds: 15
+          readinessProbe:
+            httpGet: { path: /, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 5
+          lifecycle:
+            preStop: { exec: { command: ["sleep", "5"] } }
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 768Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: next-cache, mountPath: /app/apps/admin/.next/cache }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: next-cache, emptyDir: { sizeLimit: 512Mi } }
+        - { name: tmp, emptyDir: { sizeLimit: 128Mi } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: atrium-admin
+  labels: { app.kubernetes.io/name: atrium-admin }
+spec:
+  selector: { app.kubernetes.io/name: atrium-admin }
+  ports: [{ name: http, port: 3000, targetPort: http }]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: atrium-admin
+spec:
+  minAvailable: 1
+  selector: { matchLabels: { app.kubernetes.io/name: atrium-admin } }

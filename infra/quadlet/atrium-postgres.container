@@ -1,0 +1,22 @@
+[Unit]
+Description=Atrium PostgreSQL 17
+
+[Container]
+ContainerName=atrium-postgres
+Image=docker.io/library/postgres:17-alpine
+Network=atrium.network
+NetworkAlias=postgres
+Volume=atrium-pg.volume:/var/lib/postgresql/data
+EnvironmentFile=%h/.config/atrium/atrium.env
+ShmSize=256m
+HealthCmd=pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}
+HealthInterval=5s
+HealthRetries=30
+Notify=healthy
+
+[Service]
+Restart=always
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

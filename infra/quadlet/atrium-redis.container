@@ -1,0 +1,20 @@
+[Unit]
+Description=Atrium Redis 7 (BullMQ)
+
+[Container]
+ContainerName=atrium-redis
+Image=docker.io/library/redis:7-alpine
+Exec=redis-server --appendonly yes --appendfsync everysec --maxmemory-policy noeviction
+Network=atrium.network
+NetworkAlias=redis
+Volume=atrium-redis.volume:/data
+HealthCmd=redis-cli ping
+HealthInterval=5s
+HealthRetries=30
+Notify=healthy
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target

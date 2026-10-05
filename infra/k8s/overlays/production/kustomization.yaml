@@ -1,0 +1,46 @@
+# production overlay. Before applying:
+#   cp secrets.env.example secrets.env   # fill in real values (git-ignored)
+#   kubectl kustomize infra/k8s/overlays/production | kubectl apply -f -
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: atrium
+resources:
+  - ../../base
+
+images:
+  - { name: ghcr.io/your-org/atrium-api, newTag: "1.0.0" }
+  - { name: ghcr.io/your-org/atrium-worker, newTag: "1.0.0" }
+  - { name: ghcr.io/your-org/atrium-renderer, newTag: "1.0.0" }
+  - { name: ghcr.io/your-org/atrium-admin, newTag: "1.0.0" }
+  - { name: ghcr.io/your-org/atrium-migrate, newTag: "1.0.0" }
+configMapGenerator:
+  - name: atrium-config
+    behavior: merge
+    literals:
+      - ADMIN_URL=https://admin.example.com
+      - API_URL=https://api.example.com
+      - RENDERER_URL=https://sites.example.com
+      - PREVIEW_URL=https://sites.example.com
+      - PLATFORM_SITES_DOMAIN=sites.example.com
+      - CORS_ORIGINS=https://admin.example.com
+      - COOKIE_DOMAIN=admin.example.com
+      - MAIL_FROM=Atrium <no-reply@example.com>
+      - SEED_ADMIN_EMAIL=admin@example.com
+secretGenerator:
+  - name: atrium-secrets
+    behavior: replace
+    envs: [secrets.env]
+patches:
+  - path: ingress-patch.yaml
+
+  # Production sizing.
+  - target: { kind: HorizontalPodAutoscaler, name: atrium-renderer }
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 3
+  - target: { kind: Deployment, name: atrium-worker }
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3

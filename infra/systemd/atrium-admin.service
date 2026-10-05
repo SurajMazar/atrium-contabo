@@ -1,0 +1,38 @@
+# Atrium admin + builder (Next.js, port 3000)
+[Unit]
+Description=Atrium admin + builder (Next.js, port 3000)
+After=network-online.target atrium-api.service
+Wants=network-online.target
+PartOf=atrium.target
+
+[Service]
+Type=simple
+User=atrium
+Group=atrium
+WorkingDirectory=/opt/atrium/apps/admin
+EnvironmentFile=/etc/atrium/atrium.env
+Environment=NODE_ENV=production PORT=3000
+ExecStart=/usr/bin/node node_modules/next/dist/bin/next start --port 3000 --hostname 127.0.0.1
+Restart=always
+RestartSec=3
+# Give in-flight requests/jobs time to finish on deploys.
+KillSignal=SIGTERM
+TimeoutStopSec=45
+LimitNOFILE=65536
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=atrium-admin
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+ReadWritePaths=/var/lib/atrium /var/log/atrium /opt/atrium/apps/admin/.next/cache
+
+[Install]
+WantedBy=atrium.target

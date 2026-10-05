@@ -1,0 +1,24 @@
+[Unit]
+Description=Atrium API
+Requires=atrium-migrate.service atrium-redis.service atrium-postgres.service
+After=atrium-migrate.service atrium-redis.service atrium-postgres.service
+
+[Container]
+ContainerName=atrium-api
+Image=ghcr.io/your-org/atrium-api:latest
+AutoUpdate=registry
+Network=atrium.network
+NetworkAlias=api
+EnvironmentFile=%h/.config/atrium/atrium.env
+HealthCmd=node -e "fetch('http://127.0.0.1:4000/v1/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
+HealthInterval=15s
+HealthStartPeriod=40s
+Notify=healthy
+
+[Service]
+Restart=always
+TimeoutStartSec=300
+TimeoutStopSec=45
+
+[Install]
+WantedBy=default.target

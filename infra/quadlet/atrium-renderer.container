@@ -1,0 +1,22 @@
+[Unit]
+Description=Atrium renderer (public sites)
+Requires=atrium-api.service
+After=atrium-api.service
+
+[Container]
+ContainerName=atrium-renderer
+Image=ghcr.io/your-org/atrium-renderer:latest
+AutoUpdate=registry
+Network=atrium.network
+NetworkAlias=renderer
+EnvironmentFile=%h/.config/atrium/atrium.env
+Environment=ATRIUM_API_INTERNAL_URL=http://api:4000
+Volume=atrium-renderer-cache.volume:/app/apps/renderer/.next/cache
+
+[Service]
+Restart=always
+TimeoutStartSec=300
+TimeoutStopSec=45
+
+[Install]
+WantedBy=default.target

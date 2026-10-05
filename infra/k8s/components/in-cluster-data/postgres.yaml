@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: atrium-postgres
+  labels: { app.kubernetes.io/name: atrium-postgres }
+spec:
+  serviceName: atrium-postgres
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: atrium-postgres }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: atrium-postgres }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: postgres
+          image: docker.io/library/postgres:17-alpine
+          ports: [{ name: pg, containerPort: 5432 }]
+          env:
+            - { name: POSTGRES_USER, value: atrium }
+            - { name: POSTGRES_DB, value: atrium }
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: atrium-secrets, key: POSTGRES_PASSWORD } }
+          readinessProbe:
+            exec: { command: ["pg_isready", "-U", "atrium", "-d", "atrium"] }
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 1Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+            - { name: run, mountPath: /var/run/postgresql }
+      volumes:
+        - { name: run, emptyDir: {} }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources: { requests: { storage: 10Gi } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: atrium-postgres
+  labels: { app.kubernetes.io/name: atrium-postgres }
+spec:
+  selector: { app.kubernetes.io/name: atrium-postgres }
+  ports: [{ name: pg, port: 5432, targetPort: pg }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-postgres-from-atrium
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: atrium-postgres }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - { key: app.kubernetes.io/name, operator: In, values: [atrium-api, atrium-worker, atrium-migrate, atrium-backup] }
+      ports: [{ port: 5432 }]

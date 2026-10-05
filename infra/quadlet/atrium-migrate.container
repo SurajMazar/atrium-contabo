@@ -1,0 +1,15 @@
+[Unit]
+Description=Atrium database migrations (one-shot)
+Requires=atrium-postgres.service
+After=atrium-postgres.service
+
+[Container]
+ContainerName=atrium-migrate
+Image=ghcr.io/your-org/atrium-migrate:latest
+Network=atrium.network
+EnvironmentFile=%h/.config/atrium/atrium.env
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutStartSec=600

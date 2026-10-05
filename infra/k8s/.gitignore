@@ -1,0 +1,2 @@
+# real secrets for overlays — generate with `atrium setup production --target k8s` or copy *.example
+secrets.env

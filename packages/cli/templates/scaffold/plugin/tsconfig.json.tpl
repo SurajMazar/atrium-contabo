@@ -1,0 +1,5 @@
+{
+  "extends": "@atrium/typescript-config/react-library.json",
+  "compilerOptions": { "rootDir": "src", "outDir": "dist" },
+  "include": ["src"]
+}

@@ -1,0 +1,75 @@
+# Nightly logical backup: pg_dump → gzip → S3-compatible bucket (BACKUP_BUCKET).
+# Retention: configure a lifecycle rule on the bucket (e.g. expire after 30 days).
+# Managed databases also have their own PITR backups — keep both.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: atrium-backup
+spec:
+  schedule: "15 3 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 7200
+      template:
+        metadata:
+          labels: { app.kubernetes.io/name: atrium-backup, app.kubernetes.io/component: backup }
+        spec:
+          serviceAccountName: atrium
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+            seccompProfile: { type: RuntimeDefault }
+          initContainers:
+            - name: dump
+              image: docker.io/library/postgres:17-alpine
+              command: ["/bin/sh", "-c"]
+              args:
+                - set -eu; pg_dump "$DATABASE_URL" --clean --if-exists --no-owner --no-privileges --quote-all-identifiers | gzip -6 > /backup/database.sql.gz; ls -l /backup
+              env:
+                - name: DATABASE_URL
+                  valueFrom: { secretKeyRef: { name: atrium-secrets, key: DATABASE_URL } }
+              resources:
+                requests: { cpu: 100m, memory: 128Mi }
+                limits: { memory: 512Mi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: { drop: [ALL] }
+              volumeMounts:
+                - { name: backup, mountPath: /backup }
+          containers:
+            - name: upload
+              image: docker.io/amazon/aws-cli:2.27.0
+              command: ["/bin/sh", "-c"]
+              args:
+                - set -eu; STAMP=$(date -u +%Y%m%d-%H%M%S); aws ${BACKUP_S3_ENDPOINT:+--endpoint-url "$BACKUP_S3_ENDPOINT"} s3 cp /backup/database.sql.gz "s3://${BACKUP_BUCKET}/atrium/${STAMP}/database.sql.gz" --only-show-errors; echo "uploaded s3://${BACKUP_BUCKET}/atrium/${STAMP}"
+              env:
+                - { name: HOME, value: /tmp }
+                - name: BACKUP_BUCKET
+                  valueFrom: { configMapKeyRef: { name: atrium-config, key: BACKUP_BUCKET } }
+                - name: BACKUP_S3_ENDPOINT
+                  valueFrom: { configMapKeyRef: { name: atrium-config, key: BACKUP_S3_ENDPOINT, optional: true } }
+                - name: AWS_DEFAULT_REGION
+                  valueFrom: { configMapKeyRef: { name: atrium-config, key: S3_REGION } }
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom: { secretKeyRef: { name: atrium-secrets, key: S3_ACCESS_KEY_ID } }
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom: { secretKeyRef: { name: atrium-secrets, key: S3_SECRET_ACCESS_KEY } }
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits: { memory: 256Mi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: { drop: [ALL] }
+              volumeMounts:
+                - { name: backup, mountPath: /backup }
+                - { name: tmp, mountPath: /tmp }
+          volumes:
+            - { name: backup, emptyDir: { sizeLimit: 20Gi } }
+            - { name: tmp, emptyDir: {} }

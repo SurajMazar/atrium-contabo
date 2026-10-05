@@ -1,0 +1,21 @@
+[Unit]
+Description=Atrium admin + builder
+Requires=atrium-api.service
+After=atrium-api.service
+
+[Container]
+ContainerName=atrium-admin
+Image=ghcr.io/your-org/atrium-admin:latest
+AutoUpdate=registry
+Network=atrium.network
+NetworkAlias=admin
+EnvironmentFile=%h/.config/atrium/atrium.env
+Environment=ATRIUM_API_INTERNAL_URL=http://api:4000
+
+[Service]
+Restart=always
+TimeoutStartSec=300
+TimeoutStopSec=45
+
+[Install]
+WantedBy=default.target

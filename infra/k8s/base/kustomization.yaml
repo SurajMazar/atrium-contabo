@@ -1,0 +1,43 @@
+# Atrium on Kubernetes — base. Assumes managed PostgreSQL, Redis and S3-compatible storage
+# (see components/in-cluster-data for a non-HA in-cluster option for staging/dev).
+#
+#   kubectl kustomize infra/k8s/overlays/production | kubectl apply -f -
+#
+# Overlays set the namespace, image tags, domains (ConfigMap merge + Ingress patch) and
+# replace the Secret from a git-ignored secrets.env. Generated names carry a content hash,
+# so changing config/secrets rolls the Deployments automatically.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: atrium
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: atrium
+    includeSelectors: false
+resources:
+  - namespace.yaml
+  - serviceaccount.yaml
+  - api.yaml
+  - worker.yaml
+  - renderer.yaml
+  - admin.yaml
+  - ingress.yaml
+  - migrate-job.yaml
+  - backup-cronjob.yaml
+  - networkpolicy.yaml
+configMapGenerator:
+  - name: atrium-config
+    envs: [config.env]
+secretGenerator:
+  - name: atrium-secrets
+    envs: [secrets.example.env]
+images:
+  - name: ghcr.io/your-org/atrium-api
+    newTag: latest
+  - name: ghcr.io/your-org/atrium-worker
+    newTag: latest
+  - name: ghcr.io/your-org/atrium-renderer
+    newTag: latest
+  - name: ghcr.io/your-org/atrium-admin
+    newTag: latest
+  - name: ghcr.io/your-org/atrium-migrate
+    newTag: latest

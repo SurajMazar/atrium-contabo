@@ -1,0 +1,23 @@
+[Unit]
+Description=Atrium object storage (SeaweedFS S3)
+
+[Container]
+ContainerName=atrium-s3
+Image=docker.io/chrislusf/seaweedfs:latest
+Exec=server -dir=/data -ip.bind=0.0.0.0 -master.volumeSizeLimitMB=1024 -volume.max=0 -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json
+Network=atrium.network
+NetworkAlias=s3
+Volume=atrium-s3.volume:/data
+Volume=%h/.config/atrium/seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro,Z
+HealthCmd=wget -q -O /dev/null http://127.0.0.1:9333/cluster/status
+HealthInterval=10s
+HealthRetries=30
+Notify=healthy
+
+[Service]
+Restart=always
+# create the bucket once the server is healthy (idempotent)
+ExecStartPost=/bin/sh -c 'sleep 3; echo "s3.bucket.create -name atrium-media" | podman exec -i atrium-s3 weed shell -master=127.0.0.1:9333 || true'
+
+[Install]
+WantedBy=default.target

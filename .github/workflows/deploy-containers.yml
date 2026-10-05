@@ -1,0 +1,121 @@
+# Roll out the API, worker, renderer and admin images built by ci.yml (ghcr.io/<owner>/atrium-*:<sha>).
+# Pick ONE target that matches your infrastructure:
+#   kubernetes — kustomize overlay in infra/k8s/overlays/<environment> (migrate Job first, then rollout)
+#   vps        — a server running deploy/podman (compose) via SSH: pull + up -d (migrate service runs first)
+#   ecs        — AWS ECS Fargate: run the atrium-migrate task, then force new deployments
+name: Deploy · containers
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        type: choice
+        options: [kubernetes, vps, ecs]
+        default: kubernetes
+      environment:
+        type: choice
+        options: [staging, production]
+        default: staging
+      tag:
+        description: Image tag (git SHA from ci.yml, or a release version)
+        required: true
+
+concurrency:
+  group: deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write # OIDC for cloud credentials
+
+env:
+  REGISTRY: ghcr.io/${{ github.repository_owner }}
+
+jobs:
+  kubernetes:
+    if: inputs.target == 'kubernetes'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Kubeconfig
+        run: |
+          mkdir -p ~/.kube && echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config && chmod 600 ~/.kube/config
+          kubectl version
+      - name: Render overlay with the release tag
+        working-directory: infra/k8s/overlays/${{ inputs.environment }}
+        run: |
+          # secrets.env is never committed: store it as an environment secret (or use External Secrets).
+          printf '%s\n' "${{ secrets.ATRIUM_SECRETS_ENV }}" > secrets.env
+          for img in api worker renderer admin migrate; do
+            kustomize edit set image "ghcr.io/your-org/atrium-$img=$REGISTRY/atrium-$img:${{ inputs.tag }}"
+          done
+          kubectl kustomize . > "$RUNNER_TEMP/atrium.yaml"
+          rm secrets.env
+      - name: Migrate, then roll out
+        run: |
+          NS=$(grep -m1 -E '^namespace:' infra/k8s/overlays/${{ inputs.environment }}/kustomization.yaml | awk '{print $2}')
+          kubectl -n "$NS" delete job atrium-migrate --ignore-not-found
+          kubectl apply -f "$RUNNER_TEMP/atrium.yaml"
+          kubectl -n "$NS" wait --for=condition=complete job/atrium-migrate --timeout=10m
+          for d in atrium-api atrium-worker atrium-renderer atrium-admin; do kubectl -n "$NS" rollout status deploy/$d --timeout=10m; done
+
+  vps:
+    if: inputs.target == 'vps'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    timeout-minutes: 20
+    steps:
+      - name: Deploy over SSH
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          HOST: ${{ secrets.DEPLOY_HOST }}           # user@host
+          DIR: ${{ vars.DEPLOY_DIR || '/opt/atrium/deploy/podman' }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          install -m 600 /dev/null ~/key && printf '%s\n' "$SSH_KEY" > ~/key
+          ssh -i ~/key -o StrictHostKeyChecking=accept-new "$HOST" bash -se <<SSH
+            set -euo pipefail
+            cd "$DIR"
+            sed -i "s/^ATRIUM_IMAGE_TAG=.*/ATRIUM_IMAGE_TAG=$TAG/" .env
+            ENGINE=\$(command -v podman >/dev/null && echo podman || echo docker)
+            \$ENGINE compose pull
+            \$ENGINE compose up -d --remove-orphans   # migrate runs before api/worker (depends_on)
+            \$ENGINE compose ps
+          SSH
+
+  ecs:
+    if: inputs.target == 'ecs'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    timeout-minutes: 30
+    env:
+      CLUSTER: ${{ vars.ECS_CLUSTER || 'atrium' }}
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+      - name: Register task definitions with the new tag
+        run: |
+          for svc in api worker renderer admin migrate; do
+            aws ecs describe-task-definition --task-definition atrium-$svc --query taskDefinition > td.json
+            jq --arg img "$REGISTRY/atrium-$svc:${{ inputs.tag }}" \
+              '.containerDefinitions[0].image=$img | del(.taskDefinitionArn,.revision,.status,.requiresAttributes,.compatibilities,.registeredAt,.registeredBy)' td.json > td-new.json
+            aws ecs register-task-definition --cli-input-json file://td-new.json > /dev/null
+          done
+      - name: Run migrations
+        run: |
+          ARN=$(aws ecs run-task --cluster "$CLUSTER" --launch-type FARGATE --task-definition atrium-migrate \
+            --network-configuration "awsvpcConfiguration={subnets=[${{ vars.PRIVATE_SUBNETS }}],securityGroups=[${{ vars.APP_SG }}],assignPublicIp=DISABLED}" \
+            --query 'tasks[0].taskArn' --output text)
+          aws ecs wait tasks-stopped --cluster "$CLUSTER" --tasks "$ARN"
+          CODE=$(aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$ARN" --query 'tasks[0].containers[0].exitCode' --output text)
+          test "$CODE" = "0" || { echo "::error::migration task exited with $CODE"; exit 1; }
+      - name: Roll out services
+        run: |
+          for svc in api worker renderer admin; do
+            aws ecs update-service --cluster "$CLUSTER" --service atrium-$svc --task-definition atrium-$svc --force-new-deployment > /dev/null
+          done
+          aws ecs wait services-stable --cluster "$CLUSTER" --services atrium-api atrium-worker atrium-renderer atrium-admin

@@ -1,0 +1,199 @@
+{
+  "family": "atrium-admin",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "cpu": "512",
+  "memory": "1024",
+  "runtimePlatform": {
+    "cpuArchitecture": "X86_64",
+    "operatingSystemFamily": "LINUX"
+  },
+  "executionRoleArn": "arn:aws:iam::REPLACE_ME_ACCOUNT:role/atrium-ecs-execution",
+  "taskRoleArn": "arn:aws:iam::REPLACE_ME_ACCOUNT:role/atrium-ecs-task",
+  "containerDefinitions": [
+    {
+      "name": "admin",
+      "image": "{{registry}}/atrium-admin:{{tag}}",
+      "essential": true,
+      "environment": [
+        {
+          "name": "NODE_ENV",
+          "value": "production"
+        },
+        {
+          "name": "ADMIN_URL",
+          "value": "https://{{adminHost}}"
+        },
+        {
+          "name": "API_URL",
+          "value": "https://{{apiHost}}"
+        },
+        {
+          "name": "RENDERER_URL",
+          "value": "https://{{sitesDomain}}"
+        },
+        {
+          "name": "PLATFORM_SITES_DOMAIN",
+          "value": "{{sitesDomain}}"
+        },
+        {
+          "name": "PREVIEW_URL",
+          "value": "https://{{sitesDomain}}"
+        },
+        {
+          "name": "CORS_ORIGINS",
+          "value": "https://{{adminHost}}"
+        },
+        {
+          "name": "COOKIE_DOMAIN",
+          "value": "{{adminHost}}"
+        },
+        {
+          "name": "STORAGE_DRIVER",
+          "value": "s3"
+        },
+        {
+          "name": "S3_REGION",
+          "value": "REPLACE_ME_REGION"
+        },
+        {
+          "name": "S3_BUCKET",
+          "value": "atrium-media-REPLACE_ME"
+        },
+        {
+          "name": "S3_PUBLIC_URL",
+          "value": "https://{{mediaHost}}"
+        },
+        {
+          "name": "S3_FORCE_PATH_STYLE",
+          "value": "false"
+        },
+        {
+          "name": "SMTP_HOST",
+          "value": "email-smtp.REPLACE_ME_REGION.amazonaws.com"
+        },
+        {
+          "name": "SMTP_PORT",
+          "value": "587"
+        },
+        {
+          "name": "SMTP_SECURE",
+          "value": "false"
+        },
+        {
+          "name": "MAIL_FROM",
+          "value": "Atrium <no-reply@{{domain}}>"
+        },
+        {
+          "name": "ATRIUM_API_INTERNAL_URL",
+          "value": "http://api:4000"
+        },
+        {
+          "name": "PORT",
+          "value": "3000"
+        },
+        {
+          "name": "HOSTNAME",
+          "value": "0.0.0.0"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "DATABASE_URL",
+          "valueFrom": "arn:aws:secretsmanager:REPLACE_ME_REGION:REPLACE_ME_ACCOUNT:secret:atrium/production:DATABASE_URL::"
+        },
+        {
+          "name": "REDIS_URL",
+          "valueFrom": "arn:aws:secretsmanager:REPLACE_ME_REGION:REPLACE_ME_ACCOUNT:secret:atrium/production:REDIS_URL::"
+        },
+        {
+          "name": "JWT_ACCESS_SECRET",
+          "valueFrom": "arn:aws:secretsmanager:REPLACE_ME_REGION:REPLACE_ME_ACCOUNT:secret:atrium/production:JWT_ACCESS_SECRET::"
+        },
+        {
+          "name": "JWT_REFRESH_SECRET",
+          "valueFrom": "arn:aws:secretsmanager:REPLACE_ME_REGION:REPLACE_ME_ACCOUNT:secret:atrium/production:JWT_REFRESH_SECRET::"
+        },
+        {
+          "name": "ENCRYPTION_KEY",
+          "valueFrom": "arn:aws:secretsmanager:REPLACE_ME_REGION:REPLACE_ME_ACCOUNT:secret:atrium/production:ENCRYPTION_KEY::"
+        },
+        {
+          "name": "RENDERER_SECRET",
+          "valueFrom": "arn:aws:secretsmanager:REPLACE_ME_REGION:REPLACE_ME_ACCOUNT:secret:atrium/production:RENDERER_SECRET::"
+        },
+        {
+          "name": "ANALYTICS_SALT",
+          "valueFrom": "arn:aws:secretsmanager:REPLACE_ME_REGION:REPLACE_ME_ACCOUNT:secret:atrium/production:ANALYTICS_SALT::"
+        },
+        {
+          "name": "S3_ACCESS_KEY_ID",
+          "valueFrom": "arn:aws:secretsmanager:REPLACE_ME_REGION:REPLACE_ME_ACCOUNT:secret:atrium/production:S3_ACCESS_KEY_ID::"
+        },
+        {
+          "name": "S3_SECRET_ACCESS_KEY",
+          "valueFrom": "arn:aws:secretsmanager:REPLACE_ME_REGION:REPLACE_ME_ACCOUNT:secret:atrium/production:S3_SECRET_ACCESS_KEY::"
+        },
+        {
+          "name": "SMTP_USER",
+          "valueFrom": "arn:aws:secretsmanager:REPLACE_ME_REGION:REPLACE_ME_ACCOUNT:secret:atrium/production:SMTP_USER::"
+        },
+        {
+          "name": "SMTP_PASSWORD",
+          "valueFrom": "arn:aws:secretsmanager:REPLACE_ME_REGION:REPLACE_ME_ACCOUNT:secret:atrium/production:SMTP_PASSWORD::"
+        },
+        {
+          "name": "ANTHROPIC_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:REPLACE_ME_REGION:REPLACE_ME_ACCOUNT:secret:atrium/production:ANTHROPIC_API_KEY::"
+        },
+        {
+          "name": "OPENAI_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:REPLACE_ME_REGION:REPLACE_ME_ACCOUNT:secret:atrium/production:OPENAI_API_KEY::"
+        },
+        {
+          "name": "GEMINI_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:REPLACE_ME_REGION:REPLACE_ME_ACCOUNT:secret:atrium/production:GEMINI_API_KEY::"
+        },
+        {
+          "name": "VERCEL_TOKEN",
+          "valueFrom": "arn:aws:secretsmanager:REPLACE_ME_REGION:REPLACE_ME_ACCOUNT:secret:atrium/production:VERCEL_TOKEN::"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/atrium/admin",
+          "awslogs-region": "REPLACE_ME_REGION",
+          "awslogs-stream-prefix": "admin",
+          "awslogs-create-group": "true"
+        }
+      },
+      "linuxParameters": {
+        "initProcessEnabled": true
+      },
+      "stopTimeout": 45,
+      "portMappings": [
+        {
+          "name": "admin",
+          "containerPort": 3000,
+          "protocol": "tcp",
+          "appProtocol": "http"
+        }
+      ],
+      "healthCheck": {
+        "command": [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/',{redirect:'manual'}).then(r=>process.exit(r.status<500?0:1),()=>process.exit(1))"
+        ],
+        "interval": 15,
+        "timeout": 5,
+        "retries": 5,
+        "startPeriod": 40
+      }
+    }
+  ]
+}

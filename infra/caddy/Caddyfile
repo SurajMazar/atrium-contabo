@@ -1,0 +1,79 @@
+# Atrium edge proxy (Caddy 2). Values come from the environment (.env):
+#   ADMIN_HOST=admin.example.com  API_HOST=api.example.com  SITES_DOMAIN=sites.example.com
+#   MEDIA_HOST=media.example.com  ACME_EMAIL=ops@example.com
+#
+# TLS:
+#  - admin/api/media/sites apex: automatic HTTPS (HTTP-01/TLS-ALPN-01).
+#  - Tenant sites ({slug}.SITES_DOMAIN) and customer domains: on-demand TLS. Before issuing a
+#    certificate Caddy calls the API "ask" endpoint; only 2xx answers are allowed:
+#        GET http://api:4000/v1/public/domains/check?domain=<hostname>
+#    The API answers 200 for {slug}.SITES_DOMAIN of an existing site and for verified
+#    custom domains, 404 otherwise — so nobody can make you issue certs for random hosts.
+#  - Many tenant subdomains? Let's Encrypt limits certificates per registered domain per
+#    week; switch the sites block to one wildcard cert via DNS-01 (build Caddy with a
+#    caddy-dns/<provider> module, see docs/deployment/vps-podman.md).
+{
+	email {$ACME_EMAIL}
+	on_demand_tls {
+		ask http://api:4000/v1/public/domains/check
+	}
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
+(common) {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+		-X-Powered-By
+	}
+	log {
+		output stdout
+		format json
+	}
+}
+
+{$ADMIN_HOST} {
+	import common
+	header X-Frame-Options "DENY"
+	reverse_proxy admin:3000
+}
+
+{$API_HOST} {
+	import common
+	request_body {
+		max_size 100MB
+	}
+	# flush_interval -1 streams Server-Sent Events (AI generation progress) without buffering.
+	reverse_proxy api:4000 {
+		flush_interval -1
+	}
+}
+
+# Public, read-only media bucket (S3_PUBLIC_URL=https://MEDIA_HOST/<bucket>).
+{$MEDIA_HOST} {
+	import common
+	@write not method GET HEAD OPTIONS
+	respond @write 405
+	header Cache-Control "public, max-age=31536000, immutable"
+	reverse_proxy s3:8333
+}
+
+# Renderer apex (RENDERER_URL / PREVIEW_URL).
+{$SITES_DOMAIN} {
+	import common
+	reverse_proxy renderer:3001
+}
+
+# Everything else: {slug}.SITES_DOMAIN and verified customer domains (certificates on demand).
+https:// {
+	import common
+	tls {
+		on_demand
+	}
+	reverse_proxy renderer:3001
+}

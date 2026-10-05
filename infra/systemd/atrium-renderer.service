@@ -1,0 +1,38 @@
+# Atrium public site renderer (Next.js, port 3001)
+[Unit]
+Description=Atrium public site renderer (Next.js, port 3001)
+After=network-online.target atrium-api.service
+Wants=network-online.target
+PartOf=atrium.target
+
+[Service]
+Type=simple
+User=atrium
+Group=atrium
+WorkingDirectory=/opt/atrium/apps/renderer
+EnvironmentFile=/etc/atrium/atrium.env
+Environment=NODE_ENV=production PORT=3001
+ExecStart=/usr/bin/node node_modules/next/dist/bin/next start --port 3001 --hostname 127.0.0.1
+Restart=always
+RestartSec=3
+# Give in-flight requests/jobs time to finish on deploys.
+KillSignal=SIGTERM
+TimeoutStopSec=45
+LimitNOFILE=65536
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=atrium-renderer
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+ReadWritePaths=/var/lib/atrium /var/log/atrium /opt/atrium/apps/renderer/.next/cache
+
+[Install]
+WantedBy=atrium.target

@@ -8,9 +8,14 @@ coverage
 .env.*
 !.env.example
 .DS_Store
-storage/
-backups/
+# root-anchored: an unanchored `storage/` also ignored packages/providers/src/storage
+/storage/
+/backups/
 packages/db/src/generated/
 playwright-report
 test-results
 *.tsbuildinfo
+# `atrium setup production` output (contains generated secrets) and CLI state
+/deploy/
+/.atrium/
+Procfile.local

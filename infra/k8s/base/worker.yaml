@@ -1,0 +1,55 @@
+# BullMQ consumers. Long-running by design — never run these on serverless.
+# Scale horizontally on queue depth (e.g. KEDA redis-list scaler on bull:<queue>:wait).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: atrium-worker
+  labels: { app.kubernetes.io/name: atrium-worker, app.kubernetes.io/component: worker }
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }
+  selector:
+    matchLabels: { app.kubernetes.io/name: atrium-worker }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: atrium-worker, app.kubernetes.io/component: worker }
+    spec:
+      serviceAccountName: atrium
+      # In-flight jobs (media processing, deployments, AI generation) get time to finish.
+      terminationGracePeriodSeconds: 120
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: worker
+          image: ghcr.io/your-org/atrium-worker
+          envFrom:
+            - configMapRef: { name: atrium-config }
+            - secretRef: { name: atrium-secrets }
+          env:
+            - { name: MALLOC_ARENA_MAX, value: "2" }
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { memory: 2Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: tmp, emptyDir: { sizeLimit: 2Gi } }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: atrium-worker
+spec:
+  minAvailable: 1
+  selector: { matchLabels: { app.kubernetes.io/name: atrium-worker } }

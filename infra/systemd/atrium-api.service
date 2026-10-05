@@ -1,0 +1,39 @@
+# Atrium API (NestJS, port 4000)
+[Unit]
+Description=Atrium API (NestJS, port 4000)
+After=network-online.target atrium-migrate.service 
+Wants=network-online.target
+Requires=atrium-migrate.service
+PartOf=atrium.target
+
+[Service]
+Type=simple
+User=atrium
+Group=atrium
+WorkingDirectory=/opt/atrium/apps/api
+EnvironmentFile=/etc/atrium/atrium.env
+Environment=NODE_ENV=production PORT=4000 API_PORT=4000
+ExecStart=/usr/bin/node --enable-source-maps dist/main.js
+Restart=always
+RestartSec=3
+# Give in-flight requests/jobs time to finish on deploys.
+KillSignal=SIGTERM
+TimeoutStopSec=45
+LimitNOFILE=65536
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=atrium-api
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+ReadWritePaths=/var/lib/atrium /var/log/atrium
+
+[Install]
+WantedBy=atrium.target

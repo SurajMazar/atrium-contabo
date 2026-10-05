@@ -1,0 +1,27 @@
+# Build context filter for Docker (.dockerignore) and podman/buildah (.containerignore — keep in sync).
+# Everything is rebuilt inside the image, so never send local build output or secrets.
+.git
+**/node_modules
+**/.next
+**/dist
+**/.turbo
+**/coverage
+**/*.tsbuildinfo
+**/*.log
+packages/db/src/generated
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+/.atrium
+/backups
+/storage
+/deploy
+/playwright-report
+/test-results
+tests/e2e/.auth
+.DS_Store
+.idea
+.vscode

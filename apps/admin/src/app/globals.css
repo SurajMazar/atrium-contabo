@@ -1,0 +1,80 @@
+@import "tailwindcss";
+@import "@atrium/ui/styles.css";
+
+@source "../../../../packages/ui/src";
+@source "../";
+
+@layer base {
+  html,
+  body {
+    height: 100%;
+  }
+  body {
+    font-feature-settings: "cv11", "ss01", "ss03";
+  }
+  /* Tabular numerals in data-dense places */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+  /* Thin, quiet scrollbars */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--ui-border-strong) transparent;
+  }
+}
+
+/* TipTap / prose editor content */
+.atrium-prose {
+  font-size: var(--text-base);
+  line-height: 1.6;
+  color: var(--color-fg);
+}
+.atrium-prose:focus {
+  outline: none;
+}
+.atrium-prose p {
+  margin: 0 0 0.6em;
+}
+.atrium-prose h2 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin: 1em 0 0.4em;
+}
+.atrium-prose h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0.9em 0 0.3em;
+}
+.atrium-prose ul {
+  list-style: disc;
+  padding-left: 1.25em;
+  margin: 0 0 0.6em;
+}
+.atrium-prose ol {
+  list-style: decimal;
+  padding-left: 1.25em;
+  margin: 0 0 0.6em;
+}
+.atrium-prose blockquote {
+  border-left: 2px solid var(--color-border-strong);
+  padding-left: 0.75em;
+  color: var(--color-fg-muted);
+}
+.atrium-prose a {
+  color: var(--color-accent);
+  text-decoration: underline;
+}
+.atrium-prose code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: var(--color-surface-2);
+  padding: 0.1em 0.3em;
+  border-radius: 3px;
+}
+.atrium-prose p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--color-fg-subtle);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}

@@ -1,0 +1,22 @@
+[Unit]
+Description=Atrium edge proxy (Caddy, automatic + on-demand TLS)
+Requires=atrium-api.service atrium-admin.service atrium-renderer.service atrium-s3.service
+After=atrium-api.service atrium-admin.service atrium-renderer.service
+
+[Container]
+ContainerName=atrium-caddy
+Image=docker.io/library/caddy:2-alpine
+Network=atrium.network
+PublishPort=80:80
+PublishPort=443:443
+PublishPort=443:443/udp
+EnvironmentFile=%h/.config/atrium/atrium.env
+Volume=%h/.config/atrium/caddy/Caddyfile:/etc/caddy/Caddyfile:ro,Z
+Volume=atrium-caddy-data.volume:/data
+Volume=atrium-caddy-config.volume:/config
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target

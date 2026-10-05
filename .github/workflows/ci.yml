@@ -1,0 +1,255 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  schedule:
+    - cron: "17 2 * * *" # nightly: full e2e run
+  workflow_dispatch:
+    inputs:
+      e2e:
+        description: Run the Playwright end-to-end suite
+        type: boolean
+        default: true
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "24"
+  TURBO_TELEMETRY_DISABLED: "1"
+  NEXT_TELEMETRY_DISABLED: "1"
+  # Build-time value baked into the admin's /api rewrite; real deploys build images separately.
+  ATRIUM_API_INTERNAL_URL: http://localhost:4000
+
+jobs:
+  verify:
+    name: Lint · typecheck · test · build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4 # version from package.json "packageManager"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Turborepo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: turbo-${{ runner.os }}-
+      - name: Format check
+        run: pnpm format:check
+      - name: Lint
+        run: pnpm lint
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Unit tests
+        run: pnpm test
+      - name: Build
+        run: pnpm build
+      - name: CLI smoke test
+        run: |
+          pnpm atrium --help
+          pnpm atrium --version
+          pnpm atrium setup production --target podman --domain ci.example.com --out "$RUNNER_TEMP/podman"
+          pnpm atrium setup production --target k8s --domain ci.example.com --registry ghcr.io/${{ github.repository_owner }} --tag ${{ github.sha }} --out "$RUNNER_TEMP/k8s"
+          pnpm atrium --root . setup check --env-file "$RUNNER_TEMP/podman/.env" || true
+
+  manifests:
+    name: Kubernetes + compose manifests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: kustomize build (base + overlays)
+        run: |
+          kubectl version --client
+          kubectl kustomize infra/k8s/base > /dev/null
+          for env in staging production; do
+            cp infra/k8s/overlays/$env/secrets.env.example infra/k8s/overlays/$env/secrets.env
+            kubectl kustomize infra/k8s/overlays/$env > "$RUNNER_TEMP/$env.yaml"
+            echo "$env: $(grep -c '^kind:' "$RUNNER_TEMP/$env.yaml") resources"
+          done
+      - name: Validate against the Kubernetes API schemas
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz kubeconform
+          ./kubeconform -strict -summary -ignore-missing-schemas "$RUNNER_TEMP/staging.yaml" "$RUNNER_TEMP/production.yaml"
+      - name: docker compose config
+        run: |
+          cp .env.example .env
+          printf 'POSTGRES_PASSWORD=ci\nATRIUM_SRC_DIR=%s\n' "$PWD" > infra/.env
+          docker compose -f infra/compose.yaml config -q
+          docker compose -f infra/compose.prod.yaml --env-file infra/.env config -q
+
+  database:
+    name: Prisma migrations (deploy + drift)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: atrium
+          POSTGRES_PASSWORD: atrium
+          POSTGRES_DB: atrium
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U atrium -d atrium"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      DATABASE_URL: postgresql://atrium:atrium@localhost:5432/atrium
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: prisma validate
+        run: pnpm --filter @atrium/db exec prisma validate
+      - name: migrate deploy (fresh database)
+        run: pnpm db:deploy
+      - name: migrate deploy is idempotent
+        run: pnpm db:deploy
+      - name: Drift check — schema.prisma must match the migrations
+        run: |
+          set +e
+          pnpm --filter @atrium/db exec prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
+          code=$?
+          if [ "$code" = "2" ]; then
+            echo "::error::schema.prisma has changes without a migration. Run: pnpm atrium migrate --dev --name <change>"
+            pnpm --filter @atrium/db exec prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script
+          fi
+          exit $code
+      - name: Seed (twice — must be idempotent)
+        run: |
+          pnpm exec turbo run build --filter=./packages/*
+          pnpm db:seed
+          pnpm db:seed
+
+  e2e:
+    name: Playwright end-to-end
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.e2e)
+    needs: [verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env: { POSTGRES_USER: atrium, POSTGRES_PASSWORD: atrium, POSTGRES_DB: atrium }
+        ports: ["55432:5432"]
+        options: --health-cmd "pg_isready -U atrium -d atrium" --health-interval 5s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["56379:6379"]
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-retries 20
+      mailpit:
+        image: axllent/mailpit:latest
+        ports: ["51025:1025", "58025:8025"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Configure .env (generated secrets, local storage)
+        run: |
+          pnpm atrium --yes setup env
+          pnpm atrium config set STORAGE_DRIVER local
+      - run: pnpm build
+      - run: pnpm db:deploy
+      - run: pnpm db:seed
+      - name: Start the platform (built servers, background)
+        run: |
+          pnpm atrium start --prod --detach --no-infra
+          for i in $(seq 1 60); do curl -fsS http://localhost:4000/v1/health/ready && break; sleep 2; done
+          pnpm atrium status
+      - name: Install Chromium
+        run: pnpm --filter @atrium/e2e exec playwright install --with-deps chromium
+      - name: Run e2e
+        run: pnpm e2e
+        env:
+          CI: "true"
+          E2E_ADMIN_URL: http://localhost:3000
+          E2E_API_URL: http://localhost:4000
+          E2E_RENDERER_URL: http://localhost:3001
+          E2E_SITES_DOMAIN: sites.localhost:3001
+          E2E_MAILPIT_URL: http://localhost:58025
+      - name: App logs on failure
+        if: failure()
+        run: pnpm atrium logs -n 300 || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: |
+            tests/e2e/playwright-report
+            tests/e2e/test-results
+          retention-days: 14
+      - if: always()
+        run: pnpm atrium stop || true
+
+  images:
+    name: Image · ${{ matrix.image }}
+    if: github.event_name == 'push'
+    needs: [verify, database, manifests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { image: api, file: api.Containerfile, target: runtime }
+          - { image: migrate, file: api.Containerfile, target: migrate }
+          - { image: worker, file: worker.Containerfile, target: runtime }
+          - { image: renderer, file: renderer.Containerfile, target: runtime }
+          - { image: admin, file: admin.Containerfile, target: runtime }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/atrium-${{ matrix.image }}
+          tags: |
+            type=sha,format=long,prefix=
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable={{is_default_branch}}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/containers/${{ matrix.file }}
+          target: ${{ matrix.target }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            GIT_SHA=${{ github.sha }}
+            ATRIUM_API_INTERNAL_URL=${{ vars.ATRIUM_API_INTERNAL_URL || 'http://api:4000' }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+          provenance: true
+          sbom: true

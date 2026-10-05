@@ -1,0 +1,155 @@
+# Atrium — single-server production stack (Podman or Docker Compose) behind Caddy.
+#
+#   atrium setup production --target podman --domain example.com   # writes deploy/podman/{compose.yaml,.env,caddy/,seaweedfs/}
+#   cd deploy/podman && podman compose up -d                        # or: docker compose up -d
+#
+# Run from a generated deploy directory (it holds .env, caddy/Caddyfile and seaweedfs/s3.json
+# next to this file). Images come from ATRIUM_IMAGE_REGISTRY/ATRIUM_IMAGE_TAG; `compose build`
+# builds them from the checkout at ATRIUM_SRC_DIR instead.
+#
+# Topology: Caddy (80/443, automatic + on-demand TLS) → admin:3000, api:4000, renderer:3001,
+# s3:8333 (public media). Postgres/Redis/S3 are only reachable on the private network.
+# The `migrate` job runs `prisma migrate deploy` before api/worker start (zero manual steps).
+name: atrium
+
+x-app: &app
+  env_file: [.env]
+  restart: unless-stopped
+  networks: [atrium]
+
+services:
+  caddy:
+    image: docker.io/library/caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    env_file: [.env]
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro,Z
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [atrium]
+    depends_on: [api, admin, renderer]
+
+  postgres:
+    image: docker.io/library/postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-atrium}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-atrium}
+    volumes: [pg-data:/var/lib/postgresql/data]
+    shm_size: 256m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-atrium} -d ${POSTGRES_DB:-atrium}"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks: [atrium]
+
+  redis:
+    image: docker.io/library/redis:7-alpine
+    restart: unless-stopped
+    # BullMQ requires noeviction; AOF keeps queued jobs across restarts.
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--maxmemory-policy", "noeviction"]
+    volumes: [redis-data:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks: [atrium]
+
+  # Self-hosted S3 (SeaweedFS). Replace with AWS S3 / R2 / B2 / Azure by changing S3_* in .env
+  # and removing this service + s3-init.
+  s3:
+    image: docker.io/chrislusf/seaweedfs:latest
+    restart: unless-stopped
+    command: ["server", "-dir=/data", "-ip.bind=0.0.0.0", "-master.volumeSizeLimitMB=1024", "-volume.max=0", "-s3", "-s3.port=8333", "-s3.config=/etc/seaweedfs/s3.json"]
+    volumes:
+      - s3-data:/data
+      - ./seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro,Z
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9333/cluster/status || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 30
+    networks: [atrium]
+
+  s3-init:
+    image: docker.io/chrislusf/seaweedfs:latest
+    depends_on:
+      s3: { condition: service_healthy }
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["sleep 3; echo 's3.bucket.create -name ${S3_BUCKET:-atrium-media}' | weed shell -master=s3:9333 || true"]
+    restart: "no"
+    networks: [atrium]
+
+  migrate:
+    <<: *app
+    image: ${ATRIUM_IMAGE_REGISTRY:-localhost}/atrium-migrate:${ATRIUM_IMAGE_TAG:-latest}
+    build: { context: "${ATRIUM_SRC_DIR:-..}", dockerfile: infra/containers/api.Containerfile, target: migrate }
+    restart: "no"
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  api:
+    <<: *app
+    image: ${ATRIUM_IMAGE_REGISTRY:-localhost}/atrium-api:${ATRIUM_IMAGE_TAG:-latest}
+    build: { context: "${ATRIUM_SRC_DIR:-..}", dockerfile: infra/containers/api.Containerfile }
+    mem_limit: 1g
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/v1/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      start_period: 40s
+      retries: 5
+
+  worker:
+    <<: *app
+    image: ${ATRIUM_IMAGE_REGISTRY:-localhost}/atrium-worker:${ATRIUM_IMAGE_TAG:-latest}
+    build: { context: "${ATRIUM_SRC_DIR:-..}", dockerfile: infra/containers/worker.Containerfile }
+    mem_limit: 1536m
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+
+  renderer:
+    <<: *app
+    image: ${ATRIUM_IMAGE_REGISTRY:-localhost}/atrium-renderer:${ATRIUM_IMAGE_TAG:-latest}
+    build: { context: "${ATRIUM_SRC_DIR:-..}", dockerfile: infra/containers/renderer.Containerfile }
+    mem_limit: 1g
+    environment:
+      ATRIUM_API_INTERNAL_URL: http://api:4000
+    volumes: [renderer-cache:/app/apps/renderer/.next/cache]
+    depends_on: [api]
+
+  admin:
+    <<: *app
+    image: ${ATRIUM_IMAGE_REGISTRY:-localhost}/atrium-admin:${ATRIUM_IMAGE_TAG:-latest}
+    build:
+      context: "${ATRIUM_SRC_DIR:-..}"
+      dockerfile: infra/containers/admin.Containerfile
+      args: { ATRIUM_API_INTERNAL_URL: "http://api:4000" }
+    mem_limit: 768m
+    environment:
+      ATRIUM_API_INTERNAL_URL: http://api:4000
+    depends_on: [api]
+
+networks:
+  atrium: {}
+
+volumes:
+  pg-data:
+  redis-data:
+  s3-data:
+  caddy-data:
+  caddy-config:
+  renderer-cache:

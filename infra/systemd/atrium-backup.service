@@ -1,0 +1,26 @@
+# Nightly backup (database + files) with rotation; triggered by atrium-backup.timer.
+[Unit]
+Description=Atrium backup
+After=network-online.target postgresql.service
+
+[Service]
+Type=oneshot
+User=atrium
+Group=atrium
+WorkingDirectory=/opt/atrium
+EnvironmentFile=/etc/atrium/atrium.env
+Environment=BACKUP_DIR=/var/lib/atrium/backups KEEP=14
+ExecStart=/opt/atrium/infra/scripts/backup.sh --with-files
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+ReadWritePaths=/var/lib/atrium /var/log/atrium

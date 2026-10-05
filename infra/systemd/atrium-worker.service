@@ -1,0 +1,39 @@
+# Atrium background worker (BullMQ)
+[Unit]
+Description=Atrium background worker (BullMQ)
+After=network-online.target atrium-migrate.service 
+Wants=network-online.target
+Requires=atrium-migrate.service
+PartOf=atrium.target
+
+[Service]
+Type=simple
+User=atrium
+Group=atrium
+WorkingDirectory=/opt/atrium/apps/worker
+EnvironmentFile=/etc/atrium/atrium.env
+Environment=NODE_ENV=production MALLOC_ARENA_MAX=2
+ExecStart=/usr/bin/node --enable-source-maps dist/main.js
+Restart=always
+RestartSec=3
+# Give in-flight requests/jobs time to finish on deploys.
+KillSignal=SIGTERM
+TimeoutStopSec=45
+LimitNOFILE=65536
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=atrium-worker
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+ReadWritePaths=/var/lib/atrium /var/log/atrium
+
+[Install]
+WantedBy=atrium.target

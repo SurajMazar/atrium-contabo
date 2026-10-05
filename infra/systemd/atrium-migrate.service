@@ -1,0 +1,27 @@
+# One-shot: apply pending Prisma migrations before the API/worker start.
+[Unit]
+Description=Atrium database migrations (prisma migrate deploy)
+After=network-online.target postgresql.service
+Wants=network-online.target
+PartOf=atrium.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+User=atrium
+Group=atrium
+WorkingDirectory=/opt/atrium/packages/db
+EnvironmentFile=/etc/atrium/atrium.env
+Environment=CHECKPOINT_DISABLE=1 PRISMA_HIDE_UPDATE_MESSAGE=1
+ExecStart=/opt/atrium/packages/db/node_modules/.bin/prisma migrate deploy
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+ReadWritePaths=/var/lib/atrium /var/log/atrium

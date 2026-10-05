@@ -1,0 +1,191 @@
+import { SOCIAL_NETWORKS } from '@atrium/schema';
+import { z } from 'zod';
+import { defineComponent } from '../types';
+import { headingLevel, introControls, media, mediaControl, sectionBase, sectionControls } from '../fields';
+import { optionalIntro, opts, showForVariants } from './shared';
+
+const U = (id: string, w = 2400) => `https://images.unsplash.com/photo-${id}?w=${w}&q=80&auto=format&fit=crop`;
+
+export const contactInfo = defineComponent({
+  type: 'contact-info',
+  name: 'Contact details',
+  category: 'contact',
+  level: 'section',
+  icon: 'contact',
+  description: 'Phone, email, WhatsApp, address and opening hours pulled live from the site’s business settings, plus optional extra contacts.',
+  variants: [
+    { id: 'list', name: 'List', description: 'Labelled rows; pairs well beside a form.' },
+    { id: 'cards', name: 'Cards', description: 'One card per contact method.' },
+    { id: 'split', name: 'Split', description: 'Details beside an embedded map.' },
+  ],
+  defaultVariant: 'list',
+  props: z.object({
+    ...sectionBase,
+    ...optionalIntro,
+    showPhone: z.boolean().default(true),
+    showEmail: z.boolean().default(true),
+    showWhatsapp: z.boolean().default(true),
+    showAddress: z.boolean().default(true),
+    showHours: z.boolean().default(true),
+    showSocial: z.boolean().default(false),
+    extra: z.array(z.object({ label: z.string().max(60), value: z.string().max(200), link: z.string().max(300).optional() })).max(8).default([]),
+    mapZoom: z.number().int().min(3).max(20).default(14),
+  }),
+  defaultProps: { eyebrow: 'Contact', heading: 'Get in *touch*' },
+  controls: [
+    ...introControls,
+    { name: 'showPhone', label: 'Phone', type: 'toggle', group: 'content' },
+    { name: 'showEmail', label: 'Email', type: 'toggle', group: 'content' },
+    { name: 'showWhatsapp', label: 'WhatsApp', type: 'toggle', group: 'content' },
+    { name: 'showAddress', label: 'Address', type: 'toggle', group: 'content' },
+    { name: 'showHours', label: 'Opening hours', type: 'toggle', group: 'content' },
+    { name: 'showSocial', label: 'Social links', type: 'toggle', group: 'content' },
+    { name: 'extra', label: 'Additional contacts', type: 'list', group: 'content', itemLabel: 'label', item: [{ name: 'label', label: 'Label', type: 'text' }, { name: 'value', label: 'Value', type: 'text' }, { name: 'link', label: 'Link', type: 'text' }], itemDefaults: { label: 'Events team', value: '' } },
+    { name: 'mapZoom', label: 'Map zoom', type: 'slider', group: 'advanced', min: 3, max: 20, showIf: showForVariants(['split']) },
+    ...sectionControls,
+  ],
+  animations: { recommended: ['fade-up', 'stagger'] },
+  ai: { useWhen: 'Contact pages and footers of location-based businesses. Values come from settings.business — do not hard-code them.' },
+});
+
+export const map = defineComponent({
+  type: 'map',
+  name: 'Map',
+  category: 'contact',
+  level: 'block',
+  icon: 'map',
+  description: 'Location map (Google Maps or OpenStreetMap). Shows a lightweight placeholder until the visitor chooses to load it — no third-party requests before consent.',
+  props: z.object({
+    provider: z.enum(['google', 'osm']).default('google'),
+    query: z.string().max(300).default('{{business.address}}'),
+    lat: z.number().min(-90).max(90).optional(),
+    lng: z.number().min(-180).max(180).optional(),
+    zoom: z.number().int().min(3).max(20).default(14),
+    height: z.enum(['sm', 'md', 'lg']).default('md'),
+    facade: z.boolean().default(true),
+    facadeImage: media.optional(),
+    title: z.string().max(120).default('Map showing our location'),
+    rounded: z.enum(['none', 'sm', 'md', 'lg']).default('sm'),
+  }),
+  defaultProps: { query: '{{business.address}}' },
+  controls: [
+    { name: 'provider', label: 'Provider', type: 'segmented', group: 'content', options: [{ label: 'Google', value: 'google' }, { label: 'OpenStreetMap', value: 'osm' }] },
+    { name: 'query', label: 'Address or place', type: 'text', group: 'content', help: 'Defaults to the business address.' },
+    { name: 'lat', label: 'Latitude', type: 'number', group: 'advanced' },
+    { name: 'lng', label: 'Longitude', type: 'number', group: 'advanced' },
+    { name: 'zoom', label: 'Zoom', type: 'slider', group: 'content', min: 3, max: 20 },
+    { name: 'height', label: 'Height', type: 'segmented', group: 'layout', options: opts(['sm', 'md', 'lg']) },
+    { name: 'facade', label: 'Click to load (privacy)', type: 'toggle', group: 'advanced' },
+    { ...mediaControl('facadeImage', 'Placeholder image'), showIf: { prop: 'facade', equals: true } },
+    { name: 'title', label: 'Accessible title', type: 'text', group: 'advanced' },
+    { name: 'rounded', label: 'Corners', type: 'segmented', group: 'style', options: opts(['none', 'sm', 'md', 'lg']) },
+  ],
+  styleControls: ['margin', 'maxWidth'],
+  animations: { recommended: ['fade'] },
+  ai: { useWhen: 'Contact and location pages. Place inside a section or columns.' },
+});
+
+export const form = defineComponent({
+  type: 'form',
+  name: 'Form',
+  category: 'forms',
+  level: 'section',
+  icon: 'clipboard-list',
+  description: 'Embeds a form built in the Forms module (enquiries, bookings, RSVPs). Validation, conditional fields, spam protection and success messages come from the form definition.',
+  variants: [
+    { id: 'stacked', name: 'Stacked', description: 'Heading above a narrow form.' },
+    { id: 'card', name: 'Card', description: 'Form inside a bordered card.' },
+    { id: 'split-with-text', name: 'Split with text', description: 'Intro text, contact details or an image beside the form.' },
+  ],
+  defaultVariant: 'split-with-text',
+  props: z.object({
+    ...sectionBase,
+    formId: z.string().max(80).default(''),
+    eyebrow: z.string().max(80).optional(),
+    heading: z.string().max(300).optional(),
+    headingLevel: headingLevel.default('h2'),
+    subheading: z.string().max(1200).optional(),
+    image: media.optional(),
+    showContactDetails: z.boolean().default(true),
+    submitLabel: z.string().max(60).optional(),
+  }),
+  defaultProps: { eyebrow: 'Enquire', heading: 'Tell us about your *plans*', subheading: 'Share a few details and our team will reply within one working day.' },
+  controls: [
+    { name: 'formId', label: 'Form', type: 'form', group: 'content' },
+    { name: 'eyebrow', label: 'Eyebrow', type: 'text', group: 'content' },
+    { name: 'heading', label: 'Heading', type: 'textarea', group: 'content' },
+    { name: 'subheading', label: 'Supporting text', type: 'textarea', group: 'content' },
+    { ...mediaControl('image', 'Side image'), showIf: showForVariants(['split-with-text']) },
+    { name: 'showContactDetails', label: 'Show contact details', type: 'toggle', group: 'content', showIf: showForVariants(['split-with-text']) },
+    { name: 'submitLabel', label: 'Submit label override', type: 'text', group: 'advanced' },
+    { name: 'headingLevel', label: 'Heading level', type: 'select', group: 'advanced', options: opts(['h1', 'h2', 'h3']) },
+    ...sectionControls,
+  ],
+  animations: { recommended: ['fade-up'] },
+  ai: { useWhen: 'Contact, enquiry, booking request and RSVP pages. Requires an existing form id (WebsiteDefinition.forms).' },
+});
+
+export const newsletter = defineComponent({
+  type: 'newsletter',
+  name: 'Newsletter',
+  category: 'forms',
+  level: 'section',
+  icon: 'mail',
+  description: 'Email sign-up powered by a form (its email field and consent are used), inline or as a card.',
+  variants: [
+    { id: 'inline', name: 'Inline', description: 'Text left, field and button right.' },
+    { id: 'card', name: 'Card', description: 'Centered card.' },
+    { id: 'banner', name: 'Banner', description: 'Full-width band over an image.' },
+  ],
+  defaultVariant: 'inline',
+  props: z.object({
+    ...sectionBase,
+    formId: z.string().max(80).default(''),
+    eyebrow: z.string().max(80).optional(),
+    heading: z.string().max(200).default('Letters from the lake'),
+    text: z.string().max(500).optional(),
+    image: media.optional(),
+    buttonLabel: z.string().max(40).default('Subscribe'),
+    placeholder: z.string().max(80).default('Your email address'),
+  }),
+  defaultProps: { tone: 'surface', spacingTop: 'md', spacingBottom: 'md', text: 'Seasonal news, offers and the occasional recipe. No more than once a month.', image: { src: U('1439066615861-d1af74d74000'), alt: 'Calm lake with a jetty at dawn' } },
+  controls: [
+    { name: 'formId', label: 'Form', type: 'form', group: 'content' },
+    { name: 'eyebrow', label: 'Eyebrow', type: 'text', group: 'content' },
+    { name: 'heading', label: 'Heading', type: 'text', group: 'content' },
+    { name: 'text', label: 'Text', type: 'textarea', group: 'content' },
+    { name: 'buttonLabel', label: 'Button label', type: 'text', group: 'content' },
+    { name: 'placeholder', label: 'Field placeholder', type: 'text', group: 'content' },
+    { ...mediaControl('image', 'Background image'), showIf: showForVariants(['banner']) },
+    ...sectionControls,
+  ],
+  animations: { recommended: ['fade-up', 'fade'] },
+  ai: { useWhen: 'Mailing list sign-up near the end of the homepage or blog pages. Needs a form with an email field.' },
+});
+
+export const socialLinks = defineComponent({
+  type: 'social-links',
+  name: 'Social links',
+  category: 'contact',
+  level: 'element',
+  icon: 'share-2',
+  description: 'Icons or labelled links to the profiles configured in site settings.',
+  props: z.object({
+    style: z.enum(['icons', 'labels', 'pills']).default('icons'),
+    size: z.enum(['sm', 'md', 'lg']).default('md'),
+    align: z.enum(['left', 'center', 'right']).default('left'),
+    networks: z.array(z.enum(SOCIAL_NETWORKS)).default([]),
+    label: z.string().max(80).optional(),
+  }),
+  controls: [
+    { name: 'style', label: 'Style', type: 'segmented', group: 'style', options: opts(['icons', 'labels', 'pills']) },
+    { name: 'size', label: 'Size', type: 'segmented', group: 'style', options: opts(['sm', 'md', 'lg']) },
+    { name: 'align', label: 'Align', type: 'segmented', group: 'layout', options: opts(['left', 'center', 'right']) },
+    { name: 'networks', label: 'Only show', type: 'select', group: 'advanced', help: 'Leave empty to show every visible profile.', options: SOCIAL_NETWORKS.map((n) => ({ label: n, value: n })) },
+    { name: 'label', label: 'Label', type: 'text', group: 'content', placeholder: 'Follow us' },
+  ],
+  styleControls: ['margin', 'color'],
+  ai: { useWhen: 'Inside contact sections or custom footers. Links come from settings.social.' },
+});
+
+export const contactComponents = [contactInfo, map, form, newsletter, socialLinks];

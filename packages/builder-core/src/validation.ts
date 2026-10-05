@@ -88,7 +88,7 @@ export function validateWebsite(def: WebsiteDefinition, registry: ComponentRegis
 
   // Media
   const missingAlt = def.pages.flatMap((p) => collectImages(p.sections)).filter((i) => !i.alt?.trim()).length;
-  const badSrc = def.pages.flatMap((p) => collectImages(p.sections)).filter((i) => !/^(https?:\/\/|\/|data:image\/)/.test(i.src)).length;
+  const badSrc = def.pages.flatMap((p) => collectImages(p.sections)).filter((i) => !/^(https?:\/\/|\/|data:image\/|\{\{)/.test(i.src)).length; // `{{item.image}}` templates resolve on collection-template pages
   push('media', 'Media references valid', badSrc ? [`${badSrc} images have invalid sources`] : []);
   push('alt', 'Images have ALT text', missingAlt ? [`${missingAlt} images missing ALT text`] : [], 'warn');
 

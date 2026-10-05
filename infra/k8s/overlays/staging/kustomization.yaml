@@ -1,0 +1,55 @@
+# staging overlay. Before applying:
+#   cp secrets.env.example secrets.env   # fill in real values (git-ignored)
+#   kubectl kustomize infra/k8s/overlays/staging | kubectl apply -f -
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: atrium-staging
+resources:
+  - ../../base
+components:
+  - ../../components/in-cluster-data
+images:
+  - { name: ghcr.io/your-org/atrium-api, newTag: "staging" }
+  - { name: ghcr.io/your-org/atrium-worker, newTag: "staging" }
+  - { name: ghcr.io/your-org/atrium-renderer, newTag: "staging" }
+  - { name: ghcr.io/your-org/atrium-admin, newTag: "staging" }
+  - { name: ghcr.io/your-org/atrium-migrate, newTag: "staging" }
+configMapGenerator:
+  - name: atrium-config
+    behavior: merge
+    literals:
+      - ADMIN_URL=https://admin.staging.example.com
+      - API_URL=https://api.staging.example.com
+      - RENDERER_URL=https://sites.staging.example.com
+      - PREVIEW_URL=https://sites.staging.example.com
+      - PLATFORM_SITES_DOMAIN=sites.staging.example.com
+      - CORS_ORIGINS=https://admin.staging.example.com
+      - COOKIE_DOMAIN=admin.staging.example.com
+      - MAIL_FROM=Atrium <no-reply@staging.example.com>
+      - SEED_ADMIN_EMAIL=admin@staging.example.com
+secretGenerator:
+  - name: atrium-secrets
+    behavior: replace
+    envs: [secrets.env]
+patches:
+  - path: ingress-patch.yaml
+  # One replica of everything in staging.
+  - target: { kind: Deployment }
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+  - target: { kind: HorizontalPodAutoscaler }
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 1
+      - op: replace
+        path: /spec/maxReplicas
+        value: 3
+  - target: { kind: PodDisruptionBudget }
+    patch: |-
+      - op: replace
+        path: /spec/minAvailable
+        value: 0
+

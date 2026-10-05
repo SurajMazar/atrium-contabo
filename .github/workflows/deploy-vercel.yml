@@ -1,0 +1,65 @@
+# Deploy the admin and the multi-tenant renderer to Vercel (prebuilt in CI).
+# The API and worker are NOT Vercel workloads — see deploy-containers.yml.
+#
+# Repository secrets: VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID_ADMIN, VERCEL_PROJECT_ID_RENDERER
+# Each Vercel project uses Root Directory apps/admin or apps/renderer with
+# "Include files outside the root directory" enabled (docs/deployment/vercel.md).
+name: Deploy · Vercel
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Vercel environment
+        type: choice
+        options: [preview, production]
+        default: production
+  push:
+    branches: [main]
+    paths:
+      - apps/admin/**
+      - apps/renderer/**
+      - packages/**
+      - pnpm-lock.yaml
+
+concurrency:
+  group: deploy-vercel-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: ${{ matrix.app }} → Vercel
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ${{ inputs.environment || 'production' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { app: admin, project: VERCEL_PROJECT_ID_ADMIN }
+          - { app: renderer, project: VERCEL_PROJECT_ID_RENDERER }
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets[matrix.project] }}
+      VERCEL_ENV: ${{ inputs.environment || 'production' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+      - run: npm install --global vercel@latest
+      - name: Pull project settings + env
+        run: vercel pull --yes --environment="$VERCEL_ENV" --token="${{ secrets.VERCEL_TOKEN }}"
+      - name: Build
+        run: vercel build ${{ (inputs.environment || 'production') == 'production' && '--prod' || '' }} --token="${{ secrets.VERCEL_TOKEN }}"
+      - name: Deploy prebuilt output
+        id: deploy
+        run: |
+          url=$(vercel deploy --prebuilt ${{ (inputs.environment || 'production') == 'production' && '--prod' || '' }} --token="${{ secrets.VERCEL_TOKEN }}")
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "### ${{ matrix.app }}: $url" >> "$GITHUB_STEP_SUMMARY"
