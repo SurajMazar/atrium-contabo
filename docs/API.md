@@ -4,7 +4,7 @@ Base URL: `${API_URL}/v1`. The admin app proxies `/api/*` → `${API_URL}/*` so 
 
 ## Conventions
 
-- **Auth**: `Authorization: Bearer <accessToken>` (15 min JWT). Refresh token lives in the httpOnly cookie `atrium_rt` (path `/v1/auth`, SameSite=Lax) and is rotated on every refresh.
+- **Auth**: `Authorization: Bearer <accessToken>` (15 min JWT). Refresh token lives in the httpOnly cookie `atrium_rt` (path `/`, SameSite=Lax, Secure in production) and is rotated on every refresh; reusing a rotated token revokes the user's sessions. EventSource/SSE endpoints also accept `?access_token=`.
 - **Tenancy**: ids in paths are never trusted — every request resolves the owning organization from the database and checks membership + permission.
 - **Errors**: `{ "error": { "code": "NOT_FOUND" | "FORBIDDEN" | "VALIDATION" | "CONFLICT" | "RATE_LIMITED" | "UNAUTHORIZED" | "INTERNAL", "message": string, "details"?: any }, "requestId": string }`
 - **Lists**: `{ "items": T[], "nextCursor": string | null, "total"?: number }`; query `?cursor=&limit=` (default 50, max 200).
@@ -118,7 +118,7 @@ Base URL: `${API_URL}/v1`. The admin app proxies `/api/*` → `${API_URL}/*` so 
 | GET/POST | `/websites/:id/collections` | POST `{ slug, name, singularName?, fields: CollectionField[], titleField?, routePrefix? }` |
 | GET/PATCH/DELETE | `/collections/:cid` | PATCH replaces `fields` when present |
 | GET/POST | `/collections/:cid/items` | `?search&status&cursor`; POST `{ slug?, status?, data }` (validated against fields) |
-| PATCH/DELETE | `/collection-items/:itemId` | |
+| GET/PATCH/DELETE | `/collection-items/:itemId` | |
 | POST | `/collections/:cid/items/reorder` | `{ ids: string[] }` |
 
 ## Media
@@ -233,7 +233,8 @@ Deliveries carry `X-Atrium-Event`, `X-Atrium-Delivery`, `X-Atrium-Timestamp` and
 | GET | `/public/preview?token=&password=` | draft `SiteSnapshot` (renderer-only header) |
 | POST | `/public/forms/:formId/submit` | JSON or multipart `{ values, captchaToken?, _hp?, pageUrl?, locale? }` → `{ ok, message, redirectUrl? }` or `422 { details: FieldError[] }`. Rate limited per IP+form. |
 | POST | `/public/analytics/collect` | `{ websiteId, type: 'pageview'\|'event'\|'conversion', path, referrer?, name?, props? }` → `204` |
-| GET | `/storage/*` | files for the `local` storage driver |
+| GET | `/public/domains/check?domain=` | `200` if the host belongs to a site (edge on-demand TLS `ask` hook), else `404` |
+| GET | `/storage/*` | public files for the `local` storage driver (`private/*` keys are never served) |
 
 ## Super admin — `/admin` (requires `isSuperAdmin`)
 

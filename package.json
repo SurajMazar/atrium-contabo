@@ -17,7 +17,7 @@
     "db:generate": "pnpm --filter @atrium/db db:generate",
     "db:migrate": "pnpm --filter @atrium/db db:migrate",
     "db:deploy": "pnpm --filter @atrium/db db:deploy",
-    "db:seed": "pnpm --filter @atrium/db db:seed",
+    "db:seed": "pnpm --filter @atrium/api seed",
     "db:studio": "pnpm --filter @atrium/db db:studio",
     "infra:up": "podman compose -f infra/compose.yaml up -d",
     "infra:down": "podman compose -f infra/compose.yaml down",

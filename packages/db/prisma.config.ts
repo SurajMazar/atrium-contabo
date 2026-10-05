@@ -8,7 +8,7 @@ config({ quiet: true });
 
 export default defineConfig({
   schema: 'prisma/schema.prisma',
-  migrations: { path: 'prisma/migrations', seed: 'tsx prisma/seed.ts' },
+  migrations: { path: 'prisma/migrations', seed: 'pnpm --filter @atrium/api seed' },
   // `prisma generate` does not need a live database; migrate/studio do.
   datasource: { url: process.env.DATABASE_URL ?? 'postgresql://localhost:5432/atrium' },
 });

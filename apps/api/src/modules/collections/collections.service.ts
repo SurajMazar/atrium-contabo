@@ -130,6 +130,10 @@ export class CollectionsService {
     return this.itemDto(item);
   }
 
+  async getItem(itemId: string) {
+    return this.itemDto(await this.db.collectionItem.findUniqueOrThrow({ where: { id: itemId } }));
+  }
+
   async removeItem(itemId: string) {
     await this.db.collectionItem.delete({ where: { id: itemId } });
   }

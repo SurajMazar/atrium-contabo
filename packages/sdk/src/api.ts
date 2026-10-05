@@ -124,6 +124,7 @@ export function createAtriumClient(opts: AtriumClientOptions) {
       remove: (cid: string) => http.delete(`/collections/${cid}`),
       items: (cid: string, query: { search?: string; status?: string; cursor?: string; limit?: number } = {}) => http.get<T.List<T.CollectionItemDto>>(`/collections/${cid}/items`, q(query)),
       createItem: (cid: string, body: { slug?: string; status?: string; data: Record<string, unknown> }) => http.post<T.CollectionItemDto>(`/collections/${cid}/items`, body),
+      getItem: (itemId: string) => http.get<T.CollectionItemDto>(`/collection-items/${itemId}`),
       updateItem: (itemId: string, body: { slug?: string; status?: string; data?: Record<string, unknown> }) => http.patch<T.CollectionItemDto>(`/collection-items/${itemId}`, body),
       removeItem: (itemId: string) => http.delete(`/collection-items/${itemId}`),
       reorder: (cid: string, ids: string[]) => http.post<void>(`/collections/${cid}/items/reorder`, { ids }),
@@ -220,6 +221,8 @@ export function createAtriumClient(opts: AtriumClientOptions) {
     admin: {
       overview: () => http.get<Record<string, unknown>>('/admin/overview'),
       organizations: (query: { search?: string; cursor?: string } = {}) => http.get<T.List<Record<string, unknown>>>('/admin/organizations', q(query)),
+      organization: (id: string) => http.get<Record<string, unknown>>(`/admin/organizations/${id}`),
+      user: (id: string) => http.get<Record<string, unknown>>(`/admin/users/${id}`),
       updateOrganization: (id: string, body: { planKey?: string; suspended?: boolean; featureFlags?: Record<string, boolean> }) => http.patch<Record<string, unknown>>(`/admin/organizations/${id}`, body),
       users: (query: { search?: string; cursor?: string } = {}) => http.get<T.List<Record<string, unknown>>>('/admin/users', q(query)),
       updateUser: (id: string, body: { disabled?: boolean; isSuperAdmin?: boolean }) => http.patch<Record<string, unknown>>(`/admin/users/${id}`, body),
@@ -236,6 +239,7 @@ export function createAtriumClient(opts: AtriumClientOptions) {
       aiUsage: () => http.get<Array<Record<string, unknown>>>('/admin/ai-usage'),
     },
     health: () => http.get<{ status: string }>('/health'),
+    healthReady: () => http.get<{ status: string; checks?: Record<string, unknown> }>('/health/ready'),
   };
 }
 

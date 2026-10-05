@@ -36,6 +36,9 @@ export class CollectionsController {
   @Access('collection.content', 'collection', 'cid') @HttpCode(204) @Post('collections/:cid/items/reorder')
   reorder(@Param('cid') cid: string, @Body(new ZodBody(z.object({ ids: z.array(z.string()).max(5000) }))) b: { ids: string[] }) { return this.svc.reorder(cid, b.ids); }
 
+  @Access('page.read', 'collectionItem', 'itemId') @Get('collection-items/:itemId')
+  getItem(@Param('itemId') itemId: string) { return this.svc.getItem(itemId); }
+
   @Access('collection.content', 'collectionItem', 'itemId') @Patch('collection-items/:itemId')
   updateItem(@Param('itemId') itemId: string, @Body(new ZodBody(Item.partial())) b: Partial<z.infer<typeof Item>>) { return this.svc.updateItem(itemId, b); }
 

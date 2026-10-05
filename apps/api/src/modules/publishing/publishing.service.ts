@@ -1,9 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { diffWebsites, validateWebsite, type BuildReport } from '@atrium/builder-core';
 import { SiteSnapshotSchema, type SiteSnapshot, type WebsiteDefinition } from '@atrium/schema';
-import { toPublishedDefinition } from '@atrium/site-store';
+import { freezeVersion, toPublishedDefinition } from '@atrium/site-store';
 import * as argon2 from 'argon2';
-import { createHash } from 'node:crypto';
 import { env } from '../../config/env';
 import { AuditService } from '../../common/audit.service';
 import type { AuthUser } from '../../common/decorators';
@@ -97,26 +96,12 @@ export class PublishingService {
     if (!report.ok) throw new ApiError(422, 'VALIDATION', 'Fix the blocking issues before publishing', report);
     const site = await this.db.website.findUniqueOrThrow({ where: { id: websiteId } });
     const { definition } = await this.drafts.load(websiteId);
-    const published = toPublishedDefinition(definition);
-    const runtime = await this.runtimeFor(websiteId, site.organizationId, published);
-    const checksum = createHash('sha256').update(JSON.stringify(published)).digest('hex');
-
-    const version = await this.db.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${websiteId}))`;
-      const last = await tx.websiteVersion.findFirst({ where: { websiteId }, orderBy: { number: 'desc' }, select: { number: true } });
-      const number = (last?.number ?? 0) + 1;
-      const v = await tx.websiteVersion.create({ data: { websiteId, number, snapshot: {}, checksum, message: body.message, source: 'PUBLISH', createdById: user?.id ?? null } });
-      const snapshot: SiteSnapshot = SiteSnapshotSchema.parse({
-        websiteId, versionId: v.id, version: number, publishedAt: v.createdAt.toISOString(),
-        apiBaseUrl: `${env().API_URL.replace(/\/$/, '')}/v1`, primaryDomain: await this.primaryDomain(websiteId), definition: published, runtime,
-      });
-      await tx.websiteVersion.update({ where: { id: v.id }, data: { snapshot: JSON.parse(JSON.stringify(snapshot)) } });
-      await tx.website.update({ where: { id: websiteId }, data: { publishedVersionId: v.id, status: 'PUBLISHED', updatedById: user?.id } });
-      const now = new Date();
-      const publishedIds = published.pages.map((p) => p.id);
-      await tx.page.updateMany({ where: { websiteId, id: { in: publishedIds }, status: { in: ['DRAFT', 'PUBLISHED', 'SCHEDULED'] } }, data: { status: 'PUBLISHED', publishedAt: now } });
-      return v;
-    });
+    const runtime = await this.runtimeFor(websiteId, site.organizationId, toPublishedDefinition(definition));
+    const primaryDomain = await this.primaryDomain(websiteId);
+    const { version, published } = await this.db.$transaction(
+      (tx) => freezeVersion(tx, websiteId, { userId: user?.id ?? null, message: body.message, apiBaseUrl: `${env().API_URL.replace(/\/$/, '')}/v1`, primaryDomain, runtime }),
+      { timeout: 30_000 },
+    );
 
     await this.revalidate(websiteId);
     if (site.deploymentMode === 'INDEPENDENT' && site.deploymentIntegrationId) {
