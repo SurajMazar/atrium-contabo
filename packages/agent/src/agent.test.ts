@@ -120,3 +120,23 @@ describe('proposeEdit', () => {
     expect(ov.pages).toEqual([]);
   });
 });
+
+describe('demo provider', () => {
+  it('generates a complete, valid site offline through the real pipeline', async () => {
+    const { createDemoProvider } = await import('./demo-provider');
+    const res = await generateSite({ llm: new Llm(createDemoProvider()), registry, brief: { businessName: 'Aranya Lake Retreat', businessType: 'boutique resort', description: 'Twelve rooms on Phewa Lake, Pokhara', contact: { email: 'stay@aranya.test' } } });
+    expect(res.definition.pages.length).toBeGreaterThanOrEqual(5);
+    expect(res.issues.filter((i) => i.severity === 'error')).toEqual([]);
+    expect(res.report.errors).toBe(0);
+    expect(res.definition.settings.name).toBe('Aranya Lake Retreat');
+  }, 60_000);
+
+  it('proposes deterministic theme edits', async () => {
+    const { createDemoProvider } = await import('./demo-provider');
+    const base = (await generateSite({ llm: new Llm(createDemoProvider()), registry, brief: { businessName: 'Northwind', businessType: 'consulting firm' } })).definition;
+    const p = await proposeEdit({ llm: new Llm(createDemoProvider()), registry, definition: base, prompt: 'Change this site to a darker color palette and squared buttons', pageId: base.pages[0]!.id });
+    expect(p.after.theme.colorScheme).toBe('dark');
+    expect(p.after.theme.buttons.radius).toBe('0');
+    expect(p.changes.some((c) => c.scope === 'theme')).toBe(true);
+  }, 60_000);
+});

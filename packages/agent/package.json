@@ -5,8 +5,15 @@
   "description": "Provider-neutral AI site agent: planner, page writer, editing agent with builder tools, rewrite + SEO helpers. AI operates the builder through the same SiteOperations humans use.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
-  "files": ["dist"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput",
@@ -22,8 +29,14 @@
     "@atrium/providers": "workspace:*",
     "@atrium/schema": "workspace:*",
     "@atrium/site-store": "workspace:*",
+    "@atrium/templates": "workspace:*",
     "immer": "^10.1.3",
     "zod": "^4.6.5"
   },
-  "devDependencies": { "@atrium/typescript-config": "workspace:*", "@types/node": "^24.0.0", "typescript": "5.9.3", "vitest": "^5.0.3" }
+  "devDependencies": {
+    "@atrium/typescript-config": "workspace:*",
+    "@types/node": "^24.0.0",
+    "typescript": "5.9.3",
+    "vitest": "^5.0.3"
+  }
 }

@@ -1,0 +1,52 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Terminal</title>
+<style>
+  :root{--bg:#0f1115;--win:#16181d;--fg:#e6e4dd;--dim:#8b8a84;--ok:#7fc79a;--warn:#e3b35c;--acc:#8aa4ff}
+  html,body{margin:0;height:100%;background:radial-gradient(1200px 700px at 30% 20%,#1c2030,#0b0c10);font-family:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,monospace}
+  .win{position:absolute;left:120px;top:90px;right:120px;bottom:150px;background:var(--win);border-radius:12px;box-shadow:0 30px 80px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.06);overflow:hidden;display:flex;flex-direction:column}
+  .bar{height:40px;display:flex;align-items:center;gap:8px;padding:0 16px;background:#1d2026;border-bottom:1px solid rgba(255,255,255,.05)}
+  .dot{width:12px;height:12px;border-radius:50%}.r{background:#ff5f57}.y{background:#febc2e}.g{background:#28c840}
+  .title{flex:1;text-align:center;color:var(--dim);font-size:14px;margin-right:52px}
+  #out{flex:1;padding:22px 26px;color:var(--fg);font-size:19px;line-height:1.5;white-space:pre-wrap;overflow:hidden}
+  .p{color:var(--acc)} .c{color:#fff} .d{color:var(--dim)} .ok{color:var(--ok)} .w{color:var(--warn)}
+  .cursor{display:inline-block;width:10px;height:22px;background:#e6e4dd;vertical-align:-4px;animation:b 1s steps(1) infinite}
+  @keyframes b{50%{opacity:0}}
+</style></head>
+<body><div class="win"><div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title" id="title">~/website-builder — zsh</span></div><div id="out"></div></div>
+<script>
+const out = document.getElementById('out');
+const esc = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
+const colorize = (line) => {
+  let s = esc(line);
+  if (/^\s*(✓|✔|ok\b|Done|Successfully|PASS)/i.test(line) || /\b(passed|healthy|ready)\b/i.test(line)) return `<span class="ok">${s}</span>`;
+  if (/^\s*(⚠|warn|!)/i.test(line)) return `<span class="w">${s}</span>`;
+  return s;
+};
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+function trim() { while (out.scrollHeight > out.clientHeight && out.firstChild) out.removeChild(out.firstChild); }
+window.__term = {
+  title(t) { document.getElementById('title').textContent = t; },
+  clear() { out.innerHTML = ''; },
+  async run({ cmd, output = '', prompt = '~/website-builder', typeMs = 32, lineMs = 28, maxLines = 400 }) {
+    const line = document.createElement('div');
+    line.innerHTML = `<span class="p">${esc(prompt)} ❯ </span><span class="c"></span><span class="cursor"></span>`;
+    out.appendChild(line); trim();
+    const c = line.querySelector('.c');
+    for (const ch of cmd) { c.textContent += ch; await sleep(typeMs + Math.random() * 18); }
+    await sleep(260);
+    line.querySelector('.cursor').remove();
+    const lines = output.replace(/\r/g, '').split('\n').slice(0, maxLines);
+    for (const l of lines) {
+      const d = document.createElement('div');
+      d.innerHTML = colorize(l) || '&nbsp;';
+      out.appendChild(d); trim();
+      await sleep(lineMs);
+    }
+    const idle = document.createElement('div');
+    idle.innerHTML = `<span class="p">${esc(prompt)} ❯ </span><span class="cursor"></span>`;
+    idle.className = 'idle';
+    document.querySelectorAll('.idle').forEach((n) => n.remove());
+    out.appendChild(idle); trim();
+  },
+};
+</script></body></html>

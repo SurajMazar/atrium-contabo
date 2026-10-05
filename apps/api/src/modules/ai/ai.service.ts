@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Llm, proposeEdit, recordUsage, rewriteText, runSiteGeneration, seoRecommendations, type RewriteMode, type SiteBrief } from '@atrium/agent';
+import { createDemoProvider, isDemoMode, Llm, proposeEdit, recordUsage, rewriteText, runSiteGeneration, seoRecommendations, type RewriteMode, type SiteBrief } from '@atrium/agent';
 import type { SiteOperation } from '@atrium/builder-core';
 import { getDriver, listDrivers } from '@atrium/providers';
 import type { WebsiteDefinition } from '@atrium/schema';
@@ -43,7 +43,7 @@ export class AiService {
       }
       const envKey = { anthropic: 'ANTHROPIC_API_KEY', openai: 'OPENAI_API_KEY', gemini: 'GEMINI_API_KEY' }[d.id];
       return { provider: d.id, name: d.name, configured: !!(envKey && process.env[envKey]), models };
-    });
+    }).concat(isDemoMode() ? [{ provider: 'demo', name: 'Atrium demo (offline)', configured: true, models: [{ id: 'atrium-demo', label: 'Atrium demo (offline)', default: true }] }] : []);
   }
 
   private async assertQuota(orgId: string) {
@@ -54,6 +54,7 @@ export class AiService {
   }
 
   private async llm(orgId: string, websiteId: string | undefined, opts: { provider?: string; model?: string; integrationId?: string } = {}) {
+    if (isDemoMode()) return new Llm(createDemoProvider());
     let provider;
     try {
       provider = await this.resolver.resolver.ai({ organizationId: orgId, websiteId, providerId: opts.integrationId ?? null, driver: opts.provider } as never);
@@ -78,7 +79,7 @@ export class AiService {
     const gen = await this.db.aiGeneration.create({
       data: {
         organizationId: orgId, websiteId: website.id, userId: user.id, kind: 'SITE', prompt: body.prompt ?? `${body.brief.businessType}: ${body.brief.description}`.slice(0, 4000),
-        provider: body.provider ?? env().AI_DEFAULT_PROVIDER, model: body.model ?? 'default', status: 'PENDING',
+        provider: isDemoMode() ? 'demo' : (body.provider ?? env().AI_DEFAULT_PROVIDER), model: isDemoMode() ? 'atrium-demo' : (body.model ?? 'default'), status: 'PENDING',
         result: { brief: body.brief, prompt: body.prompt, integrationId: body.integrationId } as object,
       },
     });

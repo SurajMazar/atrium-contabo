@@ -7,3 +7,4 @@ export * from './generate-site';
 export * from './edit';
 export * from './assist';
 export * from './job';
+export * from './demo-provider';

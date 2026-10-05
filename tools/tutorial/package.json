@@ -1,0 +1,16 @@
+{
+  "name": "@atrium/tutorial",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Generates the Atrium video tutorial: Playwright screen recording + Kokoro TTS narration + ffmpeg assembly",
+  "type": "module",
+  "scripts": {
+    "tts:test": "tsx src/tts-test.ts",
+    "build": "tsx src/main.ts"
+  },
+  "dependencies": {
+    "kokoro-js": "^1.2.1",
+    "playwright": "1.63.0"
+  },
+  "devDependencies": { "@types/node": "^24.0.0", "tsx": "^4.20.0", "typescript": "5.9.3" }
+}

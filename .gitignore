@@ -20,3 +20,7 @@ test-results
 /.atrium/
 Procfile.local
 .idea/
+
+# tutorial render output
+/tools/tutorial/out/
+/tools/tutorial/.cache/

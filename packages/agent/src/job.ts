@@ -3,6 +3,7 @@ import type { PrismaClient } from '@atrium/db';
 import type { AIProvider } from '@atrium/providers';
 import { loadDraft, persistDraft } from '@atrium/site-store';
 import { GENERATION_STEPS, generateSite, type GenerationStep } from './generate-site';
+import { createDemoProvider, isDemoMode } from './demo-provider';
 import { Llm } from './llm';
 import type { SiteBrief } from './plan';
 
@@ -52,7 +53,7 @@ export async function runSiteGeneration(opts: { prisma: PrismaClient; resolver: 
 
   let llm: Llm | null = null;
   try {
-    const provider = await opts.resolver.ai({ organizationId: gen.organizationId, websiteId: gen.websiteId, providerId: meta.integrationId ?? null });
+    const provider = isDemoMode() ? createDemoProvider() : await opts.resolver.ai({ organizationId: gen.organizationId, websiteId: gen.websiteId, providerId: meta.integrationId ?? null });
     llm = new Llm(provider, gen.model && gen.model !== 'default' ? gen.model : undefined, opts.signal);
     const result = await generateSite({
       llm,
