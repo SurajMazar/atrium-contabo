@@ -241,6 +241,14 @@ Deliveries carry `X-Atrium-Event`, `X-Atrium-Delivery`, `X-Atrium-Timestamp` and
 
 `GET /admin/overview`, `GET/PATCH /admin/organizations[/:id]`, `GET/PATCH /admin/users[/:id]`, `GET /admin/websites`, `GET /admin/jobs`, `POST /admin/jobs/:queue/:jobId/retry`, `GET/PUT /admin/feature-flags`, `GET/PUT /admin/plans`, `GET /admin/audit-logs`, `GET/PATCH /admin/abuse-reports[/:id]`, `GET /admin/ai-usage`.
 
+## Branding (white-label admin)
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/branding?organizationId=` | public · `{ platform, organization, resolved }` (`AdminBranding` from `@atrium/schema`) |
+| PUT | `/admin/branding` | super admin · platform defaults |
+| GET/PUT | `/organizations/:orgId/branding` | `organization.update` · organization overrides |
+
 ## Health
 
 `GET /health` (liveness) · `GET /health/ready` (db + redis).

@@ -17,3 +17,4 @@ export * from './templating';
 export * from './permissions';
 export * from './features';
 export * from './events';
+export * from './branding';

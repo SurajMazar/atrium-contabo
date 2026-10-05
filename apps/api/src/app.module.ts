@@ -13,6 +13,7 @@ import { AdminModule } from './modules/admin/admin.module';
 import { AiModule } from './modules/ai/ai.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { BrandingModule } from './modules/branding/branding.module';
 import { CollectionsModule } from './modules/collections/collections.module';
 import { DeploymentsModule } from './modules/deployments/deployments.module';
 import { DomainsModule } from './modules/domains/domains.module';
@@ -73,6 +74,7 @@ import { WebsitesModule } from './modules/websites/websites.module';
     RegistryModule,
     AiModule,
     AdminModule,
+    BrandingModule,
     SchedulerModule,
   ],
   providers: [

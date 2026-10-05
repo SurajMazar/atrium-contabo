@@ -116,6 +116,8 @@ model Organization {
   slug         String    @unique
   planKey      String    @default("starter") @map("plan_key")
   featureFlags Json      @default("{}") @map("feature_flags")
+  /// White-label overrides for the admin (AdminBranding); merged over platform defaults.
+  branding     Json?
   limits       Json?
   billingRef   String?   @map("billing_ref")
   suspendedAt  DateTime? @map("suspended_at")
@@ -1075,6 +1077,15 @@ model AuditLog {
 }
 
 // ───────────────────────────── Platform ─────────────────────────────
+
+/// Platform-wide key/value settings managed by super admins (e.g. `branding`).
+model PlatformSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("platform_settings")
+}
 
 model FeatureFlag {
   key         String   @id

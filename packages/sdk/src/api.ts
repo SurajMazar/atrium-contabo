@@ -1,5 +1,5 @@
 import type { BuildReport, ChangeSummary, SeoReport, SiteOperation } from '@atrium/builder-core';
-import type { CollectionField, FormDefinition, Node, PageDocument, Redirect, ThemeTokens, WebsiteDefinition } from '@atrium/schema';
+import type { AdminBranding, CollectionField, FormDefinition, Node, PageDocument, Redirect, ThemeTokens, WebsiteDefinition } from '@atrium/schema';
 import { HttpClient, type AtriumClientOptions, type Query } from './client';
 import type * as T from './types';
 
@@ -238,6 +238,13 @@ export function createAtriumClient(opts: AtriumClientOptions) {
       abuseReports: () => http.get<Array<Record<string, unknown>>>('/admin/abuse-reports'),
       updateAbuseReport: (id: string, body: { status: string }) => http.patch<void>(`/admin/abuse-reports/${id}`, body),
       aiUsage: () => http.get<Array<Record<string, unknown>>>('/admin/ai-usage'),
+    },
+    branding: {
+      /** Public: platform defaults merged with an organization's overrides. */
+      get: (organizationId?: string) => http.get<{ platform: AdminBranding; organization: AdminBranding | null; resolved: AdminBranding }>('/branding', q({ organizationId })),
+      organization: (orgId: string) => http.get<{ organization: AdminBranding; resolved: AdminBranding }>(`/organizations/${orgId}/branding`),
+      saveOrganization: (orgId: string, branding: AdminBranding) => http.put<{ organization: AdminBranding; resolved: AdminBranding }>(`/organizations/${orgId}/branding`, branding),
+      savePlatform: (branding: AdminBranding) => http.put<{ platform: AdminBranding; resolved: AdminBranding }>('/admin/branding', branding),
     },
     health: () => http.get<{ status: string }>('/health'),
     healthReady: () => http.get<{ status: string; checks?: Record<string, unknown> }>('/health/ready'),
