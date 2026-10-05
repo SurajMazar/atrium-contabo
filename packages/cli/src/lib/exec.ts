@@ -32,7 +32,8 @@ export function formatCommand(cmd: string, args: string[]): string {
 
 /** Find an executable on PATH (no shell). */
 export function which(cmd: string): string | null {
-  const exts = process.platform === 'win32' ? (process.env.PATHEXT ?? '.EXE;.CMD;.BAT').split(';') : [''];
+  const exts =
+    process.platform === 'win32' ? (process.env.PATHEXT ?? '.EXE;.CMD;.BAT').split(';') : [''];
   for (const dir of (process.env.PATH ?? '').split(delimiter)) {
     if (!dir) continue;
     for (const ext of exts) {
@@ -54,14 +55,22 @@ export function which(cmd: string): string | null {
  */
 export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise<RunResult> {
   const stdio = opts.stdio ?? 'inherit';
-  if (isVerbose()) process.stderr.write(color.dim(`$ ${formatCommand(cmd, args)}${opts.cwd ? `  (in ${opts.cwd})` : ''}\n`));
+  if (isVerbose())
+    process.stderr.write(
+      color.dim(`$ ${formatCommand(cmd, args)}${opts.cwd ? `  (in ${opts.cwd})` : ''}\n`),
+    );
   return new Promise((resolve, reject) => {
     let child: ChildProcess;
     try {
       child = spawn(cmd, args, {
         cwd: opts.cwd,
         env: opts.env ?? process.env,
-        stdio: stdio === 'inherit' ? (opts.input !== undefined ? ['pipe', 'inherit', 'inherit'] : 'inherit') : ['pipe', 'pipe', 'pipe'],
+        stdio:
+          stdio === 'inherit'
+            ? opts.input !== undefined
+              ? ['pipe', 'inherit', 'inherit']
+              : 'inherit'
+            : ['pipe', 'pipe', 'pipe'],
       });
     } catch (err) {
       reject(err);
@@ -75,10 +84,18 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
       if (opts.input !== undefined) child.stdin.end(opts.input);
       else child.stdin.end();
     }
-    const timer = opts.timeoutMs ? setTimeout(() => child.kill('SIGTERM'), opts.timeoutMs) : undefined;
+    const timer = opts.timeoutMs
+      ? setTimeout(() => child.kill('SIGTERM'), opts.timeoutMs)
+      : undefined;
     child.on('error', (err: NodeJS.ErrnoException) => {
       if (timer) clearTimeout(timer);
-      if (err.code === 'ENOENT') reject(new CliError(`Command not found: ${cmd}`, `Install ${cmd} or make sure it is on your PATH.`));
+      if (err.code === 'ENOENT')
+        reject(
+          new CliError(
+            `Command not found: ${cmd}`,
+            `Install ${cmd} or make sure it is on your PATH.`,
+          ),
+        );
       else reject(err);
     });
     child.on('close', (code, signal) => {
@@ -86,20 +103,34 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
       const res = { code: code ?? (signal ? 128 : 1), stdout, stderr };
       if (res.code !== 0 && !opts.allowFail) {
         const tail = (stderr || stdout).trim().split('\n').slice(-8).join('\n');
-        reject(new CliError(`\`${formatCommand(cmd, args)}\` exited with code ${res.code}`, stdio === 'pipe' && tail ? tail : undefined, res.code));
+        reject(
+          new CliError(
+            `\`${formatCommand(cmd, args)}\` exited with code ${res.code}`,
+            stdio === 'pipe' && tail ? tail : undefined,
+            res.code,
+          ),
+        );
       } else resolve(res);
     });
   });
 }
 
 /** Run and return trimmed stdout (throws on failure). */
-export async function capture(cmd: string, args: string[], opts: Omit<RunOptions, 'stdio'> = {}): Promise<string> {
+export async function capture(
+  cmd: string,
+  args: string[],
+  opts: Omit<RunOptions, 'stdio'> = {},
+): Promise<string> {
   const res = await run(cmd, args, { ...opts, stdio: 'pipe' });
   return res.stdout.trim();
 }
 
 /** Like capture() but returns null instead of throwing (missing binary, non-zero exit). */
-export async function tryCapture(cmd: string, args: string[], opts: Omit<RunOptions, 'stdio' | 'allowFail'> = {}): Promise<string | null> {
+export async function tryCapture(
+  cmd: string,
+  args: string[],
+  opts: Omit<RunOptions, 'stdio' | 'allowFail'> = {},
+): Promise<string | null> {
   try {
     const res = await run(cmd, args, { ...opts, stdio: 'pipe', allowFail: true });
     return res.code === 0 ? res.stdout.trim() : null;
@@ -122,7 +153,13 @@ export function waitFor(child: ChildProcess, label: string): Promise<void> {
     child.on('error', reject);
     child.on('close', (code) => {
       if (code === 0) resolve();
-      else reject(new CliError(`${label} failed (exit ${code})`, stderr.trim().split('\n').slice(-6).join('\n') || undefined));
+      else
+        reject(
+          new CliError(
+            `${label} failed (exit ${code})`,
+            stderr.trim().split('\n').slice(-6).join('\n') || undefined,
+          ),
+        );
     });
   });
 }

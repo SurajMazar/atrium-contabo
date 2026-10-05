@@ -6,7 +6,7 @@ kind: CronJob
 metadata:
   name: atrium-backup
 spec:
-  schedule: "15 3 * * *"
+  schedule: '15 3 * * *'
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
@@ -29,7 +29,7 @@ spec:
           initContainers:
             - name: dump
               image: docker.io/library/postgres:17-alpine
-              command: ["/bin/sh", "-c"]
+              command: ['/bin/sh', '-c']
               args:
                 - set -eu; pg_dump "$DATABASE_URL" --clean --if-exists --no-owner --no-privileges --quote-all-identifiers | gzip -6 > /backup/database.sql.gz; ls -l /backup
               env:
@@ -46,7 +46,7 @@ spec:
           containers:
             - name: upload
               image: docker.io/amazon/aws-cli:2.27.0
-              command: ["/bin/sh", "-c"]
+              command: ['/bin/sh', '-c']
               args:
                 - set -eu; STAMP=$(date -u +%Y%m%d-%H%M%S); aws ${BACKUP_S3_ENDPOINT:+--endpoint-url "$BACKUP_S3_ENDPOINT"} s3 cp /backup/database.sql.gz "s3://${BACKUP_BUCKET}/atrium/${STAMP}/database.sql.gz" --only-show-errors; echo "uploaded s3://${BACKUP_BUCKET}/atrium/${STAMP}"
               env:
@@ -54,7 +54,11 @@ spec:
                 - name: BACKUP_BUCKET
                   valueFrom: { configMapKeyRef: { name: atrium-config, key: BACKUP_BUCKET } }
                 - name: BACKUP_S3_ENDPOINT
-                  valueFrom: { configMapKeyRef: { name: atrium-config, key: BACKUP_S3_ENDPOINT, optional: true } }
+                  valueFrom:
+                    {
+                      configMapKeyRef:
+                        { name: atrium-config, key: BACKUP_S3_ENDPOINT, optional: true },
+                    }
                 - name: AWS_DEFAULT_REGION
                   valueFrom: { configMapKeyRef: { name: atrium-config, key: S3_REGION } }
                 - name: AWS_ACCESS_KEY_ID

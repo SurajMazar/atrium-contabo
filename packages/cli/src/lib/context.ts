@@ -48,7 +48,12 @@ export function context(cmd: Command): Context {
     config,
     api() {
       if (!client) {
-        const url = globals.api ?? process.env.ATRIUM_API_URL ?? config.apiUrl ?? vars.API_URL ?? 'http://localhost:4000';
+        const url =
+          globals.api ??
+          process.env.ATRIUM_API_URL ??
+          config.apiUrl ??
+          vars.API_URL ??
+          'http://localhost:4000';
         client = new ApiClient(url, globals.token ?? process.env.ATRIUM_TOKEN);
       }
       return client;

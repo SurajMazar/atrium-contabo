@@ -58,11 +58,19 @@ export function setRootOverride(dir: string | undefined) {
 export function projectRoot(): string {
   const explicit = rootOverride ?? process.env.ATRIUM_ROOT;
   if (explicit) {
-    if (!isAtriumRoot(explicit)) throw new CliError(`${explicit} is not an Atrium checkout`, 'Expected pnpm-workspace.yaml and packages/cli.');
+    if (!isAtriumRoot(explicit))
+      throw new CliError(
+        `${explicit} is not an Atrium checkout`,
+        'Expected pnpm-workspace.yaml and packages/cli.',
+      );
     return resolve(explicit);
   }
   const found = findRoot() ?? findRoot(cliRoot);
-  if (!found) throw new CliError('Not inside an Atrium checkout', 'cd into the repository or pass --root <dir>. To create one run `atrium init <dir> --repo <git-url>`.');
+  if (!found)
+    throw new CliError(
+      'Not inside an Atrium checkout',
+      'cd into the repository or pass --root <dir>. To create one run `atrium init <dir> --repo <git-url>`.',
+    );
   return found;
 }
 
@@ -99,6 +107,10 @@ export function paths(root = projectRoot()): ProjectPaths {
   };
 }
 
-export function rootPackageJson(root: string): { version?: string; packageManager?: string; engines?: { node?: string } } {
+export function rootPackageJson(root: string): {
+  version?: string;
+  packageManager?: string;
+  engines?: { node?: string };
+} {
   return readJson(join(root, 'package.json')) ?? {};
 }

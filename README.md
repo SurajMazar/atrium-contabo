@@ -19,18 +19,18 @@ hosts.
 
 ## Features
 
-| Area | What you get |
-|---|---|
-| Builder | Drag-and-drop sections, inspector controls generated from the registry, responsive styles, theme tokens, GSAP animation presets, global sections, autosave with optimistic concurrency, page versions |
-| Publishing | Validation report, immutable site snapshots, ISR revalidation, preview links (expiring, optional password), rollback to any version |
-| AI | Generate a site from a brief, edit or generate pages and sections, rewrite text, suggest SEO; changes are shown as proposals, applied as one version, and can be reverted |
-| CMS | Collections with typed fields, items bound into list components, collection page templates |
-| Forms | Form builder, conditional rules and workflows (email, SMS, webhook), captcha + honeypot + spam scoring, submissions inbox, CSV/XLSX export |
-| Media | Library with folders, de-duplication, responsive variants and blur placeholders (sharp), signed URLs |
-| Domains | Platform subdomains, custom domains with DNS guidance and verification, automatic TLS |
-| Teams | Organizations, workspaces, custom roles built from permission keys, per-website access, invitations, MFA, audit log |
-| Operations | Webhooks with HMAC signatures, privacy-preserving analytics, super-admin console, BullMQ job monitoring |
-| Ops tooling | The `atrium` CLI (bench-style), Podman/Docker images, Kubernetes manifests, deployment guides for 12 targets |
+| Area        | What you get                                                                                                                                                                                          |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Builder     | Drag-and-drop sections, inspector controls generated from the registry, responsive styles, theme tokens, GSAP animation presets, global sections, autosave with optimistic concurrency, page versions |
+| Publishing  | Validation report, immutable site snapshots, ISR revalidation, preview links (expiring, optional password), rollback to any version                                                                   |
+| AI          | Generate a site from a brief, edit or generate pages and sections, rewrite text, suggest SEO; changes are shown as proposals, applied as one version, and can be reverted                             |
+| CMS         | Collections with typed fields, items bound into list components, collection page templates                                                                                                            |
+| Forms       | Form builder, conditional rules and workflows (email, SMS, webhook), captcha + honeypot + spam scoring, submissions inbox, CSV/XLSX export                                                            |
+| Media       | Library with folders, de-duplication, responsive variants and blur placeholders (sharp), signed URLs                                                                                                  |
+| Domains     | Platform subdomains, custom domains with DNS guidance and verification, automatic TLS                                                                                                                 |
+| Teams       | Organizations, workspaces, custom roles built from permission keys, per-website access, invitations, MFA, audit log                                                                                   |
+| Operations  | Webhooks with HMAC signatures, privacy-preserving analytics, super-admin console, BullMQ job monitoring                                                                                               |
+| Ops tooling | The `atrium` CLI (bench-style), Podman/Docker images, Kubernetes manifests, deployment guides for 12 targets                                                                                          |
 
 ## Architecture
 
@@ -82,15 +82,15 @@ pnpm dev
 
 ### URLs and ports
 
-| Service | URL | Notes |
-|---|---|---|
-| Admin + builder | http://localhost:3000 | sign in with the seeded super-admin |
-| API | http://localhost:4000/v1 | health: `/v1/health`, readiness: `/v1/health/ready`; reference: [docs/API.md](docs/API.md) |
-| Public sites | http://&lt;slug&gt;.sites.localhost:3001 | browsers resolve `*.localhost` to 127.0.0.1 |
-| Mailpit (captured email) | http://localhost:58025 | SMTP on 51025 |
-| PostgreSQL | localhost:55432 | user/password/db `atrium` |
-| Redis | localhost:56379 | |
-| S3 (SeaweedFS) | http://localhost:59000 | bucket `atrium-media`, keys `atrium` / `atrium-secret` |
+| Service                  | URL                                      | Notes                                                                                      |
+| ------------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Admin + builder          | http://localhost:3000                    | sign in with the seeded super-admin                                                        |
+| API                      | http://localhost:4000/v1                 | health: `/v1/health`, readiness: `/v1/health/ready`; reference: [docs/API.md](docs/API.md) |
+| Public sites             | http://&lt;slug&gt;.sites.localhost:3001 | browsers resolve `*.localhost` to 127.0.0.1                                                |
+| Mailpit (captured email) | http://localhost:58025                   | SMTP on 51025                                                                              |
+| PostgreSQL               | localhost:55432                          | user/password/db `atrium`                                                                  |
+| Redis                    | localhost:56379                          |                                                                                            |
+| S3 (SeaweedFS)           | http://localhost:59000                   | bucket `atrium-media`, keys `atrium` / `atrium-secret`                                     |
 
 Host ports use the 5xxxx range so they do not collide with other local stacks on 5432, 1025 or 8025.
 `atrium init` picks free ports automatically when defaults are taken.
@@ -105,20 +105,20 @@ Host ports use the 5xxxx range so they do not collide with other local stacks on
 The `atrium` CLI (`pnpm atrium …`) is modelled on Frappe's `bench`. The full reference, including a
 bench-to-atrium command map, is in [docs/CLI.md](docs/CLI.md).
 
-| Task | Command |
-|---|---|
-| Set up a dev environment | `atrium init` |
-| Run everything / a subset / in the background | `atrium start` · `atrium start --only api,worker` · `atrium start -d` |
-| Health of infra, apps, queues, migrations | `atrium status` · `atrium doctor` |
-| Logs | `atrium logs postgres -f` · `atrium logs api` |
-| Database | `atrium migrate` · `atrium migrate --dev --name add_x` · `atrium seed --demo` · `atrium db console` · `atrium console` |
-| Settings in `.env` (secrets masked) | `atrium config list` · `atrium config set KEY value` · `atrium config set KEY --generate` |
-| Sites | `atrium login` · `atrium new-site "Acme" --template <key>` · `atrium list-sites` · `atrium use acme` · `atrium publish` · `atrium export-site --format nextjs` |
-| Users and organizations | `atrium create-user --email … --name … --super-admin` · `atrium new-org Acme --owner me@acme.com` |
-| Backups | `atrium backup --with-files --keep 7` · `atrium restore latest --force` |
-| Production files | `atrium setup production --target podman\|docker\|systemd\|k8s\|cpanel\|aws\|azure\|gcp\|vercel\|fly\|railway\|render --domain example.com` |
-| Upgrade | `atrium update` (backup, pull, install, migrate, build) |
-| Extend | `atrium new-component pricing-table` · `atrium new-provider email brevo` · `atrium new-plugin hotel-kit` |
+| Task                                          | Command                                                                                                                                                        |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Set up a dev environment                      | `atrium init`                                                                                                                                                  |
+| Run everything / a subset / in the background | `atrium start` · `atrium start --only api,worker` · `atrium start -d`                                                                                          |
+| Health of infra, apps, queues, migrations     | `atrium status` · `atrium doctor`                                                                                                                              |
+| Logs                                          | `atrium logs postgres -f` · `atrium logs api`                                                                                                                  |
+| Database                                      | `atrium migrate` · `atrium migrate --dev --name add_x` · `atrium seed --demo` · `atrium db console` · `atrium console`                                         |
+| Settings in `.env` (secrets masked)           | `atrium config list` · `atrium config set KEY value` · `atrium config set KEY --generate`                                                                      |
+| Sites                                         | `atrium login` · `atrium new-site "Acme" --template <key>` · `atrium list-sites` · `atrium use acme` · `atrium publish` · `atrium export-site --format nextjs` |
+| Users and organizations                       | `atrium create-user --email … --name … --super-admin` · `atrium new-org Acme --owner me@acme.com`                                                              |
+| Backups                                       | `atrium backup --with-files --keep 7` · `atrium restore latest --force`                                                                                        |
+| Production files                              | `atrium setup production --target podman\|docker\|systemd\|k8s\|cpanel\|aws\|azure\|gcp\|vercel\|fly\|railway\|render --domain example.com`                    |
+| Upgrade                                       | `atrium update` (backup, pull, install, migrate, build)                                                                                                        |
+| Extend                                        | `atrium new-component pricing-table` · `atrium new-provider email brevo` · `atrium new-plugin hotel-kit`                                                       |
 
 ## Repository map
 

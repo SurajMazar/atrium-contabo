@@ -32,10 +32,12 @@ docker compose logs -f api
 
 
 ## 5. First login
-Seed plans/permissions/super-admin once (from a checkout that can reach the database, or the migrate image):
+Seed plans, permissions, templates and the super-admin once, from a checkout that can reach the
+database (runtime images ship no dev tooling). Postgres is not published on the host, so tunnel into it:
 ```bash
-docker compose run --rm migrate node_modules/.bin/tsx prisma/seed.ts   # when the seed only needs @atrium/db
-# or from a workstation through an SSH tunnel: DATABASE_URL=... pnpm atrium seed
+docker compose exec postgres sh -c 'echo ok'          # sanity check
+ssh -L 5433:<postgres container IP>:5432 you@server   # or temporarily add ports: ["127.0.0.1:5433:5432"]
+DATABASE_URL=postgresql://atrium:<POSTGRES_PASSWORD>@localhost:5433/atrium pnpm db:seed
 ```
 Then sign in at https://{{adminHost}} as SEED_ADMIN_EMAIL with SEED_ADMIN_PASSWORD from `.env`, and change it.
 

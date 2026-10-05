@@ -20,7 +20,10 @@ let cached: ContainerEngine | null | undefined;
 export const ENGINE_ENV = { PODMAN_COMPOSE_WARNING_LOGS: 'false' };
 
 async function composeWorks(cmd: string[]): Promise<boolean> {
-  const out = await tryCapture(cmd[0]!, [...cmd.slice(1), 'version'], { env: { ...process.env, ...ENGINE_ENV }, timeoutMs: 15_000 });
+  const out = await tryCapture(cmd[0]!, [...cmd.slice(1), 'version'], {
+    env: { ...process.env, ...ENGINE_ENV },
+    timeoutMs: 15_000,
+  });
   return out !== null;
 }
 
@@ -36,10 +39,17 @@ export async function detectEngine(): Promise<ContainerEngine | null> {
     const bin = which(engine);
     if (!bin) continue;
     const candidates: string[][] =
-      engine === 'podman' ? [[bin, 'compose'], ...(which('podman-compose') ? [[which('podman-compose')!]] : [])] : [[bin, 'compose'], ...(which('docker-compose') ? [[which('docker-compose')!]] : [])];
+      engine === 'podman'
+        ? [[bin, 'compose'], ...(which('podman-compose') ? [[which('podman-compose')!]] : [])]
+        : [[bin, 'compose'], ...(which('docker-compose') ? [[which('docker-compose')!]] : [])];
     for (const c of candidates) {
       if (await composeWorks(c)) {
-        cached = { engine, bin, compose: c, composeLabel: c.length > 1 ? `${engine} compose` : c[0]!.split('/').pop()! };
+        cached = {
+          engine,
+          bin,
+          compose: c,
+          composeLabel: c.length > 1 ? `${engine} compose` : c[0]!.split('/').pop()!,
+        };
         return cached;
       }
     }
@@ -53,9 +63,18 @@ export async function detectEngine(): Promise<ContainerEngine | null> {
 
 export async function requireEngine(needCompose = true): Promise<ContainerEngine> {
   const e = await detectEngine();
-  if (!e) throw new CliError('No container engine found', 'Install Podman (recommended: https://podman.io) or Docker. On macOS: `brew install podman podman-compose && podman machine init --memory 6144 && podman machine start`.');
+  if (!e)
+    throw new CliError(
+      'No container engine found',
+      'Install Podman (recommended: https://podman.io) or Docker. On macOS: `brew install podman podman-compose && podman machine init --memory 6144 && podman machine start`.',
+    );
   if (needCompose && !e.compose.length) {
-    throw new CliError(`${e.engine} is installed but no compose provider was found`, e.engine === 'podman' ? 'Install podman-compose (`brew install podman-compose` / `pip install podman-compose`) or docker-compose.' : 'Install the Docker Compose plugin.');
+    throw new CliError(
+      `${e.engine} is installed but no compose provider was found`,
+      e.engine === 'podman'
+        ? 'Install podman-compose (`brew install podman-compose` / `pip install podman-compose`) or docker-compose.'
+        : 'Install the Docker Compose plugin.',
+    );
   }
   return e;
 }
@@ -75,7 +94,11 @@ export async function compose(args: string[], opts: ComposeOptions = {}) {
   const base = [...e.compose.slice(1), '-f', file];
   if (existsSync(envFile)) base.push('--env-file', envFile);
   for (const prof of opts.profiles ?? []) base.push('--profile', prof);
-  return run(e.compose[0]!, [...base, ...args], { cwd: p.root, ...opts, env: { ...process.env, ...ENGINE_ENV, ...opts.env } });
+  return run(e.compose[0]!, [...base, ...args], {
+    cwd: p.root,
+    ...opts,
+    env: { ...process.env, ...ENGINE_ENV, ...opts.env },
+  });
 }
 
 export interface ContainerInfo {
@@ -91,7 +114,10 @@ export interface ContainerInfo {
 function parsePorts(raw: unknown): ContainerInfo['ports'] {
   if (Array.isArray(raw)) {
     return raw
-      .map((p: Record<string, unknown>) => ({ host: Number(p.host_port ?? p.HostPort ?? p.PublicPort), container: Number(p.container_port ?? p.ContainerPort ?? p.PrivatePort) }))
+      .map((p: Record<string, unknown>) => ({
+        host: Number(p.host_port ?? p.HostPort ?? p.PublicPort),
+        container: Number(p.container_port ?? p.ContainerPort ?? p.PrivatePort),
+      }))
       .filter((p) => p.host > 0);
   }
   if (typeof raw === 'string') {
@@ -117,7 +143,18 @@ function healthOf(status: string): ContainerInfo['health'] {
 export async function listProjectContainers(project = 'atrium'): Promise<ContainerInfo[]> {
   const e = await detectEngine();
   if (!e) return [];
-  const out = await tryCapture(e.bin, ['ps', '-a', '--filter', `label=com.docker.compose.project=${project}`, '--format', e.engine === 'podman' ? 'json' : '{{json .}}'], { timeoutMs: 20_000 });
+  const out = await tryCapture(
+    e.bin,
+    [
+      'ps',
+      '-a',
+      '--filter',
+      `label=com.docker.compose.project=${project}`,
+      '--format',
+      e.engine === 'podman' ? 'json' : '{{json .}}',
+    ],
+    { timeoutMs: 20_000 },
+  );
   if (!out) return [];
   let items: Array<Record<string, unknown>> = [];
   try {
@@ -132,7 +169,9 @@ export async function listProjectContainers(project = 'atrium'): Promise<Contain
   return items.map((c) => {
     const labels = (c.Labels ?? {}) as Record<string, string> | string;
     const labelMap: Record<string, string> =
-      typeof labels === 'string' ? Object.fromEntries(labels.split(',').map((kv) => kv.split('=') as [string, string])) : labels;
+      typeof labels === 'string'
+        ? Object.fromEntries(labels.split(',').map((kv) => kv.split('=') as [string, string]))
+        : labels;
     const names = c.Names;
     const name = Array.isArray(names) ? String(names[0]) : String(names ?? c.Name ?? '');
     const status = String(c.Status ?? '');
@@ -151,23 +190,42 @@ export async function listProjectContainers(project = 'atrium'): Promise<Contain
 /** Container name for a compose service (e.g. postgres → atrium_postgres_1). */
 export async function serviceContainer(service: string): Promise<ContainerInfo | undefined> {
   const list = await listProjectContainers();
-  return list.find((c) => c.service === service && c.state === 'running') ?? list.find((c) => c.service === service);
+  return (
+    list.find((c) => c.service === service && c.state === 'running') ??
+    list.find((c) => c.service === service)
+  );
 }
 
 /** On macOS/Windows podman runs in a VM; report its state and memory. */
-export async function podmanMachineInfo(): Promise<{ name: string; running: boolean; memoryMiB: number; cpus: number } | null> {
+export async function podmanMachineInfo(): Promise<{
+  name: string;
+  running: boolean;
+  memoryMiB: number;
+  cpus: number;
+} | null> {
   if (process.platform === 'linux') return null;
   const podman = which('podman');
   if (!podman) return null;
-  const out = await tryCapture(podman, ['machine', 'list', '--format', 'json'], { timeoutMs: 15_000 });
+  const out = await tryCapture(podman, ['machine', 'list', '--format', 'json'], {
+    timeoutMs: 15_000,
+  });
   if (!out) return null;
   try {
     const list = JSON.parse(out) as Array<Record<string, unknown>>;
     const m = list.find((x) => x.Default) ?? list[0];
     if (!m) return null;
     const mem = String(m.Memory ?? '0');
-    const memoryMiB = /GiB/i.test(mem) ? Number.parseFloat(mem) * 1024 : /MiB/i.test(mem) ? Number.parseFloat(mem) : Number(mem) / (1024 * 1024);
-    return { name: String(m.Name), running: !!m.Running || String(m.LastUp) === 'Currently running', memoryMiB: Math.round(memoryMiB), cpus: Number(m.CPUs ?? 0) };
+    const memoryMiB = /GiB/i.test(mem)
+      ? Number.parseFloat(mem) * 1024
+      : /MiB/i.test(mem)
+        ? Number.parseFloat(mem)
+        : Number(mem) / (1024 * 1024);
+    return {
+      name: String(m.Name),
+      running: !!m.Running || String(m.LastUp) === 'Currently running',
+      memoryMiB: Math.round(memoryMiB),
+      cpus: Number(m.CPUs ?? 0),
+    };
   } catch {
     return null;
   }

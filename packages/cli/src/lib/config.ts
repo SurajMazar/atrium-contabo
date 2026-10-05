@@ -25,7 +25,8 @@ export function writeProjectConfig(file: string, cfg: ProjectConfig) {
 
 export function updateProjectConfig(file: string, patch: Partial<ProjectConfig>): ProjectConfig {
   const next = { ...readProjectConfig(file), ...patch };
-  for (const k of Object.keys(next) as Array<keyof ProjectConfig>) if (next[k] === undefined || next[k] === '') delete next[k];
+  for (const k of Object.keys(next) as Array<keyof ProjectConfig>)
+    if (next[k] === undefined || next[k] === '') delete next[k];
   writeProjectConfig(file, next);
   return next;
 }
@@ -48,7 +49,10 @@ export interface CredentialsFile {
 }
 
 export function configHome(): string {
-  return process.env.ATRIUM_CONFIG_HOME ?? join(process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config'), 'atrium');
+  return (
+    process.env.ATRIUM_CONFIG_HOME ??
+    join(process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config'), 'atrium')
+  );
 }
 
 export function credentialsPath(): string {

@@ -84,7 +84,10 @@ export class MiniRedis {
     const host = u.hostname.replace(/^\[|\]$/g, '') || '127.0.0.1';
     const port = Number(u.port || 6379);
     return new Promise((resolve, reject) => {
-      const sock = u.protocol === 'rediss:' ? tlsConnect({ host, port, servername: host }) : createConnection({ host, port });
+      const sock =
+        u.protocol === 'rediss:'
+          ? tlsConnect({ host, port, servername: host })
+          : createConnection({ host, port });
       const timer = setTimeout(() => {
         sock.destroy();
         reject(new Error(`timeout connecting to ${host}:${port}`));
@@ -99,7 +102,8 @@ export class MiniRedis {
         try {
           const password = decodeURIComponent(u.password || '');
           const username = decodeURIComponent(u.username || '');
-          if (password) await client.command(username ? ['AUTH', username, password] : ['AUTH', password]);
+          if (password)
+            await client.command(username ? ['AUTH', username, password] : ['AUTH', password]);
           const db = u.pathname.replace('/', '');
           if (db) await client.command(['SELECT', db]);
           resolve(client);
@@ -132,7 +136,10 @@ export class MiniRedis {
     const keys = new Set<string>();
     let cursor = '0';
     do {
-      const res = (await this.command(['SCAN', cursor, 'MATCH', match, 'COUNT', count])) as [string, string[]];
+      const res = (await this.command(['SCAN', cursor, 'MATCH', match, 'COUNT', count])) as [
+        string,
+        string[],
+      ];
       cursor = res[0];
       for (const k of res[1]) keys.add(k);
     } while (cursor !== '0');
@@ -157,22 +164,26 @@ export interface QueueCounts {
 }
 
 /** Discover BullMQ queues (via `<prefix>:<name>:meta`) and count jobs per state. */
-export async function bullQueueCounts(client: MiniRedis, prefix = 'bull'): Promise<QueueCounts[]> {
+export async function bullQueueCounts(
+  client: MiniRedis,
+  prefix = 'atrium',
+): Promise<QueueCounts[]> {
   const metas = await client.scanAll(`${prefix}:*:meta`);
   const out: QueueCounts[] = [];
   for (const meta of metas.sort()) {
     const name = meta.slice(prefix.length + 1, -':meta'.length);
     const k = (s: string) => `${prefix}:${name}:${s}`;
-    const [wait, paused, active, delayed, failed, completed, prioritized, metaPaused] = await Promise.all([
-      client.command(['LLEN', k('wait')]),
-      client.command(['LLEN', k('paused')]),
-      client.command(['LLEN', k('active')]),
-      client.command(['ZCARD', k('delayed')]),
-      client.command(['ZCARD', k('failed')]),
-      client.command(['ZCARD', k('completed')]),
-      client.command(['ZCARD', k('prioritized')]),
-      client.command(['HGET', meta, 'paused']),
-    ]);
+    const [wait, paused, active, delayed, failed, completed, prioritized, metaPaused] =
+      await Promise.all([
+        client.command(['LLEN', k('wait')]),
+        client.command(['LLEN', k('paused')]),
+        client.command(['LLEN', k('active')]),
+        client.command(['ZCARD', k('delayed')]),
+        client.command(['ZCARD', k('failed')]),
+        client.command(['ZCARD', k('completed')]),
+        client.command(['ZCARD', k('prioritized')]),
+        client.command(['HGET', meta, 'paused']),
+      ]);
     out.push({
       name,
       prefix,

@@ -5,18 +5,39 @@ import { describe, expect, it } from 'vitest';
 import { parseAllDocuments } from 'yaml';
 import { productionChecks, summarize } from '../lib/checks';
 import { EnvFile } from '../lib/env';
-import { TARGET_IDS, buildProductionEnv, generateProduction, productionVars, rewriteArtifact } from '../lib/production';
+import {
+  TARGET_IDS,
+  buildProductionEnv,
+  generateProduction,
+  productionVars,
+  rewriteArtifact,
+} from '../lib/production';
 import { REPO_ROOT } from './helpers';
 
 function walk(dir: string): string[] {
-  return readdirSync(dir).flatMap((e) => (statSync(join(dir, e)).isDirectory() ? walk(join(dir, e)) : [join(dir, e)]));
+  return readdirSync(dir).flatMap((e) =>
+    statSync(join(dir, e)).isDirectory() ? walk(join(dir, e)) : [join(dir, e)],
+  );
 }
 
 const example = EnvFile.read(join(REPO_ROOT, '.env.example'))!;
 
 describe.each(TARGET_IDS)('setup production --target %s', (target) => {
   const out = mkdtempSync(join(tmpdir(), `atrium-prod-${target}-`));
-  const res = generateProduction({ target, domain: 'acme.dev', email: 'ops@acme.dev', registry: 'ghcr.io/acme', tag: '1.2.3', namespace: 'atrium', appDir: '/opt/atrium', outDir: out, root: REPO_ROOT }, example);
+  const res = generateProduction(
+    {
+      target,
+      domain: 'acme.dev',
+      email: 'ops@acme.dev',
+      registry: 'ghcr.io/acme',
+      tag: '1.2.3',
+      namespace: 'atrium',
+      appDir: '/opt/atrium',
+      outDir: out,
+      root: REPO_ROOT,
+    },
+    example,
+  );
   const files = walk(out);
 
   it('writes artifacts, an env file and next steps', () => {
@@ -46,11 +67,23 @@ describe.each(TARGET_IDS)('setup production --target %s', (target) => {
 
 describe('production env', () => {
   it('compose mode passes the readiness lint except for SMTP placeholders', () => {
-    const vars = productionVars({ target: 'podman', domain: 'acme.dev', email: 'ops@acme.dev', registry: 'r', tag: 't', namespace: 'n', appDir: '/opt', outDir: '/tmp/x', root: REPO_ROOT });
+    const vars = productionVars({
+      target: 'podman',
+      domain: 'acme.dev',
+      email: 'ops@acme.dev',
+      registry: 'r',
+      tag: 't',
+      namespace: 'n',
+      appDir: '/opt',
+      outDir: '/tmp/x',
+      root: REPO_ROOT,
+    });
     const env = buildProductionEnv(example, vars, 'compose').toObject();
     expect(env.DATABASE_URL).toMatch(/^postgresql:\/\/atrium:[0-9a-f]{48}@postgres:5432\/atrium$/);
     expect(env.COOKIE_DOMAIN).toBe('admin.acme.dev');
-    const failing = productionChecks(env).filter((c) => c.status === 'fail').map((c) => c.label);
+    const failing = productionChecks(env)
+      .filter((c) => c.status === 'fail')
+      .map((c) => c.label);
     expect(failing).toEqual(['No REPLACE_ME placeholders']);
   });
 
@@ -60,17 +93,42 @@ describe('production env', () => {
   });
 
   it('flags cookie domains that would leak to tenant sites', () => {
-    const env = { ...example.toObject(), PLATFORM_SITES_DOMAIN: 'sites.acme.dev', COOKIE_DOMAIN: 'acme.dev' };
-    expect(productionChecks(env).find((c) => c.label.startsWith('COOKIE_DOMAIN'))?.status).toBe('fail');
+    const env = {
+      ...example.toObject(),
+      PLATFORM_SITES_DOMAIN: 'sites.acme.dev',
+      COOKIE_DOMAIN: 'acme.dev',
+    };
+    expect(productionChecks(env).find((c) => c.label.startsWith('COOKIE_DOMAIN'))?.status).toBe(
+      'fail',
+    );
   });
 
   it('rewrites copied infra files', () => {
-    expect(rewriteArtifact('Image=ghcr.io/your-org/atrium-api:latest\nserver_name admin.example.com;', { domain: 'acme.dev', registry: 'reg.io/x', tag: '9' })).toBe('Image=reg.io/x/atrium-api:9\nserver_name admin.acme.dev;');
+    expect(
+      rewriteArtifact('Image=ghcr.io/your-org/atrium-api:latest\nserver_name admin.example.com;', {
+        domain: 'acme.dev',
+        registry: 'reg.io/x',
+        tag: '9',
+      }),
+    ).toBe('Image=reg.io/x/atrium-api:9\nserver_name admin.acme.dev;');
   });
 
   it('k8s overlay points at the repository base', () => {
     const out = mkdtempSync(join(tmpdir(), 'atrium-k8s-'));
-    generateProduction({ target: 'k8s', domain: 'acme.dev', email: 'o@acme.dev', registry: 'ghcr.io/acme', tag: '1', namespace: 'prod', appDir: '/opt', outDir: out, root: REPO_ROOT }, example);
+    generateProduction(
+      {
+        target: 'k8s',
+        domain: 'acme.dev',
+        email: 'o@acme.dev',
+        registry: 'ghcr.io/acme',
+        tag: '1',
+        namespace: 'prod',
+        appDir: '/opt',
+        outDir: out,
+        root: REPO_ROOT,
+      },
+      example,
+    );
     const k = readFileSync(join(out, 'kustomization.yaml'), 'utf8');
     const base = /resources:\n\s+- (.+)\n/.exec(k)![1]!;
     expect(existsSync(join(out, base, 'kustomization.yaml'))).toBe(true);

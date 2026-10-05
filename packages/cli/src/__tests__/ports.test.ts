@@ -1,12 +1,23 @@
 import { createServer } from 'node:net';
 import { describe, expect, it } from 'vitest';
 import { EnvFile } from '../lib/env';
-import { applyPorts, currentPorts, findFreePort, isPortFree, pickPorts, replacePortInValue } from '../lib/ports';
+import {
+  applyPorts,
+  currentPorts,
+  findFreePort,
+  isPortFree,
+  pickPorts,
+  replacePortInValue,
+} from '../lib/ports';
 
 describe('port picking', () => {
   it('keeps free defaults and moves busy ones without collisions', async () => {
     const busy = new Set([3000, 3001, 3002, 4000]);
-    const plans = await pickPorts(['ADMIN_PORT', 'RENDERER_PORT', 'API_PORT'], {}, async (p) => !busy.has(p));
+    const plans = await pickPorts(
+      ['ADMIN_PORT', 'RENDERER_PORT', 'API_PORT'],
+      {},
+      async (p) => !busy.has(p),
+    );
     expect(plans.map((p) => [p.key, p.chosen])).toEqual([
       ['ADMIN_PORT', 3003],
       ['RENDERER_PORT', 3004],
@@ -16,7 +27,12 @@ describe('port picking', () => {
   });
 
   it('never moves ports already owned by Atrium', async () => {
-    const plans = await pickPorts(['ATRIUM_PG_PORT'], { ATRIUM_PG_PORT: 55432 }, async () => false, new Set(['ATRIUM_PG_PORT']));
+    const plans = await pickPorts(
+      ['ATRIUM_PG_PORT'],
+      { ATRIUM_PG_PORT: 55432 },
+      async () => false,
+      new Set(['ATRIUM_PG_PORT']),
+    );
     expect(plans[0]).toMatchObject({ chosen: 55432, changed: false });
   });
 
@@ -53,12 +69,20 @@ describe('applyPorts', () => {
   });
 
   it('only touches local hosts', () => {
-    expect(replacePortInValue('https://api.example.com:4000', 4000, 4001)).toBe('https://api.example.com:4000');
-    expect(replacePortInValue('http://127.0.0.1:4000/v1', 4000, 4001)).toBe('http://127.0.0.1:4001/v1');
+    expect(replacePortInValue('https://api.example.com:4000', 4000, 4001)).toBe(
+      'https://api.example.com:4000',
+    );
+    expect(replacePortInValue('http://127.0.0.1:4000/v1', 4000, 4001)).toBe(
+      'http://127.0.0.1:4001/v1',
+    );
     expect(replacePortInValue('http://localhost:40000', 4000, 4001)).toBe('http://localhost:40000');
   });
 
   it('currentPorts falls back to defaults', () => {
-    expect(currentPorts(EnvFile.parse('API_PORT=4100\n'))).toMatchObject({ API_PORT: 4100, ADMIN_PORT: 3000, ATRIUM_PG_PORT: 55432 });
+    expect(currentPorts(EnvFile.parse('API_PORT=4100\n'))).toMatchObject({
+      API_PORT: 4100,
+      ADMIN_PORT: 3000,
+      ATRIUM_PG_PORT: 55432,
+    });
   });
 });

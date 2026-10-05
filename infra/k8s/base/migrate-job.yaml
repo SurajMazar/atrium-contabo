@@ -32,7 +32,7 @@ spec:
             - configMapRef: { name: atrium-config }
             - secretRef: { name: atrium-secrets }
           env:
-            - { name: CHECKPOINT_DISABLE, value: "1" }
+            - { name: CHECKPOINT_DISABLE, value: '1' }
             - { name: HOME, value: /tmp }
           resources:
             requests: { cpu: 100m, memory: 256Mi }

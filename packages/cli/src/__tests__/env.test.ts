@@ -55,7 +55,16 @@ describe('EnvFile', () => {
   });
 
   it('quotes only when needed and survives a round trip', () => {
-    for (const v of ['plain', 'a b', 'with"quote', 'has#hash', 'multi\nline', '$dollar', 'base64+/==', '']) {
+    for (const v of [
+      'plain',
+      'a b',
+      'with"quote',
+      'has#hash',
+      'multi\nline',
+      '$dollar',
+      'base64+/==',
+      '',
+    ]) {
       const env = EnvFile.parse('');
       env.set('K', v);
       expect(EnvFile.parse(env.toString()).get('K')).toBe(v);
@@ -72,7 +81,9 @@ describe('EnvFile', () => {
 });
 
 describe('mergeEnv', () => {
-  const example = EnvFile.parse(`# App\nNODE_ENV=development\nAPI_URL=http://localhost:4000\nJWT_ACCESS_SECRET=change-me-access-secret-change-me-access-secret\nENCRYPTION_KEY=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=\nNEW_SETTING=default\n`);
+  const example = EnvFile.parse(
+    `# App\nNODE_ENV=development\nAPI_URL=http://localhost:4000\nJWT_ACCESS_SECRET=change-me-access-secret-change-me-access-secret\nENCRYPTION_KEY=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=\nNEW_SETTING=default\n`,
+  );
 
   it('creates a fresh env with generated secrets', () => {
     const r = mergeEnv(example, null, { generateSecrets: true });
@@ -84,7 +95,9 @@ describe('mergeEnv', () => {
   });
 
   it('never overwrites existing values and keeps local-only keys', () => {
-    const existing = EnvFile.parse(`API_URL=https://api.example.com\nJWT_ACCESS_SECRET=${'x'.repeat(20)}abcdefghijklmnopqrstuvwxyz\nCUSTOM=1\n`);
+    const existing = EnvFile.parse(
+      `API_URL=https://api.example.com\nJWT_ACCESS_SECRET=${'x'.repeat(20)}abcdefghijklmnopqrstuvwxyz\nCUSTOM=1\n`,
+    );
     const r = mergeEnv(example, existing, { generateSecrets: true });
     expect(r.file.get('API_URL')).toBe('https://api.example.com');
     expect(r.file.get('JWT_ACCESS_SECRET')).toBe(existing.get('JWT_ACCESS_SECRET'));
@@ -96,7 +109,9 @@ describe('mergeEnv', () => {
   });
 
   it('replaces example-value secrets but keeps custom weak ones unless asked', () => {
-    const existing = EnvFile.parse('JWT_ACCESS_SECRET=short\nENCRYPTION_KEY=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=\n');
+    const existing = EnvFile.parse(
+      'JWT_ACCESS_SECRET=short\nENCRYPTION_KEY=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=\n',
+    );
     const keep = mergeEnv(example, existing, { generateSecrets: true });
     expect(keep.file.get('JWT_ACCESS_SECRET')).toBe('short');
     expect(keep.generated).toEqual(['ENCRYPTION_KEY']);
@@ -106,7 +121,9 @@ describe('mergeEnv', () => {
   });
 
   it('applies overrides', () => {
-    const r = mergeEnv(example, EnvFile.parse('API_URL=http://localhost:4000\n'), { overrides: { API_URL: 'http://localhost:4100', EXTRA: 'y' } });
+    const r = mergeEnv(example, EnvFile.parse('API_URL=http://localhost:4000\n'), {
+      overrides: { API_URL: 'http://localhost:4100', EXTRA: 'y' },
+    });
     expect(r.file.get('API_URL')).toBe('http://localhost:4100');
     expect(r.overridden).toContain('API_URL');
     expect(r.file.get('EXTRA')).toBe('y');
@@ -116,7 +133,9 @@ describe('mergeEnv', () => {
 describe('displayValue', () => {
   it('masks secrets and URL credentials', () => {
     expect(displayValue('JWT_ACCESS_SECRET', 'abcdefghijklmnopqrstuvwxyz')).toBe('••••••••wxyz');
-    expect(displayValue('DATABASE_URL', 'postgresql://atrium:hunter2@db:5432/atrium')).toBe('postgresql://atrium:••••@db:5432/atrium');
+    expect(displayValue('DATABASE_URL', 'postgresql://atrium:hunter2@db:5432/atrium')).toBe(
+      'postgresql://atrium:••••@db:5432/atrium',
+    );
     expect(displayValue('API_URL', 'http://localhost:4000')).toBe('http://localhost:4000');
     expect(displayValue('SMTP_PASSWORD', 'pw', true)).toBe('pw');
     expect(displayValue('ANTHROPIC_API_KEY', '')).toBe('');

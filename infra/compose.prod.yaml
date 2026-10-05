@@ -22,9 +22,9 @@ services:
     image: docker.io/library/caddy:2-alpine
     restart: unless-stopped
     ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
     env_file: [.env]
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro,Z
@@ -43,7 +43,7 @@ services:
     volumes: [pg-data:/var/lib/postgresql/data]
     shm_size: 256m
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-atrium} -d ${POSTGRES_DB:-atrium}"]
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-atrium} -d ${POSTGRES_DB:-atrium}']
       interval: 5s
       timeout: 3s
       retries: 30
@@ -53,10 +53,19 @@ services:
     image: docker.io/library/redis:7-alpine
     restart: unless-stopped
     # BullMQ requires noeviction; AOF keeps queued jobs across restarts.
-    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--maxmemory-policy", "noeviction"]
+    command:
+      [
+        'redis-server',
+        '--appendonly',
+        'yes',
+        '--appendfsync',
+        'everysec',
+        '--maxmemory-policy',
+        'noeviction',
+      ]
     volumes: [redis-data:/data]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ['CMD', 'redis-cli', 'ping']
       interval: 5s
       timeout: 3s
       retries: 30
@@ -67,12 +76,22 @@ services:
   s3:
     image: docker.io/chrislusf/seaweedfs:latest
     restart: unless-stopped
-    command: ["server", "-dir=/data", "-ip.bind=0.0.0.0", "-master.volumeSizeLimitMB=1024", "-volume.max=0", "-s3", "-s3.port=8333", "-s3.config=/etc/seaweedfs/s3.json"]
+    command:
+      [
+        'server',
+        '-dir=/data',
+        '-ip.bind=0.0.0.0',
+        '-master.volumeSizeLimitMB=1024',
+        '-volume.max=0',
+        '-s3',
+        '-s3.port=8333',
+        '-s3.config=/etc/seaweedfs/s3.json',
+      ]
     volumes:
       - s3-data:/data
       - ./seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro,Z
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9333/cluster/status || exit 1"]
+      test: ['CMD-SHELL', 'wget -q -O /dev/null http://127.0.0.1:9333/cluster/status || exit 1']
       interval: 10s
       timeout: 3s
       retries: 30
@@ -82,30 +101,44 @@ services:
     image: docker.io/chrislusf/seaweedfs:latest
     depends_on:
       s3: { condition: service_healthy }
-    entrypoint: ["/bin/sh", "-c"]
-    command: ["sleep 3; echo 's3.bucket.create -name ${S3_BUCKET:-atrium-media}' | weed shell -master=s3:9333 || true"]
-    restart: "no"
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      [
+        "sleep 3; echo 's3.bucket.create -name ${S3_BUCKET:-atrium-media}' | weed shell -master=s3:9333 || true",
+      ]
+    restart: 'no'
     networks: [atrium]
 
   migrate:
     <<: *app
     image: ${ATRIUM_IMAGE_REGISTRY:-localhost}/atrium-migrate:${ATRIUM_IMAGE_TAG:-latest}
-    build: { context: "${ATRIUM_SRC_DIR:-..}", dockerfile: infra/containers/api.Containerfile, target: migrate }
-    restart: "no"
+    build:
+      {
+        context: '${ATRIUM_SRC_DIR:-..}',
+        dockerfile: infra/containers/api.Containerfile,
+        target: migrate,
+      }
+    restart: 'no'
     depends_on:
       postgres: { condition: service_healthy }
 
   api:
     <<: *app
     image: ${ATRIUM_IMAGE_REGISTRY:-localhost}/atrium-api:${ATRIUM_IMAGE_TAG:-latest}
-    build: { context: "${ATRIUM_SRC_DIR:-..}", dockerfile: infra/containers/api.Containerfile }
+    build: { context: '${ATRIUM_SRC_DIR:-..}', dockerfile: infra/containers/api.Containerfile }
     mem_limit: 1g
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/v1/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:4000/v1/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
+        ]
       interval: 15s
       timeout: 5s
       start_period: 40s
@@ -114,7 +147,7 @@ services:
   worker:
     <<: *app
     image: ${ATRIUM_IMAGE_REGISTRY:-localhost}/atrium-worker:${ATRIUM_IMAGE_TAG:-latest}
-    build: { context: "${ATRIUM_SRC_DIR:-..}", dockerfile: infra/containers/worker.Containerfile }
+    build: { context: '${ATRIUM_SRC_DIR:-..}', dockerfile: infra/containers/worker.Containerfile }
     mem_limit: 1536m
     depends_on:
       postgres: { condition: service_healthy }
@@ -124,7 +157,7 @@ services:
   renderer:
     <<: *app
     image: ${ATRIUM_IMAGE_REGISTRY:-localhost}/atrium-renderer:${ATRIUM_IMAGE_TAG:-latest}
-    build: { context: "${ATRIUM_SRC_DIR:-..}", dockerfile: infra/containers/renderer.Containerfile }
+    build: { context: '${ATRIUM_SRC_DIR:-..}', dockerfile: infra/containers/renderer.Containerfile }
     mem_limit: 1g
     environment:
       ATRIUM_API_INTERNAL_URL: http://api:4000
@@ -135,9 +168,9 @@ services:
     <<: *app
     image: ${ATRIUM_IMAGE_REGISTRY:-localhost}/atrium-admin:${ATRIUM_IMAGE_TAG:-latest}
     build:
-      context: "${ATRIUM_SRC_DIR:-..}"
+      context: '${ATRIUM_SRC_DIR:-..}'
       dockerfile: infra/containers/admin.Containerfile
-      args: { ATRIUM_API_INTERNAL_URL: "http://api:4000" }
+      args: { ATRIUM_API_INTERNAL_URL: 'http://api:4000' }
     mem_limit: 768m
     environment:
       ATRIUM_API_INTERNAL_URL: http://api:4000

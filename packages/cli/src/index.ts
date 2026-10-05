@@ -21,7 +21,9 @@ export function createProgram(): Command {
   // Throw instead of process.exit() so run() controls exit codes (inherited by subcommands).
   program.exitOverride();
   program
-    .description('Install, configure, run, migrate, back up and deploy the Atrium website platform.')
+    .description(
+      'Install, configure, run, migrate, back up and deploy the Atrium website platform.',
+    )
     .version(cliVersion(), '-V, --version', 'print the CLI version')
     .option('--root <dir>', 'Atrium checkout to operate on (default: nearest parent of cwd)')
     .option('-y, --yes', 'assume "yes" for prompts; never prompt (CI)')
@@ -39,12 +41,20 @@ export function createProgram(): Command {
           ['pnpm atrium init', 'one-time setup: .env + secrets, podman services, migrations, seed'],
           ['pnpm atrium start', 'run api, worker, renderer, admin (like bench start)'],
           ['pnpm atrium doctor', 'diagnose problems'],
-          ['pnpm atrium setup production --target podman --domain example.com', 'generate deployment files'],
+          [
+            'pnpm atrium setup production --target podman --domain example.com',
+            'generate deployment files',
+          ],
         ]) +
         `\nDocs: docs/CLI.md (bench → atrium command map), docs/DEPLOYMENT.md\n`,
     )
     .hook('preAction', (_this, action) => {
-      const o = action.optsWithGlobals() as { root?: string; yes?: boolean; verbose?: boolean; json?: boolean };
+      const o = action.optsWithGlobals() as {
+        root?: string;
+        yes?: boolean;
+        verbose?: boolean;
+        json?: boolean;
+      };
       setUiOptions({ yes: o.yes, verbose: o.verbose, json: o.json });
       if (o.root) setRootOverride(o.root);
     });
@@ -76,7 +86,8 @@ export async function run(argv: string[]): Promise<void> {
     }
     if (err instanceof CliError) {
       process.stderr.write(`${pc.red('✖')} ${err.message}\n`);
-      if (err.hint) process.stderr.write(`${pc.dim('  ↳')} ${err.hint.split('\n').join('\n    ')}\n`);
+      if (err.hint)
+        process.stderr.write(`${pc.dim('  ↳')} ${err.hint.split('\n').join('\n    ')}\n`);
       if (isVerbose() && err.stack) process.stderr.write(pc.dim(`${err.stack}\n`));
       process.exitCode = err.exitCode || 1;
       return;

@@ -74,7 +74,7 @@ RUN set -eu; \
     V="$(node -p "require('./packages/db/node_modules/prisma/package.json').version")"; \
     mkdir -p /prod/db && cp -R packages/db/prisma packages/db/prisma.config.ts /prod/db/; \
     cd /prod/db && printf '{"name":"atrium-migrate","private":true,"type":"commonjs"}\n' > package.json; \
-    npm install --no-fund --no-audit --loglevel=error "prisma@$V" "@prisma/client@$V" "@prisma/adapter-pg@$V" pg dotenv tsx
+    npm install --no-fund --no-audit --loglevel=error "prisma@$V" "@prisma/client@$V" "@prisma/adapter-pg@$V" pg dotenv
 
 # ── migration image: `podman run --rm --env-file .env atrium-migrate` ──
 FROM docker.io/library/node:${NODE_VERSION}-slim AS migrate

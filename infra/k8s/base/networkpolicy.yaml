@@ -16,7 +16,11 @@ metadata:
 spec:
   podSelector:
     matchExpressions:
-      - { key: app.kubernetes.io/name, operator: In, values: [atrium-api, atrium-admin, atrium-renderer] }
+      - {
+          key: app.kubernetes.io/name,
+          operator: In,
+          values: [atrium-api, atrium-admin, atrium-renderer],
+        }
   policyTypes: [Ingress]
   ingress:
     - from:
@@ -35,7 +39,11 @@ spec:
     - from:
         - podSelector:
             matchExpressions:
-              - { key: app.kubernetes.io/name, operator: In, values: [atrium-admin, atrium-renderer, atrium-worker] }
+              - {
+                  key: app.kubernetes.io/name,
+                  operator: In,
+                  values: [atrium-admin, atrium-renderer, atrium-worker],
+                }
       ports: [{ port: 4000 }]
 ---
 # API → renderer for on-publish revalidation (POST /api/revalidate with X-Renderer-Secret).

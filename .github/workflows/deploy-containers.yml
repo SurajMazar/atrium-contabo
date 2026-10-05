@@ -70,7 +70,7 @@ jobs:
       - name: Deploy over SSH
         env:
           SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          HOST: ${{ secrets.DEPLOY_HOST }}           # user@host
+          HOST: ${{ secrets.DEPLOY_HOST }} # user@host
           DIR: ${{ vars.DEPLOY_DIR || '/opt/atrium/deploy/podman' }}
           TAG: ${{ inputs.tag }}
         run: |

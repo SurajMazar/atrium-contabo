@@ -7,8 +7,8 @@
 #  - Tenant sites ({slug}.SITES_DOMAIN) and customer domains: on-demand TLS. Before issuing a
 #    certificate Caddy calls the API "ask" endpoint; only 2xx answers are allowed:
 #        GET http://api:4000/v1/public/domains/check?domain=<hostname>
-#    The API answers 200 for {slug}.SITES_DOMAIN of an existing site and for verified
-#    custom domains, 404 otherwise — so nobody can make you issue certs for random hosts.
+#    The API answers 200 for {slug}.SITES_DOMAIN of an existing site and for custom domains
+#    connected to a website, 404 otherwise — so nobody can make you issue certs for random hosts.
 #  - Many tenant subdomains? Let's Encrypt limits certificates per registered domain per
 #    week; switch the sites block to one wildcard cert via DNS-01 (build Caddy with a
 #    caddy-dns/<provider> module, see docs/deployment/vps-podman.md).
@@ -69,7 +69,7 @@
 	reverse_proxy renderer:3001
 }
 
-# Everything else: {slug}.SITES_DOMAIN and verified customer domains (certificates on demand).
+# Everything else: {slug}.SITES_DOMAIN and connected customer domains (certificates on demand).
 https:// {
 	import common
 	tls {

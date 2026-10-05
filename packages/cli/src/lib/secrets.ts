@@ -14,20 +14,66 @@ export interface SecretSpec {
 
 /** Secrets every environment needs; `atrium init` / `setup env` generate them. */
 export const APP_SECRETS: Record<string, SecretSpec> = {
-  JWT_ACCESS_SECRET: { bytes: 48, encoding: 'base64url', minLength: 32, description: 'Signs 15-minute access tokens' },
-  JWT_REFRESH_SECRET: { bytes: 48, encoding: 'base64url', minLength: 32, description: 'Signs refresh tokens' },
-  ENCRYPTION_KEY: { bytes: 32, encoding: 'base64', minLength: 44, exactBytes: 32, description: 'AES-256-GCM key for provider secrets at rest' },
-  RENDERER_SECRET: { bytes: 32, encoding: 'base64url', minLength: 32, description: 'Shared secret between API and renderer' },
-  ANALYTICS_SALT: { bytes: 24, encoding: 'base64url', minLength: 24, description: 'Salt for privacy-preserving visitor hashes' },
+  JWT_ACCESS_SECRET: {
+    bytes: 48,
+    encoding: 'base64url',
+    minLength: 32,
+    description: 'Signs 15-minute access tokens',
+  },
+  JWT_REFRESH_SECRET: {
+    bytes: 48,
+    encoding: 'base64url',
+    minLength: 32,
+    description: 'Signs refresh tokens',
+  },
+  ENCRYPTION_KEY: {
+    bytes: 32,
+    encoding: 'base64',
+    minLength: 44,
+    exactBytes: 32,
+    description: 'AES-256-GCM key for provider secrets at rest',
+  },
+  RENDERER_SECRET: {
+    bytes: 32,
+    encoding: 'base64url',
+    minLength: 32,
+    description: 'Shared secret between API and renderer',
+  },
+  ANALYTICS_SALT: {
+    bytes: 24,
+    encoding: 'base64url',
+    minLength: 24,
+    description: 'Salt for privacy-preserving visitor hashes',
+  },
 };
 
 /** Extra secrets generated for production environments (`setup production`). */
 export const INFRA_SECRETS: Record<string, SecretSpec> = {
   // hex keeps it URL-safe inside DATABASE_URL
-  POSTGRES_PASSWORD: { bytes: 24, encoding: 'hex', minLength: 16, description: 'PostgreSQL password' },
-  S3_ACCESS_KEY_ID: { bytes: 10, encoding: 'hex', minLength: 16, description: 'Object storage access key (self-hosted S3)' },
-  S3_SECRET_ACCESS_KEY: { bytes: 30, encoding: 'base64url', minLength: 32, description: 'Object storage secret key (self-hosted S3)' },
-  SEED_ADMIN_PASSWORD: { bytes: 18, encoding: 'base64url', minLength: 12, description: 'Initial super-admin password' },
+  POSTGRES_PASSWORD: {
+    bytes: 24,
+    encoding: 'hex',
+    minLength: 16,
+    description: 'PostgreSQL password',
+  },
+  S3_ACCESS_KEY_ID: {
+    bytes: 16,
+    encoding: 'hex',
+    minLength: 16,
+    description: 'Object storage access key (self-hosted S3)',
+  },
+  S3_SECRET_ACCESS_KEY: {
+    bytes: 30,
+    encoding: 'base64url',
+    minLength: 32,
+    description: 'Object storage secret key (self-hosted S3)',
+  },
+  SEED_ADMIN_PASSWORD: {
+    bytes: 18,
+    encoding: 'base64url',
+    minLength: 12,
+    description: 'Initial super-admin password',
+  },
 };
 
 /** Values shipped in .env.example that must never be used outside local development. */
@@ -59,16 +105,24 @@ export interface SecretAssessment {
 export function assessSecret(key: string, value: string | undefined): SecretAssessment {
   const spec = APP_SECRETS[key] ?? INFRA_SECRETS[key];
   if (!value) return { ok: false, reason: 'missing', message: 'not set' };
-  if (KNOWN_EXAMPLE_VALUES.has(value)) return { ok: false, reason: 'example', message: 'still the .env.example value' };
-  if (/change[-_]?me/i.test(value)) return { ok: false, reason: 'placeholder', message: 'contains a "change-me" placeholder' };
+  if (KNOWN_EXAMPLE_VALUES.has(value))
+    return { ok: false, reason: 'example', message: 'still the .env.example value' };
+  if (/change[-_]?me/i.test(value))
+    return { ok: false, reason: 'placeholder', message: 'contains a "change-me" placeholder' };
   if (spec?.exactBytes) {
     const decoded = Buffer.from(value, 'base64');
     if (decoded.length !== spec.exactBytes || !/^[A-Za-z0-9+/]+={0,2}$/.test(value)) {
-      return { ok: false, reason: 'wrong-length', message: `must be ${spec.exactBytes} bytes, base64-encoded (openssl rand -base64 ${spec.exactBytes})` };
+      return {
+        ok: false,
+        reason: 'wrong-length',
+        message: `must be ${spec.exactBytes} bytes, base64-encoded (openssl rand -base64 ${spec.exactBytes})`,
+      };
     }
   }
-  if (spec && value.length < spec.minLength) return { ok: false, reason: 'too-short', message: `shorter than ${spec.minLength} characters` };
-  if (new Set(value).size < Math.min(10, Math.floor(value.length / 2))) return { ok: false, reason: 'low-entropy', message: 'too few distinct characters' };
+  if (spec && value.length < spec.minLength)
+    return { ok: false, reason: 'too-short', message: `shorter than ${spec.minLength} characters` };
+  if (new Set(value).size < Math.min(8, Math.floor(value.length / 3)))
+    return { ok: false, reason: 'low-entropy', message: 'too few distinct characters' };
   return { ok: true };
 }
 

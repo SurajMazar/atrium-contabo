@@ -3,10 +3,10 @@ name: CI
 on:
   push:
     branches: [main]
-    tags: ["v*"]
+    tags: ['v*']
   pull_request:
   schedule:
-    - cron: "17 2 * * *" # nightly: full e2e run
+    - cron: '17 2 * * *' # nightly: full e2e run
   workflow_dispatch:
     inputs:
       e2e:
@@ -22,9 +22,9 @@ permissions:
   contents: read
 
 env:
-  NODE_VERSION: "24"
-  TURBO_TELEMETRY_DISABLED: "1"
-  NEXT_TELEMETRY_DISABLED: "1"
+  NODE_VERSION: '24'
+  TURBO_TELEMETRY_DISABLED: '1'
+  NEXT_TELEMETRY_DISABLED: '1'
   # Build-time value baked into the admin's /api rewrite; real deploys build images separately.
   ATRIUM_API_INTERNAL_URL: http://localhost:4000
 
@@ -102,7 +102,7 @@ jobs:
           POSTGRES_USER: atrium
           POSTGRES_PASSWORD: atrium
           POSTGRES_DB: atrium
-        ports: ["5432:5432"]
+        ports: ['5432:5432']
         options: >-
           --health-cmd "pg_isready -U atrium -d atrium"
           --health-interval 5s --health-timeout 3s --health-retries 20
@@ -148,15 +148,15 @@ jobs:
       postgres:
         image: postgres:17-alpine
         env: { POSTGRES_USER: atrium, POSTGRES_PASSWORD: atrium, POSTGRES_DB: atrium }
-        ports: ["55432:5432"]
+        ports: ['55432:5432']
         options: --health-cmd "pg_isready -U atrium -d atrium" --health-interval 5s --health-retries 20
       redis:
         image: redis:7-alpine
-        ports: ["56379:6379"]
+        ports: ['56379:6379']
         options: --health-cmd "redis-cli ping" --health-interval 5s --health-retries 20
       mailpit:
         image: axllent/mailpit:latest
-        ports: ["51025:1025", "58025:8025"]
+        ports: ['51025:1025', '58025:8025']
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -182,7 +182,7 @@ jobs:
       - name: Run e2e
         run: pnpm e2e
         env:
-          CI: "true"
+          CI: 'true'
           E2E_ADMIN_URL: http://localhost:3000
           E2E_API_URL: http://localhost:4000
           E2E_RENDERER_URL: http://localhost:3001

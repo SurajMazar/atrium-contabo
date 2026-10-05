@@ -1,4 +1,12 @@
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 
 /**
@@ -13,22 +21,26 @@ export type TemplateVars = Record<string, string | number | boolean | undefined>
 
 export class TemplateError extends Error {}
 
-const truthy = (v: TemplateVars[string]) => v !== undefined && v !== false && v !== '' && v !== 'false' && v !== 0;
+const truthy = (v: TemplateVars[string]) =>
+  v !== undefined && v !== false && v !== '' && v !== 'false' && v !== 0;
 
 export function renderTemplate(src: string, vars: TemplateVars, name = 'template'): string {
   let out = src;
   // Block helpers (innermost first, so nesting works).
-  const block = /\{\{#(if|unless)\s+([A-Za-z_][\w.]*)\s*\}\}((?:(?!\{\{#(?:if|unless)\s)[\s\S])*?)\{\{\/\1\}\}/;
+  const block =
+    /\{\{#(if|unless)\s+([A-Za-z_][\w.]*)\s*\}\}((?:(?!\{\{#(?:if|unless)\s)[\s\S])*?)\{\{\/\1\}\}/;
   for (let guard = 0; guard < 1000; guard++) {
     const m = block.exec(out);
     if (!m) break;
     const [whole, kind, key, body] = m;
-    if (!(key! in vars)) throw new TemplateError(`${name}: unknown variable "${key}" in {{#${kind}}}`);
+    if (!(key! in vars))
+      throw new TemplateError(`${name}: unknown variable "${key}" in {{#${kind}}}`);
     const keep = kind === 'if' ? truthy(vars[key!]) : !truthy(vars[key!]);
     out = out.slice(0, m.index) + (keep ? body! : '') + out.slice(m.index + whole.length);
   }
   return out.replace(/(?<!\$)\{\{\s*([A-Za-z_][\w.]*)\s*\}\}/g, (_, key: string) => {
-    if (!(key in vars) || vars[key] === undefined) throw new TemplateError(`${name}: unknown variable "${key}"`);
+    if (!(key in vars) || vars[key] === undefined)
+      throw new TemplateError(`${name}: unknown variable "${key}"`);
     return String(vars[key]);
   });
 }
@@ -54,7 +66,12 @@ function walk(dir: string): string[] {
  * Render every file in `srcDir` into `outDir`. Files ending in `.tpl` are
  * rendered and lose the suffix; `__name__` in paths is replaced by vars.name.
  */
-export function renderDir(srcDir: string, outDir: string, vars: TemplateVars, opts: { overwrite?: boolean; dryRun?: boolean } = {}): RenderedFile[] {
+export function renderDir(
+  srcDir: string,
+  outDir: string,
+  vars: TemplateVars,
+  opts: { overwrite?: boolean; dryRun?: boolean } = {},
+): RenderedFile[] {
   const results: RenderedFile[] = [];
   for (const file of walk(srcDir)) {
     let rel = relative(srcDir, file).replace(/__([A-Za-z_]\w*)__/g, (_, k: string) => {
@@ -69,7 +86,9 @@ export function renderDir(srcDir: string, outDir: string, vars: TemplateVars, op
       continue;
     }
     const raw = readFileSync(file);
-    const content = isTpl ? renderTemplate(raw.toString('utf8'), vars, relative(srcDir, file)) : raw;
+    const content = isTpl
+      ? renderTemplate(raw.toString('utf8'), vars, relative(srcDir, file))
+      : raw;
     if (!opts.dryRun) {
       mkdirSync(dirname(dest), { recursive: true });
       writeFileSync(dest, content);

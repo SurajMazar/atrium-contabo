@@ -4,7 +4,10 @@
   "private": true,
   "scripts": {
     "test": "playwright test",
-    "test:ui": "playwright test --ui"
+    "test:ui": "playwright test --ui",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "list": "playwright test --list",
+    "install-browsers": "playwright install --with-deps chromium"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

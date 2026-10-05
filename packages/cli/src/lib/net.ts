@@ -10,10 +10,17 @@ export interface ProbeResult {
 }
 
 /** HTTP GET with timeout; never throws. */
-export async function httpProbe(url: string, opts: { timeoutMs?: number; headers?: Record<string, string> } = {}): Promise<ProbeResult> {
+export async function httpProbe(
+  url: string,
+  opts: { timeoutMs?: number; headers?: Record<string, string> } = {},
+): Promise<ProbeResult> {
   const started = Date.now();
   try {
-    const res = await fetch(url, { headers: opts.headers, signal: AbortSignal.timeout(opts.timeoutMs ?? 3000), redirect: 'manual' });
+    const res = await fetch(url, {
+      headers: opts.headers,
+      signal: AbortSignal.timeout(opts.timeoutMs ?? 3000),
+      redirect: 'manual',
+    });
     const ct = res.headers.get('content-type') ?? '';
     let body: unknown;
     try {
@@ -21,18 +28,34 @@ export async function httpProbe(url: string, opts: { timeoutMs?: number; headers
     } catch {
       body = undefined;
     }
-    return { ok: res.status < 400, status: res.status, ms: Date.now() - started, body, detail: `HTTP ${res.status}` };
+    return {
+      ok: res.status < 400,
+      status: res.status,
+      ms: Date.now() - started,
+      body,
+      detail: `HTTP ${res.status}`,
+    };
   } catch (err) {
     const e = err as Error & { cause?: { code?: string } };
-    return { ok: false, ms: Date.now() - started, detail: e.cause?.code ?? (e.name === 'TimeoutError' ? 'timeout' : e.message) };
+    return {
+      ok: false,
+      ms: Date.now() - started,
+      detail: e.cause?.code ?? (e.name === 'TimeoutError' ? 'timeout' : e.message),
+    };
   }
 }
 
 /** Open a TCP connection and optionally read the first line (SMTP greeting). */
-export function tcpProbe(host: string, port: number, opts: { timeoutMs?: number; readGreeting?: boolean; tls?: boolean } = {}): Promise<ProbeResult> {
+export function tcpProbe(
+  host: string,
+  port: number,
+  opts: { timeoutMs?: number; readGreeting?: boolean; tls?: boolean } = {},
+): Promise<ProbeResult> {
   const started = Date.now();
   return new Promise((resolve) => {
-    const sock = opts.tls ? tlsConnect({ host, port, servername: host, rejectUnauthorized: false }) : createConnection({ host, port });
+    const sock = opts.tls
+      ? tlsConnect({ host, port, servername: host, rejectUnauthorized: false })
+      : createConnection({ host, port });
     let settled = false;
     const finish = (r: Omit<ProbeResult, 'ms'>) => {
       if (settled) return;
@@ -41,7 +64,9 @@ export function tcpProbe(host: string, port: number, opts: { timeoutMs?: number;
       resolve({ ...r, ms: Date.now() - started });
     };
     sock.setTimeout(opts.timeoutMs ?? 3000, () => finish({ ok: false, detail: 'timeout' }));
-    sock.once('error', (err: NodeJS.ErrnoException) => finish({ ok: false, detail: err.code ?? err.message }));
+    sock.once('error', (err: NodeJS.ErrnoException) =>
+      finish({ ok: false, detail: err.code ?? err.message }),
+    );
     sock.once(opts.tls ? 'secureConnect' : 'connect', () => {
       if (!opts.readGreeting) finish({ ok: true, detail: 'connected' });
     });

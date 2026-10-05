@@ -9,9 +9,9 @@ metadata:
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-http01
     nginx.ingress.kubernetes.io/proxy-body-size: 100m
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: '120'
     # Server-Sent Events (AI generation progress)
-    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-buffering: 'off'
 spec:
   ingressClassName: nginx
   tls:
@@ -21,11 +21,19 @@ spec:
     - host: admin.example.com
       http:
         paths:
-          - { path: /, pathType: Prefix, backend: { service: { name: atrium-admin, port: { name: http } } } }
+          - {
+              path: /,
+              pathType: Prefix,
+              backend: { service: { name: atrium-admin, port: { name: http } } },
+            }
     - host: api.example.com
       http:
         paths:
-          - { path: /, pathType: Prefix, backend: { service: { name: atrium-api, port: { name: http } } } }
+          - {
+              path: /,
+              pathType: Prefix,
+              backend: { service: { name: atrium-api, port: { name: http } } },
+            }
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -37,14 +45,22 @@ metadata:
 spec:
   ingressClassName: nginx
   tls:
-    - hosts: [sites.example.com, "*.sites.example.com"]
+    - hosts: [sites.example.com, '*.sites.example.com']
       secretName: atrium-sites-wildcard-tls
   rules:
     - host: sites.example.com
       http:
         paths:
-          - { path: /, pathType: Prefix, backend: { service: { name: atrium-renderer, port: { name: http } } } }
-    - host: "*.sites.example.com"
+          - {
+              path: /,
+              pathType: Prefix,
+              backend: { service: { name: atrium-renderer, port: { name: http } } },
+            }
+    - host: '*.sites.example.com'
       http:
         paths:
-          - { path: /, pathType: Prefix, backend: { service: { name: atrium-renderer, port: { name: http } } } }
+          - {
+              path: /,
+              pathType: Prefix,
+              backend: { service: { name: atrium-renderer, port: { name: http } } },
+            }

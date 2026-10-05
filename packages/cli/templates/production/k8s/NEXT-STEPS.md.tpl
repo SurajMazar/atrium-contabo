@@ -9,7 +9,7 @@ Generated {{generatedAt}}. Full guide: {{doc}}
    `kubectl apply -f cluster-issuers.yaml` (edit the DNS-01 solver for your DNS provider).
 3. **DNS**: point {{adminHost}}, {{apiHost}}, {{sitesDomain}} and `*.{{sitesDomain}}` at the ingress load balancer.
 4. **Images**: push `{{registry}}/atrium-{api,worker,renderer,admin,migrate}:{{tag}}` (CI: .github/workflows/ci.yml).
-   Admin must be built with `--build-arg ATRIUM_API_INTERNAL_URL=http://atrium-api:4000`.
+   The admin's build-time API target `http://api:4000` resolves via the base's `api` alias Service.
 5. **Render & apply**:
    ```bash
    kubectl kustomize . > /tmp/atrium.yaml            # review
@@ -18,7 +18,7 @@ Generated {{generatedAt}}. Full guide: {{doc}}
    kubectl -n {{namespace}} wait --for=condition=complete job/atrium-migrate --timeout=10m
    kubectl -n {{namespace}} rollout status deploy/atrium-api deploy/atrium-worker deploy/atrium-renderer deploy/atrium-admin
    ```
-6. **Seed once**: `kubectl -n {{namespace}} run atrium-seed --rm -it --restart=Never --image={{registry}}/atrium-migrate:{{tag}} --env-from=secret/<atrium-secrets-hash> -- node_modules/.bin/tsx prisma/seed.ts`
-   (or `atrium seed` from a workstation with DATABASE_URL pointing at the database).
+6. **Seed once** from a workstation/CI job with DATABASE_URL pointing at the database (port-forward if private):
+   `kubectl port-forward svc/<db> 5433:5432` then `DATABASE_URL=… pnpm db:seed`.
 7. **Custom domains**: each verified customer domain needs an Ingress host + certificate (HTTP-01) —
    see {{doc}}#custom-domains.

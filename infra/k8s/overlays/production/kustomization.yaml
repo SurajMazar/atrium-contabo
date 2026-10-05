@@ -8,11 +8,11 @@ resources:
   - ../../base
 
 images:
-  - { name: ghcr.io/your-org/atrium-api, newTag: "1.0.0" }
-  - { name: ghcr.io/your-org/atrium-worker, newTag: "1.0.0" }
-  - { name: ghcr.io/your-org/atrium-renderer, newTag: "1.0.0" }
-  - { name: ghcr.io/your-org/atrium-admin, newTag: "1.0.0" }
-  - { name: ghcr.io/your-org/atrium-migrate, newTag: "1.0.0" }
+  - { name: ghcr.io/your-org/atrium-api, newTag: '1.0.0' }
+  - { name: ghcr.io/your-org/atrium-worker, newTag: '1.0.0' }
+  - { name: ghcr.io/your-org/atrium-renderer, newTag: '1.0.0' }
+  - { name: ghcr.io/your-org/atrium-admin, newTag: '1.0.0' }
+  - { name: ghcr.io/your-org/atrium-migrate, newTag: '1.0.0' }
 configMapGenerator:
   - name: atrium-config
     behavior: merge
@@ -24,6 +24,7 @@ configMapGenerator:
       - PLATFORM_SITES_DOMAIN=sites.example.com
       - CORS_ORIGINS=https://admin.example.com
       - COOKIE_DOMAIN=admin.example.com
+      - PLATFORM_CNAME_TARGET=sites.example.com
       - MAIL_FROM=Atrium <no-reply@example.com>
       - SEED_ADMIN_EMAIL=admin@example.com
 secretGenerator:

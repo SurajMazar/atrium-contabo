@@ -29,7 +29,7 @@ spec:
             - name: POSTGRES_PASSWORD
               valueFrom: { secretKeyRef: { name: atrium-secrets, key: POSTGRES_PASSWORD } }
           readinessProbe:
-            exec: { command: ["pg_isready", "-U", "atrium", "-d", "atrium"] }
+            exec: { command: ['pg_isready', '-U', 'atrium', '-d', 'atrium'] }
             periodSeconds: 5
           resources:
             requests: { cpu: 100m, memory: 256Mi }
@@ -69,5 +69,9 @@ spec:
     - from:
         - podSelector:
             matchExpressions:
-              - { key: app.kubernetes.io/name, operator: In, values: [atrium-api, atrium-worker, atrium-migrate, atrium-backup] }
+              - {
+                  key: app.kubernetes.io/name,
+                  operator: In,
+                  values: [atrium-api, atrium-worker, atrium-migrate, atrium-backup],
+                }
       ports: [{ port: 5432 }]

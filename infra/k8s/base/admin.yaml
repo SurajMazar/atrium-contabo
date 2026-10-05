@@ -25,14 +25,14 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: admin
-          # Built with --build-arg ATRIUM_API_INTERNAL_URL=http://atrium-api:4000 (rewrites are build-time).
+          # The /api rewrite target is baked at build time (default http://api:4000 — the `api` Service alias).
           image: ghcr.io/your-org/atrium-admin
           ports: [{ name: http, containerPort: 3000 }]
           envFrom:
             - configMapRef: { name: atrium-config }
           env:
-            - { name: PORT, value: "3000" }
-            - { name: HOSTNAME, value: "0.0.0.0" }
+            - { name: PORT, value: '3000' }
+            - { name: HOSTNAME, value: '0.0.0.0' }
           startupProbe:
             tcpSocket: { port: http }
             periodSeconds: 3
@@ -45,7 +45,7 @@ spec:
             periodSeconds: 10
             timeoutSeconds: 5
           lifecycle:
-            preStop: { exec: { command: ["sleep", "5"] } }
+            preStop: { exec: { command: ['sleep', '5'] } }
           resources:
             requests: { cpu: 100m, memory: 256Mi }
             limits: { memory: 768Mi }

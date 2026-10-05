@@ -19,7 +19,12 @@ export function parseValue(rawValue: string): string {
   if (v.startsWith('"')) {
     const end = findClosingQuote(v, '"');
     const inner = end > 0 ? v.slice(1, end) : v.slice(1);
-    return inner.replace(/\\n/g, '\n').replace(/\\r/g, '\r').replace(/\\t/g, '\t').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+    return inner
+      .replace(/\\n/g, '\n')
+      .replace(/\\r/g, '\r')
+      .replace(/\\t/g, '\t')
+      .replace(/\\"/g, '"')
+      .replace(/\\\\/g, '\\');
   }
   if (v.startsWith("'")) {
     const end = v.indexOf("'", 1);
@@ -84,7 +89,12 @@ export class EnvFile {
           rest += `\n${src[i]}`;
           if (findClosingQuote(rest.trimStart(), '"') >= 0) break;
         }
-        lines.push({ kind: 'entry', key: m[1]!, value: parseValue(rest.replace(/\n/g, '\\n')), raw });
+        lines.push({
+          kind: 'entry',
+          key: m[1]!,
+          value: parseValue(rest.replace(/\n/g, '\\n')),
+          raw,
+        });
         continue;
       }
       lines.push({ kind: 'entry', key: m[1]!, value: parseValue(rest), raw });
@@ -141,7 +151,8 @@ export class EnvFile {
       }
       return prev;
     }
-    while (this.lines.length && this.lines[this.lines.length - 1]!.kind === 'blank') this.lines.pop();
+    while (this.lines.length && this.lines[this.lines.length - 1]!.kind === 'blank')
+      this.lines.pop();
     if (opts.comment) this.lines.push({ kind: 'comment', raw: `# ${opts.comment}` });
     this.lines.push({ kind: 'entry', key, value, raw: `${key}=${formatValue(value)}` });
     return undefined;
@@ -201,9 +212,20 @@ export interface MergeResult {
  * overridden or a weak secret is regenerated), new keys are added with their
  * example defaults, and local-only keys are preserved at the end.
  */
-export function mergeEnv(example: EnvFile, existing: EnvFile | null, opts: MergeOptions = {}): MergeResult {
+export function mergeEnv(
+  example: EnvFile,
+  existing: EnvFile | null,
+  opts: MergeOptions = {},
+): MergeResult {
   const out = example.clone();
-  const res: MergeResult = { file: out, added: [], generated: [], kept: [], extra: [], overridden: [] };
+  const res: MergeResult = {
+    file: out,
+    added: [],
+    generated: [],
+    kept: [],
+    extra: [],
+    overridden: [],
+  };
   const secretKeys = new Set(opts.secretKeys ?? Object.keys(APP_SECRETS));
   const exampleKeys = new Set(example.keys());
 
@@ -222,13 +244,21 @@ export function mergeEnv(example: EnvFile, existing: EnvFile | null, opts: Merge
     const current = existing?.get(key);
     if (current !== undefined) {
       const weak = secretKeys.has(key) && !assessSecret(key, current).ok;
-      if (weak && (opts.regenerateWeak || (opts.generateSecrets && (current === '' || current === line.value)))) {
+      if (
+        weak &&
+        (opts.regenerateWeak ||
+          (opts.generateSecrets && (current === '' || current === line.value)))
+      ) {
         setLine(line, generateSecret(key));
         res.generated.push(key);
       } else {
-        const src = existing!.lines.find((l) => l.kind === 'entry' && l.key === key) as Extract<EnvLine, { kind: 'entry' }> | undefined;
+        const src = existing!.lines.find((l) => l.kind === 'entry' && l.key === key) as
+          Extract<EnvLine, { kind: 'entry' }> | undefined;
         line.value = current;
-        line.raw = src && src.value === current ? src.raw.replace(/^\s*export\s+/, '') : `${key}=${formatValue(current)}`;
+        line.raw =
+          src && src.value === current
+            ? src.raw.replace(/^\s*export\s+/, '')
+            : `${key}=${formatValue(current)}`;
         res.kept.push(key);
       }
       continue;
@@ -240,14 +270,26 @@ export function mergeEnv(example: EnvFile, existing: EnvFile | null, opts: Merge
   }
 
   if (existing) {
-    const extras = existing.lines.filter((l): l is Extract<EnvLine, { kind: 'entry' }> => l.kind === 'entry' && !exampleKeys.has(l.key));
+    const extras = existing.lines.filter(
+      (l): l is Extract<EnvLine, { kind: 'entry' }> =>
+        l.kind === 'entry' && !exampleKeys.has(l.key),
+    );
     const unique = new Map(extras.map((l) => [l.key, l]));
     for (const [key, override] of Object.entries(opts.overrides ?? {})) {
-      if (!exampleKeys.has(key) && unique.has(key)) unique.set(key, { kind: 'entry', key, value: override, raw: `${key}=${formatValue(override)}` });
+      if (!exampleKeys.has(key) && unique.has(key))
+        unique.set(key, {
+          kind: 'entry',
+          key,
+          value: override,
+          raw: `${key}=${formatValue(override)}`,
+        });
     }
     if (unique.size) {
       while (out.lines.length && out.lines[out.lines.length - 1]!.kind === 'blank') out.lines.pop();
-      out.lines.push({ kind: 'blank', raw: '' }, { kind: 'comment', raw: '# ─── Local additions (not in .env.example) ───' });
+      out.lines.push(
+        { kind: 'blank', raw: '' },
+        { kind: 'comment', raw: '# ─── Local additions (not in .env.example) ───' },
+      );
       for (const l of unique.values()) {
         out.lines.push({ ...l });
         res.extra.push(l.key);
@@ -282,11 +324,17 @@ export function loadEnvObject(file: string): Record<string, string> {
 }
 
 /** Environment for child processes: process.env overlaid with the project .env. */
-export function childEnv(envFile: string, extra: Record<string, string | undefined> = {}): NodeJS.ProcessEnv {
+export function childEnv(
+  envFile: string,
+  extra: Record<string, string | undefined> = {},
+): NodeJS.ProcessEnv {
   const fromFile = loadEnvObject(envFile);
   return { ...fromFile, ...process.env, ...stripUndefined(extra) };
 }
 
 function stripUndefined(o: Record<string, string | undefined>): Record<string, string> {
-  return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Record<string, string>;
+  return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Record<
+    string,
+    string
+  >;
 }

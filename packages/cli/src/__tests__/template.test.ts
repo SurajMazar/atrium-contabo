@@ -2,11 +2,22 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { TemplateError, renderDir, renderTemplate, toCamel, toKebab, toPascal, toTitle } from '../lib/template';
+import {
+  TemplateError,
+  renderDir,
+  renderTemplate,
+  toCamel,
+  toKebab,
+  toPascal,
+  toTitle,
+} from '../lib/template';
 
 describe('renderTemplate', () => {
   it('substitutes variables and blocks', () => {
-    const out = renderTemplate('Hi {{ name }}!{{#if pro}} PRO{{/if}}{{#unless pro}} free{{/unless}}', { name: 'Ada', pro: true });
+    const out = renderTemplate(
+      'Hi {{ name }}!{{#if pro}} PRO{{/if}}{{#unless pro}} free{{/unless}}',
+      { name: 'Ada', pro: true },
+    );
     expect(out).toBe('Hi Ada! PRO');
     expect(renderTemplate('{{#if x}}a{{#if y}}b{{/if}}{{/if}}', { x: true, y: false })).toBe('a');
   });
@@ -39,7 +50,9 @@ describe('renderDir', () => {
     expect(readFileSync(join(out, 'sub', 'raw.txt'), 'utf8')).toBe('{{left}} alone');
     // existing files are kept unless overwrite
     writeFileSync(join(out, 'demo.ts'), 'mine');
-    expect(renderDir(src, out, { name: 'demo' }).find((f) => f.rel === 'demo.ts')?.skipped).toBe(true);
+    expect(renderDir(src, out, { name: 'demo' }).find((f) => f.rel === 'demo.ts')?.skipped).toBe(
+      true,
+    );
     expect(readFileSync(join(out, 'demo.ts'), 'utf8')).toBe('mine');
     renderDir(src, out, { name: 'demo' }, { overwrite: true });
     expect(readFileSync(join(out, 'demo.ts'), 'utf8')).toContain('demo');

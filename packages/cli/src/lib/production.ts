@@ -1,11 +1,31 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { EnvFile, formatValue } from './env';
 import { generateSecret, isSecretKey } from './secrets';
 import { renderDir, renderTemplate, type RenderedFile, type TemplateVars } from './template';
 import { templatesDir } from './paths';
 
-export type TargetId = 'podman' | 'docker' | 'systemd' | 'k8s' | 'cpanel' | 'aws' | 'azure' | 'gcp' | 'vercel' | 'fly' | 'railway' | 'render';
+export type TargetId =
+  | 'podman'
+  | 'docker'
+  | 'systemd'
+  | 'k8s'
+  | 'cpanel'
+  | 'aws'
+  | 'azure'
+  | 'gcp'
+  | 'vercel'
+  | 'fly'
+  | 'railway'
+  | 'render';
 
 /** How backing services are reached in the generated env. */
 type EnvMode = 'compose' | 'host' | 'managed';
@@ -56,15 +76,69 @@ export const TARGETS: Record<TargetId, TargetSpec> = {
       { from: 'infra/scripts/backup.sh', to: 'scripts/backup.sh' },
     ],
   },
-  k8s: { title: 'Kubernetes (Kustomize overlay on infra/k8s/base)', doc: 'docs/deployment/kubernetes.md', envMode: 'managed', envLayout: 'k8s', copies: [] },
-  cpanel: { title: 'cPanel / shared hosting (static or Node.js-app renderer) + external API', doc: 'docs/deployment/cpanel.md', envMode: 'managed', envLayout: 'single', copies: [] },
-  aws: { title: 'AWS — ECS Fargate + RDS + ElastiCache + S3 + CloudFront', doc: 'docs/deployment/aws.md', envMode: 'managed', envLayout: 'single', copies: [] },
-  azure: { title: 'Azure — Container Apps + PostgreSQL Flexible Server + Cache for Redis + Blob', doc: 'docs/deployment/azure.md', envMode: 'managed', envLayout: 'single', copies: [] },
-  gcp: { title: 'Google Cloud — Cloud Run + GKE/GCE worker + Cloud SQL + Memorystore + GCS', doc: 'docs/deployment/gcp.md', envMode: 'managed', envLayout: 'single', copies: [] },
-  vercel: { title: 'Vercel for admin + renderer; API/worker on a container platform', doc: 'docs/deployment/vercel.md', envMode: 'managed', envLayout: 'vercel', copies: [] },
-  fly: { title: 'Fly.io (api, worker, renderer, admin apps)', doc: 'docs/deployment/fly-railway-render.md', envMode: 'managed', envLayout: 'single', copies: [] },
-  railway: { title: 'Railway (four services from the Containerfiles)', doc: 'docs/deployment/fly-railway-render.md', envMode: 'managed', envLayout: 'single', copies: [] },
-  render: { title: 'Render (Blueprint: web services, background worker, Postgres, Key Value)', doc: 'docs/deployment/fly-railway-render.md', envMode: 'managed', envLayout: 'single', copies: [] },
+  k8s: {
+    title: 'Kubernetes (Kustomize overlay on infra/k8s/base)',
+    doc: 'docs/deployment/kubernetes.md',
+    envMode: 'managed',
+    envLayout: 'k8s',
+    copies: [],
+  },
+  cpanel: {
+    title: 'cPanel / shared hosting (static or Node.js-app renderer) + external API',
+    doc: 'docs/deployment/cpanel.md',
+    envMode: 'managed',
+    envLayout: 'single',
+    copies: [],
+  },
+  aws: {
+    title: 'AWS — ECS Fargate + RDS + ElastiCache + S3 + CloudFront',
+    doc: 'docs/deployment/aws.md',
+    envMode: 'managed',
+    envLayout: 'single',
+    copies: [],
+  },
+  azure: {
+    title: 'Azure — Container Apps + PostgreSQL Flexible Server + Cache for Redis + Blob',
+    doc: 'docs/deployment/azure.md',
+    envMode: 'managed',
+    envLayout: 'single',
+    copies: [],
+  },
+  gcp: {
+    title: 'Google Cloud — Cloud Run + GKE/GCE worker + Cloud SQL + Memorystore + GCS',
+    doc: 'docs/deployment/gcp.md',
+    envMode: 'managed',
+    envLayout: 'single',
+    copies: [],
+  },
+  vercel: {
+    title: 'Vercel for admin + renderer; API/worker on a container platform',
+    doc: 'docs/deployment/vercel.md',
+    envMode: 'managed',
+    envLayout: 'vercel',
+    copies: [],
+  },
+  fly: {
+    title: 'Fly.io (api, worker, renderer, admin apps)',
+    doc: 'docs/deployment/fly-railway-render.md',
+    envMode: 'managed',
+    envLayout: 'single',
+    copies: [],
+  },
+  railway: {
+    title: 'Railway (four services from the Containerfiles)',
+    doc: 'docs/deployment/fly-railway-render.md',
+    envMode: 'managed',
+    envLayout: 'single',
+    copies: [],
+  },
+  render: {
+    title: 'Render (Blueprint: web services, background worker, Postgres, Key Value)',
+    doc: 'docs/deployment/fly-railway-render.md',
+    envMode: 'managed',
+    envLayout: 'single',
+    copies: [],
+  },
 };
 
 export const TARGET_IDS = Object.keys(TARGETS) as TargetId[];
@@ -84,8 +158,12 @@ export interface ProductionOptions {
 
 export function productionVars(o: ProductionOptions): TemplateVars {
   const domain = o.domain.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
-  const k8sBase = relative(o.outDir, join(o.root, 'infra', 'k8s', 'base')).split('\\').join('/');
-  const k8sComponents = relative(o.outDir, join(o.root, 'infra', 'k8s', 'components')).split('\\').join('/');
+  const k8sBase = relative(o.outDir, join(o.root, 'infra', 'k8s', 'base'))
+    .split('\\')
+    .join('/');
+  const k8sComponents = relative(o.outDir, join(o.root, 'infra', 'k8s', 'components'))
+    .split('\\')
+    .join('/');
   return {
     domain,
     adminHost: `admin.${domain}`,
@@ -138,7 +216,19 @@ export function buildProductionEnv(example: EnvFile, vars: TemplateVars, mode: E
   set('CORS_ORIGINS', `https://${vars.adminHost}`);
   // Scope cookies to the admin host only — never the parent domain shared with tenant sites.
   set('COOKIE_DOMAIN', String(vars.adminHost));
-  for (const k of ['JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET', 'ENCRYPTION_KEY', 'RENDERER_SECRET', 'ANALYTICS_SALT', 'SEED_ADMIN_PASSWORD']) set(k, generateSecret(k));
+  // Secure cookies over https; DNS guidance shown to tenants for custom domains.
+  env.set('COOKIE_SECURE', 'true');
+  env.set('TRUST_PROXY', 'true');
+  env.set('PLATFORM_CNAME_TARGET', String(vars.sitesDomain));
+  for (const k of [
+    'JWT_ACCESS_SECRET',
+    'JWT_REFRESH_SECRET',
+    'ENCRYPTION_KEY',
+    'RENDERER_SECRET',
+    'ANALYTICS_SALT',
+    'SEED_ADMIN_PASSWORD',
+  ])
+    set(k, generateSecret(k));
   set('SEED_ADMIN_EMAIL', String(vars.acmeEmail));
   set('MAIL_FROM', `Atrium <no-reply@${d}>`);
   set('STORAGE_DRIVER', 's3');
@@ -147,7 +237,10 @@ export function buildProductionEnv(example: EnvFile, vars: TemplateVars, mode: E
 
   if (mode === 'compose') {
     set('POSTGRES_PASSWORD', pgPassword);
-    set('DATABASE_URL', `postgresql://${env.get('POSTGRES_USER') ?? 'atrium'}:${pgPassword}@postgres:5432/${env.get('POSTGRES_DB') ?? 'atrium'}`);
+    set(
+      'DATABASE_URL',
+      `postgresql://${env.get('POSTGRES_USER') ?? 'atrium'}:${pgPassword}@postgres:5432/${env.get('POSTGRES_DB') ?? 'atrium'}`,
+    );
     set('REDIS_URL', 'redis://redis:6379');
     set('S3_ENDPOINT', 'http://s3:8333');
     set('S3_PUBLIC_URL', `https://${vars.mediaHost}/${env.get('S3_BUCKET') ?? 'atrium-media'}`);
@@ -155,7 +248,10 @@ export function buildProductionEnv(example: EnvFile, vars: TemplateVars, mode: E
     set('S3_SECRET_ACCESS_KEY', s3Secret);
   } else if (mode === 'host') {
     set('POSTGRES_PASSWORD', pgPassword);
-    set('DATABASE_URL', `postgresql://${env.get('POSTGRES_USER') ?? 'atrium'}:${pgPassword}@127.0.0.1:5432/${env.get('POSTGRES_DB') ?? 'atrium'}`);
+    set(
+      'DATABASE_URL',
+      `postgresql://${env.get('POSTGRES_USER') ?? 'atrium'}:${pgPassword}@127.0.0.1:5432/${env.get('POSTGRES_DB') ?? 'atrium'}`,
+    );
     set('REDIS_URL', 'redis://127.0.0.1:6379');
     set('S3_ENDPOINT', `https://s3.${MANAGED_PLACEHOLDER}.example`);
     set('S3_PUBLIC_URL', `https://${vars.mediaHost}`);
@@ -163,8 +259,14 @@ export function buildProductionEnv(example: EnvFile, vars: TemplateVars, mode: E
     set('S3_SECRET_ACCESS_KEY', MANAGED_PLACEHOLDER);
   } else {
     set('POSTGRES_PASSWORD', MANAGED_PLACEHOLDER);
-    set('DATABASE_URL', `postgresql://atrium:${MANAGED_PLACEHOLDER}@${MANAGED_PLACEHOLDER}.db.internal:5432/atrium?sslmode=require`);
-    set('REDIS_URL', `rediss://default:${MANAGED_PLACEHOLDER}@${MANAGED_PLACEHOLDER}.cache.internal:6379`);
+    set(
+      'DATABASE_URL',
+      `postgresql://atrium:${MANAGED_PLACEHOLDER}@${MANAGED_PLACEHOLDER}.db.internal:5432/atrium?sslmode=require`,
+    );
+    set(
+      'REDIS_URL',
+      `rediss://default:${MANAGED_PLACEHOLDER}@${MANAGED_PLACEHOLDER}.cache.internal:6379`,
+    );
     set('S3_ENDPOINT', `https://s3.${MANAGED_PLACEHOLDER}.example`);
     set('S3_PUBLIC_URL', `https://${vars.mediaHost}`);
     set('S3_ACCESS_KEY_ID', MANAGED_PLACEHOLDER);
@@ -183,7 +285,14 @@ export function buildProductionEnv(example: EnvFile, vars: TemplateVars, mode: E
     ['ACME_EMAIL', String(vars.acmeEmail)],
     ['ATRIUM_IMAGE_REGISTRY', String(vars.registry)],
     ['ATRIUM_IMAGE_TAG', String(vars.tag)],
-    ['ATRIUM_API_INTERNAL_URL', mode === 'compose' ? 'http://api:4000' : mode === 'host' ? 'http://127.0.0.1:4000' : `https://${vars.apiHost}`],
+    [
+      'ATRIUM_API_INTERNAL_URL',
+      mode === 'compose'
+        ? 'http://api:4000'
+        : mode === 'host'
+          ? 'http://127.0.0.1:4000'
+          : `https://${vars.apiHost}`,
+    ],
   ];
   if (mode === 'compose') extra.push(['ATRIUM_SRC_DIR', String(vars.srcDir)]);
   for (const [k, v, comment] of extra) env.set(k, v, { comment });
@@ -196,18 +305,46 @@ export function isSecretEnvKey(key: string): boolean {
 }
 
 const VERCEL_KEYS = {
-  admin: ['NODE_ENV', 'API_URL', 'ATRIUM_API_INTERNAL_URL', 'ADMIN_URL', 'RENDERER_URL', 'PLATFORM_SITES_DOMAIN', 'PREVIEW_URL'],
-  renderer: ['NODE_ENV', 'API_URL', 'ATRIUM_API_INTERNAL_URL', 'RENDERER_URL', 'PLATFORM_SITES_DOMAIN', 'PREVIEW_URL', 'RENDERER_SECRET', 'ANALYTICS_SALT'],
+  admin: [
+    'NODE_ENV',
+    'API_URL',
+    'ATRIUM_API_INTERNAL_URL',
+    'ADMIN_URL',
+    'RENDERER_URL',
+    'PLATFORM_SITES_DOMAIN',
+    'PREVIEW_URL',
+  ],
+  renderer: [
+    'NODE_ENV',
+    'API_URL',
+    'ATRIUM_API_INTERNAL_URL',
+    'RENDERER_URL',
+    'PLATFORM_SITES_DOMAIN',
+    'PREVIEW_URL',
+    'RENDERER_SECRET',
+    'ANALYTICS_SALT',
+  ],
 };
 
 function envSubset(env: EnvFile, keys: string[], header: string): string {
-  return [`# ${header}`, ...keys.filter((k) => env.has(k)).map((k) => `${k}=${formatValue(env.get(k)!)}`)].join('\n') + '\n';
+  return (
+    [
+      `# ${header}`,
+      ...keys.filter((k) => env.has(k)).map((k) => `${k}=${formatValue(env.get(k)!)}`),
+    ].join('\n') + '\n'
+  );
 }
 
-function copyRecursive(src: string, dest: string, transform?: (s: string) => string, overwrite = false): string[] {
+function copyRecursive(
+  src: string,
+  dest: string,
+  transform?: (s: string) => string,
+  overwrite = false,
+): string[] {
   const written: string[] = [];
   if (statSync(src).isDirectory()) {
-    for (const e of readdirSync(src)) written.push(...copyRecursive(join(src, e), join(dest, e), transform, overwrite));
+    for (const e of readdirSync(src))
+      written.push(...copyRecursive(join(src, e), join(dest, e), transform, overwrite));
     return written;
   }
   if (existsSync(dest) && !overwrite) return written;
@@ -235,11 +372,13 @@ export function generateProduction(o: ProductionOptions, example: EnvFile): Gene
     const src = join(o.root, c.from);
     if (!existsSync(src)) continue;
     const transform = c.rewrite ? (s: string) => rewriteArtifact(s, vars) : undefined;
-    for (const f of copyRecursive(src, join(o.outDir, c.to), transform, o.overwrite)) files.push({ path: f, rel: relative(o.outDir, f) });
+    for (const f of copyRecursive(src, join(o.outDir, c.to), transform, o.overwrite))
+      files.push({ path: f, rel: relative(o.outDir, f) });
   }
 
   const tplDir = join(templatesDir, 'production', o.target);
-  if (existsSync(tplDir)) files.push(...renderDir(tplDir, o.outDir, vars, { overwrite: o.overwrite }));
+  if (existsSync(tplDir))
+    files.push(...renderDir(tplDir, o.outDir, vars, { overwrite: o.overwrite }));
 
   const env = buildProductionEnv(example, vars, spec.envMode);
   const envFiles: string[] = [];
@@ -259,14 +398,26 @@ export function generateProduction(o: ProductionOptions, example: EnvFile): Gene
   } else {
     writeSecretFile('.env', banner + env.toString());
     if (spec.envLayout === 'vercel') {
-      writeSecretFile('env.admin', envSubset(env, VERCEL_KEYS.admin, 'Vercel project: atrium-admin'));
-      writeSecretFile('env.renderer', envSubset(env, VERCEL_KEYS.renderer, 'Vercel project: atrium-renderer'));
+      writeSecretFile(
+        'env.admin',
+        envSubset(env, VERCEL_KEYS.admin, 'Vercel project: atrium-admin'),
+      );
+      writeSecretFile(
+        'env.renderer',
+        envSubset(env, VERCEL_KEYS.renderer, 'Vercel project: atrium-renderer'),
+      );
     }
   }
   if (spec.envMode === 'compose') {
     const s3 = {
       identities: [
-        { name: 'atrium', credentials: [{ accessKey: env.get('S3_ACCESS_KEY_ID'), secretKey: env.get('S3_SECRET_ACCESS_KEY') }], actions: ['Admin', 'Read', 'List', 'Tagging', 'Write'] },
+        {
+          name: 'atrium',
+          credentials: [
+            { accessKey: env.get('S3_ACCESS_KEY_ID'), secretKey: env.get('S3_SECRET_ACCESS_KEY') },
+          ],
+          actions: ['Admin', 'Read', 'List', 'Tagging', 'Write'],
+        },
         { name: 'anonymous', actions: ['Read'] },
       ],
     };

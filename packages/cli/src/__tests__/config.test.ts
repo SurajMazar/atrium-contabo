@@ -3,7 +3,13 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { clearSession, getSession, saveSession, updateProjectConfig, readProjectConfig } from '../lib/config';
+import {
+  clearSession,
+  getSession,
+  saveSession,
+  updateProjectConfig,
+  readProjectConfig,
+} from '../lib/config';
 import { EnvFile } from '../lib/env';
 import { fakeRoot, runCli } from './helpers';
 
@@ -47,7 +53,9 @@ describe('atrium config', () => {
     expect(badKey.code).not.toBe(0);
     const gen = await runCli(['--root', root, 'config', 'set', 'ENCRYPTION_KEY', '--generate']);
     expect(gen.code).toBe(0);
-    expect(Buffer.from(EnvFile.read(join(root, '.env'))!.get('ENCRYPTION_KEY')!, 'base64')).toHaveLength(32);
+    expect(
+      Buffer.from(EnvFile.read(join(root, '.env'))!.get('ENCRYPTION_KEY')!, 'base64'),
+    ).toHaveLength(32);
   });
 
   it('unset removes a key; get of a missing key fails', async () => {
@@ -78,7 +86,11 @@ describe('credentials + project config', () => {
 
   it('stores sessions per API URL with 0600 permissions', () => {
     const file = join(dir, 'credentials.json');
-    saveSession('http://localhost:4000/v1/', { email: 'a@b.c', accessToken: 't', savedAt: 'now' }, file);
+    saveSession(
+      'http://localhost:4000/v1/',
+      { email: 'a@b.c', accessToken: 't', savedAt: 'now' },
+      file,
+    );
     expect(statSync(file).mode & 0o777).toBe(0o600);
     expect(getSession('http://localhost:4000', file)?.email).toBe('a@b.c');
     expect(clearSession('http://localhost:4000', file)).toBe(true);

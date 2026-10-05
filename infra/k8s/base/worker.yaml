@@ -33,7 +33,7 @@ spec:
             - configMapRef: { name: atrium-config }
             - secretRef: { name: atrium-secrets }
           env:
-            - { name: MALLOC_ARENA_MAX, value: "2" }
+            - { name: MALLOC_ARENA_MAX, value: '2' }
           resources:
             requests: { cpu: 250m, memory: 512Mi }
             limits: { memory: 2Gi }

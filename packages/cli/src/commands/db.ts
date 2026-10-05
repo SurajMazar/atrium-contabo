@@ -7,19 +7,49 @@ import { loadDbPackage, migrationStatus, requireFrom, type PrismaLike } from '..
 import { run, which } from '../lib/exec';
 import { examples } from '../lib/help';
 import { requireEngine, serviceContainer } from '../lib/runtime';
-import { CliError, ask, color, intro, isInteractive, log, maskUrl, outro, table, task } from '../lib/ui';
+import {
+  CliError,
+  ask,
+  color,
+  intro,
+  isInteractive,
+  log,
+  maskUrl,
+  outro,
+  table,
+  task,
+} from '../lib/ui';
 import { migrateDeploy, pnpm, seed } from '../lib/workspace';
 
 function dbUrl(ctx: Context): string {
   const url = ctx.vars.DATABASE_URL;
-  if (!url) throw new CliError('DATABASE_URL is not set', 'Run `atrium setup env` or `atrium config set DATABASE_URL …`.');
+  if (!url)
+    throw new CliError(
+      'DATABASE_URL is not set',
+      'Run `atrium setup env` or `atrium config set DATABASE_URL …`.',
+    );
   return url;
 }
 
 async function printMigrationStatus(ctx: Context) {
   const m = await migrationStatus(ctx.root, dbUrl(ctx), ctx.p.migrationsDir);
-  log.raw(table(['MIGRATION', 'STATE'], m.local.map((name) => [name, m.applied.includes(name) ? color.green('applied') : m.failed.includes(name) ? color.red('failed') : color.yellow('pending')])));
-  if (m.unknown.length) log.warn(`Applied in the database but missing locally: ${m.unknown.join(', ')} (is this checkout behind?)`);
+  log.raw(
+    table(
+      ['MIGRATION', 'STATE'],
+      m.local.map((name) => [
+        name,
+        m.applied.includes(name)
+          ? color.green('applied')
+          : m.failed.includes(name)
+            ? color.red('failed')
+            : color.yellow('pending'),
+      ]),
+    ),
+  );
+  if (m.unknown.length)
+    log.warn(
+      `Applied in the database but missing locally: ${m.unknown.join(', ')} (is this checkout behind?)`,
+    );
   return m;
 }
 
@@ -32,10 +62,26 @@ async function psqlRunner(ctx: Context): Promise<{ cmd: string; args: string[]; 
     const e = await requireEngine(false);
     const user = decodeURIComponent(url.username) || ctx.vars.POSTGRES_USER || 'atrium';
     const dbName = url.pathname.slice(1) || ctx.vars.POSTGRES_DB || 'atrium';
-    return { cmd: e.bin, args: ['exec', isInteractive() ? '-it' : '-i', container.name, 'psql', '-U', user, '-d', dbName], via: `${container.name} (${e.engine})` };
+    return {
+      cmd: e.bin,
+      args: [
+        'exec',
+        isInteractive() ? '-it' : '-i',
+        container.name,
+        'psql',
+        '-U',
+        user,
+        '-d',
+        dbName,
+      ],
+      via: `${container.name} (${e.engine})`,
+    };
   }
   if (which('psql')) return { cmd: 'psql', args: [url.toString()], via: 'local psql' };
-  throw new CliError('No psql available', 'Install the PostgreSQL client (brew install libpq) or start the compose postgres container.');
+  throw new CliError(
+    'No psql available',
+    'Install the PostgreSQL client (brew install libpq) or start the compose postgres container.',
+  );
 }
 
 export function registerDb(program: Command) {
@@ -46,8 +92,21 @@ export function registerDb(program: Command) {
     .option('--name <name>', 'migration name for --dev')
     .option('--status', 'only show migration status')
     .option('--create-only', 'with --dev: write the migration without applying it')
-    .addHelpText('after', examples([['atrium migrate'], ['atrium migrate --status'], ['atrium migrate --dev --name add_site_tags', 'after editing packages/db/prisma/schema.prisma']]))
-    .action(async function (this: Command, opts: { dev?: boolean; name?: string; status?: boolean; createOnly?: boolean }) {
+    .addHelpText(
+      'after',
+      examples([
+        ['atrium migrate'],
+        ['atrium migrate --status'],
+        [
+          'atrium migrate --dev --name add_site_tags',
+          'after editing packages/db/prisma/schema.prisma',
+        ],
+      ]),
+    )
+    .action(async function (
+      this: Command,
+      opts: { dev?: boolean; name?: string; status?: boolean; createOnly?: boolean },
+    ) {
       const ctx = context(this);
       log.info(`Database: ${color.dim(maskUrl(dbUrl(ctx)))}`);
       if (opts.status) {
@@ -55,17 +114,34 @@ export function registerDb(program: Command) {
         return;
       }
       if (opts.dev) {
-        if (ctx.vars.NODE_ENV === 'production') throw new CliError('Refusing `migrate dev` with NODE_ENV=production', 'Use `atrium migrate` (deploy) in production.');
-        await pnpm(ctx, ['--filter', '@atrium/db', 'exec', 'prisma', 'migrate', 'dev', ...(opts.name ? ['--name', opts.name] : []), ...(opts.createOnly ? ['--create-only'] : [])]);
+        if (ctx.vars.NODE_ENV === 'production')
+          throw new CliError(
+            'Refusing `migrate dev` with NODE_ENV=production',
+            'Use `atrium migrate` (deploy) in production.',
+          );
+        await pnpm(ctx, [
+          '--filter',
+          '@atrium/db',
+          'exec',
+          'prisma',
+          'migrate',
+          'dev',
+          ...(opts.name ? ['--name', opts.name] : []),
+          ...(opts.createOnly ? ['--create-only'] : []),
+        ]);
         return;
       }
-      const before = await migrationStatus(ctx.root, dbUrl(ctx), ctx.p.migrationsDir).catch(() => null);
+      const before = await migrationStatus(ctx.root, dbUrl(ctx), ctx.p.migrationsDir).catch(
+        () => null,
+      );
       if (before && !before.pending.length) {
         log.success(`Up to date (${before.applied.length} migrations applied)`);
         return;
       }
       if (before) log.info(`Pending: ${before.pending.join(', ')}`);
-      await task('Applying migrations (prisma migrate deploy)', () => migrateDeploy(ctx, { stdio: 'pipe' }));
+      await task('Applying migrations (prisma migrate deploy)', () =>
+        migrateDeploy(ctx, { stdio: 'pipe' }),
+      );
       await printMigrationStatus(ctx);
     });
 
@@ -76,10 +152,14 @@ export function registerDb(program: Command) {
     .action(async function (this: Command, opts: { demo?: boolean }) {
       const ctx = context(this);
       await seed(ctx, !!opts.demo);
-      log.success(`Seeded${opts.demo ? ' (with demo content)' : ''}. Super-admin: ${color.cyan(ctx.vars.SEED_ADMIN_EMAIL ?? '?')}`);
+      log.success(
+        `Seeded${opts.demo ? ' (with demo content)' : ''}. Super-admin: ${color.cyan(ctx.vars.SEED_ADMIN_EMAIL ?? '?')}`,
+      );
     });
 
-  const db = program.command('db').description('Database utilities: status, reset, console (psql), studio');
+  const db = program
+    .command('db')
+    .description('Database utilities: status, reset, console (psql), studio');
 
   db.command('status')
     .description('Show applied/pending migrations')
@@ -94,13 +174,31 @@ export function registerDb(program: Command) {
     .action(async function (this: Command, opts: { force?: boolean; seed?: boolean }) {
       const ctx = context(this);
       const url = new URL(dbUrl(ctx));
-      if (!opts.force) throw new CliError('`db reset` deletes every row in the database', 'Re-run with --force if you are sure.');
-      if (ctx.vars.NODE_ENV === 'production') throw new CliError('Refusing to reset a database while NODE_ENV=production');
+      if (!opts.force)
+        throw new CliError(
+          '`db reset` deletes every row in the database',
+          'Re-run with --force if you are sure.',
+        );
+      if (ctx.vars.NODE_ENV === 'production')
+        throw new CliError('Refusing to reset a database while NODE_ENV=production');
       if (isInteractive()) {
-        const answer = await ask.text(`Type the database name (${url.pathname.slice(1)}) to confirm`, { required: true });
-        if (answer !== url.pathname.slice(1)) throw new CliError('Confirmation did not match — aborted');
+        const answer = await ask.text(
+          `Type the database name (${url.pathname.slice(1)}) to confirm`,
+          { required: true },
+        );
+        if (answer !== url.pathname.slice(1))
+          throw new CliError('Confirmation did not match — aborted');
       }
-      await pnpm(ctx, ['--filter', '@atrium/db', 'exec', 'prisma', 'migrate', 'reset', '--force', ...(opts.seed === false ? ['--skip-seed'] : [])]);
+      await pnpm(ctx, [
+        '--filter',
+        '@atrium/db',
+        'exec',
+        'prisma',
+        'migrate',
+        'reset',
+        '--force',
+        ...(opts.seed === false ? ['--skip-seed'] : []),
+      ]);
       log.success('Database reset');
     });
 
@@ -112,7 +210,9 @@ export function registerDb(program: Command) {
       const ctx = context(this);
       const r = await psqlRunner(ctx);
       log.debug(`psql via ${r.via}`);
-      await run(r.cmd, [...r.args, ...(opts.command ? ['-c', opts.command] : [])], { env: { ...process.env, PGPASSWORD: decodeURIComponent(new URL(dbUrl(ctx)).password) } });
+      await run(r.cmd, [...r.args, ...(opts.command ? ['-c', opts.command] : [])], {
+        env: { ...process.env, PGPASSWORD: decodeURIComponent(new URL(dbUrl(ctx)).password) },
+      });
     });
 
   db.command('studio')
@@ -123,15 +223,24 @@ export function registerDb(program: Command) {
 
   program
     .command('console')
-    .description('Node.js REPL with the Prisma client and platform packages preloaded (like `bench console`)')
+    .description(
+      'Node.js REPL with the Prisma client and platform packages preloaded (like `bench console`)',
+    )
     .addHelpText(
       'after',
       `\nPreloaded: ${['prisma (alias db)', 'schema (@atrium/schema)', 'registry (@atrium/component-registry)', 'providers (@atrium/providers)', 'serverKit (@atrium/server-kit)', 'env'].map((x) => color.cyan(x)).join(', ')}\n` +
-        examples([['atrium console'], ['> await prisma.website.findMany({ select: { slug: true, status: true } })'], ['> registry.registry.list().length']]),
+        examples([
+          ['atrium console'],
+          ['> await prisma.website.findMany({ select: { slug: true, status: true } })'],
+          ['> registry.registry.list().length'],
+        ]),
     )
     .action(async function (this: Command) {
       const ctx = context(this);
-      Object.assign(process.env, Object.fromEntries(Object.entries(ctx.vars).filter(([k]) => !(k in process.env))));
+      Object.assign(
+        process.env,
+        Object.fromEntries(Object.entries(ctx.vars).filter(([k]) => !(k in process.env))),
+      );
       intro('atrium console');
       const ctxObj: Record<string, unknown> = { env: ctx.vars };
       let prisma: PrismaLike | undefined;
@@ -164,7 +273,11 @@ export function registerDb(program: Command) {
         }
       }
       outro('Top-level await is supported. .exit to quit.');
-      const r = repl.start({ prompt: color.cyan('atrium> '), useGlobal: false, breakEvalOnSigint: true });
+      const r = repl.start({
+        prompt: color.cyan('atrium> '),
+        useGlobal: false,
+        breakEvalOnSigint: true,
+      });
       Object.assign(r.context, ctxObj);
       mkdirSync(ctx.p.atriumDir, { recursive: true });
       r.setupHistory(join(ctx.p.atriumDir, 'console_history'), () => undefined);

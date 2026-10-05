@@ -9,11 +9,11 @@ resources:
 components:
   - ../../components/in-cluster-data
 images:
-  - { name: ghcr.io/your-org/atrium-api, newTag: "staging" }
-  - { name: ghcr.io/your-org/atrium-worker, newTag: "staging" }
-  - { name: ghcr.io/your-org/atrium-renderer, newTag: "staging" }
-  - { name: ghcr.io/your-org/atrium-admin, newTag: "staging" }
-  - { name: ghcr.io/your-org/atrium-migrate, newTag: "staging" }
+  - { name: ghcr.io/your-org/atrium-api, newTag: 'staging' }
+  - { name: ghcr.io/your-org/atrium-worker, newTag: 'staging' }
+  - { name: ghcr.io/your-org/atrium-renderer, newTag: 'staging' }
+  - { name: ghcr.io/your-org/atrium-admin, newTag: 'staging' }
+  - { name: ghcr.io/your-org/atrium-migrate, newTag: 'staging' }
 configMapGenerator:
   - name: atrium-config
     behavior: merge
@@ -25,6 +25,7 @@ configMapGenerator:
       - PLATFORM_SITES_DOMAIN=sites.staging.example.com
       - CORS_ORIGINS=https://admin.staging.example.com
       - COOKIE_DOMAIN=admin.staging.example.com
+      - PLATFORM_CNAME_TARGET=sites.staging.example.com
       - MAIL_FROM=Atrium <no-reply@staging.example.com>
       - SEED_ADMIN_EMAIL=admin@staging.example.com
 secretGenerator:
@@ -52,4 +53,3 @@ patches:
       - op: replace
         path: /spec/minAvailable
         value: 0
-

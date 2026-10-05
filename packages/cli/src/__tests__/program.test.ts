@@ -3,10 +3,41 @@ import { createProgram } from '../index';
 import { runCli } from './helpers';
 
 const EXPECTED = [
-  'init', 'setup', 'start', 'stop', 'status', 'logs', 'procfile', 'migrate', 'seed', 'db', 'console',
-  'login', 'logout', 'whoami', 'new-site', 'list-sites', 'use', 'drop-site', 'publish', 'export-site', 'import-site', 'templates',
-  'create-user', 'set-admin-password', 'new-org', 'backup', 'restore', 'config', 'doctor', 'update', 'build', 'version',
-  'new-component', 'new-provider', 'new-plugin',
+  'init',
+  'setup',
+  'start',
+  'stop',
+  'status',
+  'logs',
+  'procfile',
+  'migrate',
+  'seed',
+  'db',
+  'console',
+  'login',
+  'logout',
+  'whoami',
+  'new-site',
+  'list-sites',
+  'use',
+  'drop-site',
+  'publish',
+  'export-site',
+  'import-site',
+  'templates',
+  'create-user',
+  'set-admin-password',
+  'new-org',
+  'backup',
+  'restore',
+  'config',
+  'doctor',
+  'update',
+  'build',
+  'version',
+  'new-component',
+  'new-provider',
+  'new-plugin',
 ];
 
 describe('command registration', () => {
@@ -28,8 +59,11 @@ describe('command registration', () => {
   });
 
   it('has setup, db and config subcommands', () => {
-    const sub = (n: string) => program.commands.find((c) => c.name() === n)!.commands.map((c) => c.name());
-    expect(sub('setup')).toEqual(expect.arrayContaining(['env', 'infra', 'production', 'check', 'ssl', 'redis', 'procfile']));
+    const sub = (n: string) =>
+      program.commands.find((c) => c.name() === n)!.commands.map((c) => c.name());
+    expect(sub('setup')).toEqual(
+      expect.arrayContaining(['env', 'infra', 'production', 'check', 'ssl', 'redis', 'procfile']),
+    );
     expect(sub('db')).toEqual(expect.arrayContaining(['status', 'reset', 'console', 'studio']));
     expect(sub('config')).toEqual(expect.arrayContaining(['list', 'get', 'set', 'unset']));
   });

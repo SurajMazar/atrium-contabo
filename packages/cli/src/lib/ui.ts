@@ -65,7 +65,11 @@ export function note(body: string, title?: string) {
  * callback may update the message through `update`. Errors are re-thrown after
  * the spinner is marked as failed.
  */
-export async function task<T>(title: string, fn: (update: (msg: string) => void) => Promise<T>, done?: (result: T) => string): Promise<T> {
+export async function task<T>(
+  title: string,
+  fn: (update: (msg: string) => void) => Promise<T>,
+  done?: (result: T) => string,
+): Promise<T> {
   if (!process.stdout.isTTY || isJson()) {
     if (!isJson()) process.stdout.write(`${pc.cyan('◇')} ${title}…\n`);
     try {
@@ -93,12 +97,25 @@ const ANSI = /\u001b\[[0-9;]*m/g;
 const visibleLength = (s: string) => s.replace(ANSI, '').length;
 
 /** Render an aligned text table. */
-export function table(headers: string[], rows: Array<Array<string | number | null | undefined>>): string {
+export function table(
+  headers: string[],
+  rows: Array<Array<string | number | null | undefined>>,
+): string {
   const cells = rows.map((r) => r.map((c) => (c === null || c === undefined ? '' : String(c))));
-  const widths = headers.map((h, i) => Math.max(visibleLength(h), ...cells.map((r) => visibleLength(r[i] ?? ''))));
+  const widths = headers.map((h, i) =>
+    Math.max(visibleLength(h), ...cells.map((r) => visibleLength(r[i] ?? ''))),
+  );
   const pad = (s: string, w: number) => s + ' '.repeat(Math.max(0, w - visibleLength(s)));
-  const line = (r: string[]) => r.map((c, i) => pad(c, widths[i] ?? 0)).join('  ').trimEnd();
-  return [pc.bold(line(headers)), pc.dim(widths.map((w) => '─'.repeat(w)).join('  ')), ...cells.map(line)].join('\n');
+  const line = (r: string[]) =>
+    r
+      .map((c, i) => pad(c, widths[i] ?? 0))
+      .join('  ')
+      .trimEnd();
+  return [
+    pc.bold(line(headers)),
+    pc.dim(widths.map((w) => '─'.repeat(w)).join('  ')),
+    ...cells.map(line),
+  ].join('\n');
 }
 
 export function statusIcon(status: 'ok' | 'warn' | 'fail' | 'info' | 'skip'): string {
@@ -127,9 +144,21 @@ function unwrap<T>(value: T | symbol): T {
 
 /** Prompt helpers that fall back to defaults when not interactive. */
 export const ask = {
-  async text(message: string, opts: { initial?: string; placeholder?: string; validate?: (v: string) => string | undefined; required?: boolean } = {}): Promise<string> {
+  async text(
+    message: string,
+    opts: {
+      initial?: string;
+      placeholder?: string;
+      validate?: (v: string) => string | undefined;
+      required?: boolean;
+    } = {},
+  ): Promise<string> {
     if (!isInteractive()) {
-      if (opts.initial === undefined && opts.required) throw new CliError(`Missing value for "${message}" in non-interactive mode`, 'Pass the corresponding flag.');
+      if (opts.initial === undefined && opts.required)
+        throw new CliError(
+          `Missing value for "${message}" in non-interactive mode`,
+          'Pass the corresponding flag.',
+        );
       return opts.initial ?? '';
     }
     return unwrap<string>(
@@ -145,10 +174,16 @@ export const ask = {
       }),
     );
   },
-  async password(message: string, opts: { validate?: (v: string) => string | undefined; optional?: boolean } = {}): Promise<string> {
+  async password(
+    message: string,
+    opts: { validate?: (v: string) => string | undefined; optional?: boolean } = {},
+  ): Promise<string> {
     if (!isInteractive()) {
       if (opts.optional) return '';
-      throw new CliError(`Cannot prompt for "${message}" in non-interactive mode`, 'Pass --password or --password-stdin.');
+      throw new CliError(
+        `Cannot prompt for "${message}" in non-interactive mode`,
+        'Pass --password or --password-stdin.',
+      );
     }
     return unwrap<string>(await p.password({ message, validate: (v) => opts.validate?.(v ?? '') }));
   },
@@ -156,9 +191,15 @@ export const ask = {
     if (!isInteractive()) return state.yes ? true : initial;
     return unwrap<boolean>(await p.confirm({ message, initialValue: initial }));
   },
-  async select<T extends string>(message: string, options: Array<{ value: T; label: string; hint?: string }>, initial?: T): Promise<T> {
+  async select<T extends string>(
+    message: string,
+    options: Array<{ value: T; label: string; hint?: string }>,
+    initial?: T,
+  ): Promise<T> {
     if (!isInteractive()) return initial ?? options[0]!.value;
-    return unwrap<T>(await p.select<T>({ message, options: options as never, initialValue: initial }));
+    return unwrap<T>(
+      await p.select<T>({ message, options: options as never, initialValue: initial }),
+    );
   },
 };
 
@@ -182,5 +223,7 @@ export function printJson(value: unknown) {
 export async function readStdin(): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
-  return Buffer.concat(chunks).toString('utf8').replace(/\r?\n$/, '');
+  return Buffer.concat(chunks)
+    .toString('utf8')
+    .replace(/\r?\n$/, '');
 }

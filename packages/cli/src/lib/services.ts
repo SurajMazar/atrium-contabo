@@ -27,7 +27,10 @@ export interface ServiceSpec {
   procfile: { dev: string; prod: string };
 }
 
-const next = (dir: string, mode: 'dev' | 'start', port: number): ServiceCommand => ({ cmd: 'pnpm', args: ['--dir', dir, 'exec', 'next', mode, '--port', String(port)] });
+const next = (dir: string, mode: 'dev' | 'start', port: number): ServiceCommand => ({
+  cmd: 'pnpm',
+  args: ['--dir', dir, 'exec', 'next', mode, '--port', String(port)],
+});
 
 export const SERVICES: Record<AppService, ServiceSpec> = {
   api: {
@@ -37,8 +40,21 @@ export const SERVICES: Record<AppService, ServiceSpec> = {
     portKey: 'API_PORT',
     defaultPort: 4000,
     healthPath: '/v1/health',
-    dev: (p) => ({ cmd: 'pnpm', args: ['--filter', '@atrium/api', 'dev'], env: { PORT: String(p.API_PORT ?? 4000), API_PORT: String(p.API_PORT ?? 4000) } }),
-    prod: (p) => ({ cmd: process.execPath, args: ['dist/main.js'], cwd: 'apps/api', env: { PORT: String(p.API_PORT ?? 4000), API_PORT: String(p.API_PORT ?? 4000), NODE_ENV: 'production' } }),
+    dev: (p) => ({
+      cmd: 'pnpm',
+      args: ['--filter', '@atrium/api', 'dev'],
+      env: { PORT: String(p.API_PORT ?? 4000), API_PORT: String(p.API_PORT ?? 4000) },
+    }),
+    prod: (p) => ({
+      cmd: process.execPath,
+      args: ['dist/main.js'],
+      cwd: 'apps/api',
+      env: {
+        PORT: String(p.API_PORT ?? 4000),
+        API_PORT: String(p.API_PORT ?? 4000),
+        NODE_ENV: 'production',
+      },
+    }),
     buildOutput: 'apps/api/dist/main.js',
     procfile: { dev: 'pnpm --filter @atrium/api dev', prod: 'node apps/api/dist/main.js' },
   },
@@ -47,7 +63,12 @@ export const SERVICES: Record<AppService, ServiceSpec> = {
     pkg: '@atrium/worker',
     dir: 'apps/worker',
     dev: () => ({ cmd: 'pnpm', args: ['--filter', '@atrium/worker', 'dev'] }),
-    prod: () => ({ cmd: process.execPath, args: ['dist/main.js'], cwd: 'apps/worker', env: { NODE_ENV: 'production' } }),
+    prod: () => ({
+      cmd: process.execPath,
+      args: ['dist/main.js'],
+      cwd: 'apps/worker',
+      env: { NODE_ENV: 'production' },
+    }),
     buildOutput: 'apps/worker/dist/main.js',
     procfile: { dev: 'pnpm --filter @atrium/worker dev', prod: 'node apps/worker/dist/main.js' },
   },
@@ -59,9 +80,15 @@ export const SERVICES: Record<AppService, ServiceSpec> = {
     defaultPort: 3001,
     healthPath: '/',
     dev: (p) => next('apps/renderer', 'dev', p.RENDERER_PORT ?? 3001),
-    prod: (p) => ({ ...next('apps/renderer', 'start', p.RENDERER_PORT ?? 3001), env: { NODE_ENV: 'production' } }),
+    prod: (p) => ({
+      ...next('apps/renderer', 'start', p.RENDERER_PORT ?? 3001),
+      env: { NODE_ENV: 'production' },
+    }),
     buildOutput: 'apps/renderer/.next/BUILD_ID',
-    procfile: { dev: 'pnpm --dir apps/renderer exec next dev --port ${RENDERER_PORT:-3001}', prod: 'pnpm --dir apps/renderer exec next start --port ${RENDERER_PORT:-3001}' },
+    procfile: {
+      dev: 'pnpm --dir apps/renderer exec next dev --port ${RENDERER_PORT:-3001}',
+      prod: 'pnpm --dir apps/renderer exec next start --port ${RENDERER_PORT:-3001}',
+    },
   },
   admin: {
     name: 'admin',
@@ -71,17 +98,27 @@ export const SERVICES: Record<AppService, ServiceSpec> = {
     defaultPort: 3000,
     healthPath: '/',
     dev: (p) => next('apps/admin', 'dev', p.ADMIN_PORT ?? 3000),
-    prod: (p) => ({ ...next('apps/admin', 'start', p.ADMIN_PORT ?? 3000), env: { NODE_ENV: 'production' } }),
+    prod: (p) => ({
+      ...next('apps/admin', 'start', p.ADMIN_PORT ?? 3000),
+      env: { NODE_ENV: 'production' },
+    }),
     buildOutput: 'apps/admin/.next/BUILD_ID',
-    procfile: { dev: 'pnpm --dir apps/admin exec next dev --port ${ADMIN_PORT:-3000}', prod: 'pnpm --dir apps/admin exec next start --port ${ADMIN_PORT:-3000}' },
+    procfile: {
+      dev: 'pnpm --dir apps/admin exec next dev --port ${ADMIN_PORT:-3000}',
+      prod: 'pnpm --dir apps/admin exec next start --port ${ADMIN_PORT:-3000}',
+    },
   },
 };
 
 export function parseOnly(only: string | undefined): AppService[] {
   if (!only) return [...APP_SERVICES];
-  const list = only.split(',').map((s) => s.trim()).filter(Boolean);
+  const list = only
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
   const bad = list.filter((s) => !APP_SERVICES.includes(s as AppService));
-  if (bad.length) throw new Error(`Unknown service(s): ${bad.join(', ')} (expected ${APP_SERVICES.join(', ')})`);
+  if (bad.length)
+    throw new Error(`Unknown service(s): ${bad.join(', ')} (expected ${APP_SERVICES.join(', ')})`);
   return list as AppService[];
 }
 

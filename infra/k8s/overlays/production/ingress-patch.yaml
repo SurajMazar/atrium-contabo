@@ -10,11 +10,19 @@ spec:
     - host: admin.example.com
       http:
         paths:
-          - { path: /, pathType: Prefix, backend: { service: { name: atrium-admin, port: { name: http } } } }
+          - {
+              path: /,
+              pathType: Prefix,
+              backend: { service: { name: atrium-admin, port: { name: http } } },
+            }
     - host: api.example.com
       http:
         paths:
-          - { path: /, pathType: Prefix, backend: { service: { name: atrium-api, port: { name: http } } } }
+          - {
+              path: /,
+              pathType: Prefix,
+              backend: { service: { name: atrium-api, port: { name: http } } },
+            }
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -22,14 +30,22 @@ metadata:
   name: atrium-sites
 spec:
   tls:
-    - hosts: [sites.example.com, "*.sites.example.com"]
+    - hosts: [sites.example.com, '*.sites.example.com']
       secretName: atrium-sites-wildcard-tls
   rules:
     - host: sites.example.com
       http:
         paths:
-          - { path: /, pathType: Prefix, backend: { service: { name: atrium-renderer, port: { name: http } } } }
-    - host: "*.sites.example.com"
+          - {
+              path: /,
+              pathType: Prefix,
+              backend: { service: { name: atrium-renderer, port: { name: http } } },
+            }
+    - host: '*.sites.example.com'
       http:
         paths:
-          - { path: /, pathType: Prefix, backend: { service: { name: atrium-renderer, port: { name: http } } } }
+          - {
+              path: /,
+              pathType: Prefix,
+              backend: { service: { name: atrium-renderer, port: { name: http } } },
+            }

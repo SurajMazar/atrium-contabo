@@ -26,10 +26,14 @@ if (existsSync(dist) && !process.env.ATRIUM_CLI_FROM_SOURCE) {
   try {
     loader = import.meta.resolve('tsx');
   } catch {
-    console.error('atrium: dist/ is missing and tsx is not installed. Run `pnpm install` then `pnpm --filter @atrium/cli build`.');
+    console.error(
+      'atrium: dist/ is missing and tsx is not installed. Run `pnpm install` then `pnpm --filter @atrium/cli build`.',
+    );
     process.exit(1);
   }
-  const child = spawn(process.execPath, ['--import', loader, src, ...process.argv.slice(2)], { stdio: 'inherit' });
+  const child = spawn(process.execPath, ['--import', loader, src, ...process.argv.slice(2)], {
+    stdio: 'inherit',
+  });
   for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => child.kill(sig));
   child.on('exit', (code, signal) => {
     if (signal) process.kill(process.pid, signal);
