@@ -19,3 +19,4 @@ test-results
 /deploy/
 /.atrium/
 Procfile.local
+.idea/
