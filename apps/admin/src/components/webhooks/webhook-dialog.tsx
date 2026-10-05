@@ -115,16 +115,15 @@ function WebhookForm({ orgId, webhook, onClose, onCreated }: { orgId: string; we
               const groupSome = g.events.some((e) => events.includes(e));
               return (
                 <div key={g.key} className="space-y-1.5">
-                  {g.events.length > 1 ? (
-                    <Checkbox
-                      label={<span className="text-2xs font-medium uppercase tracking-wide text-fg-subtle">{g.label}</span>}
-                      checked={groupOn ? true : groupSome ? 'indeterminate' : false}
-                      onCheckedChange={() => toggle(g.events, !groupOn)}
-                    />
-                  ) : (
-                    <div className="pl-6 text-2xs font-medium uppercase tracking-wide text-fg-subtle">{g.label}</div>
-                  )}
-                  <div className="space-y-1.5 pl-6">
+                  <div className="flex h-5 items-center justify-between gap-2">
+                    <span className="text-2xs font-medium uppercase tracking-wide text-fg-subtle">{g.label}</span>
+                    {g.events.length > 1 && (
+                      <button type="button" onClick={() => toggle(g.events, !groupOn)} className="rounded-sm text-2xs font-medium text-fg-muted outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-ring" aria-label={`${groupOn ? 'Clear' : 'Select'} all ${g.label} events`}>
+                        {groupOn ? 'Clear' : groupSome ? 'Select rest' : 'Select all'}
+                      </button>
+                    )}
+                  </div>
+                  <div className="space-y-1.5">
                     {g.events.map((e) => (
                       <Checkbox key={e} label={<span className="font-mono text-xs">{e}</span>} checked={events.includes(e)} onCheckedChange={(v) => toggle([e], v === true)} />
                     ))}

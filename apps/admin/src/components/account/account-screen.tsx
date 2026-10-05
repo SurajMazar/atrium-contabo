@@ -36,7 +36,7 @@ export function AccountScreen() {
   return (
     <Page width="narrow">
       <PageHeader title="Account" description="Your personal profile and sign-in security. These settings apply across all organizations.">
-        <nav aria-label="Account sections" className="flex flex-wrap gap-1">
+        <nav aria-label="Account sections" className="-ml-2 flex flex-wrap gap-0.5">
           {SECTIONS.map((s) => (
             <a key={s.id} href={`#${s.id}`} className="rounded-md px-2 py-1 text-xs font-medium text-fg-muted outline-none hover:bg-surface-2 hover:text-fg focus-visible:ring-2 focus-visible:ring-ring">
               {s.label}

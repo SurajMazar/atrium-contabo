@@ -1,7 +1,7 @@
 import { Check, ChevronDown, ChevronUp } from 'lucide-react';
 import { Select as S } from 'radix-ui';
 import { forwardRef, type ComponentPropsWithoutRef, type ReactNode } from 'react';
-import { cn, fieldBase } from './utils';
+import { cn, controlHeight, fieldBase } from './utils';
 
 export interface SelectOption {
   value: string;
@@ -17,7 +17,7 @@ export interface SelectProps {
   onValueChange?: (value: string) => void;
   options: SelectOption[] | Array<{ label: string; options: SelectOption[] }>;
   placeholder?: string;
-  size?: 'xs' | 'sm' | 'md';
+  size?: 'xs' | 'sm' | 'md' | 'lg';
   disabled?: boolean;
   invalid?: boolean;
   id?: string;
@@ -28,7 +28,7 @@ export interface SelectProps {
   'aria-describedby'?: string;
 }
 
-const heights = { xs: 'h-6 text-xs', sm: 'h-7 text-sm', md: 'h-8 text-sm' } as const;
+const heights = { xs: `${controlHeight.xs} text-xs`, sm: `${controlHeight.sm} text-sm`, md: `${controlHeight.md} text-sm`, lg: `${controlHeight.lg} text-sm` } as const;
 
 function isGrouped(o: SelectProps['options']): o is Array<{ label: string; options: SelectOption[] }> {
   return o.length > 0 && 'options' in (o[0] as object);
@@ -47,7 +47,7 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
         aria-invalid={invalid || undefined}
         aria-label={aria['aria-label']}
         aria-describedby={aria['aria-describedby']}
-        className={cn(fieldBase, heights[size], 'inline-flex items-center justify-between gap-2 px-2.5 text-left data-[placeholder]:text-fg-subtle', className)}
+        className={cn(fieldBase, heights[size], 'inline-flex items-center justify-between gap-2 text-left data-[placeholder]:text-fg-subtle data-[state=open]:border-accent data-[state=open]:ring-2 data-[state=open]:ring-ring', 'pl-2.5 pr-2', className)}
       >
         <span className="truncate">
           <S.Value placeholder={placeholder} />
@@ -102,14 +102,14 @@ export function SelectItem({ value, label, description, disabled, icon }: Select
     <S.Item
       value={value}
       disabled={disabled}
-      className="relative flex cursor-default select-none items-start gap-2 rounded-sm py-1.5 pl-2 pr-7 text-sm text-fg outline-none data-[disabled]:opacity-50 data-[highlighted]:bg-surface-2"
+      className="relative flex min-h-7 cursor-default select-none items-start gap-2 rounded-sm py-1 pl-2 pr-7 text-sm leading-5 text-fg outline-none data-[disabled]:opacity-50 data-[highlighted]:bg-surface-2"
     >
       {icon && <span className="mt-0.5 shrink-0 text-fg-muted [&_svg]:size-4 [&_svg]:stroke-[1.5]">{icon}</span>}
       <div className="min-w-0">
         <S.ItemText>{label}</S.ItemText>
         {description && <div className="text-xs text-fg-muted">{description}</div>}
       </div>
-      <S.ItemIndicator className="absolute right-2 top-2 text-accent">
+      <S.ItemIndicator className="absolute right-2 top-[7px] text-accent">
         <Check className="size-3.5" strokeWidth={2} />
       </S.ItemIndicator>
     </S.Item>
@@ -117,12 +117,12 @@ export function SelectItem({ value, label, description, disabled, icon }: Select
 }
 
 /** Native select for very long lists or where a portal is undesirable. */
-export const NativeSelect = forwardRef<HTMLSelectElement, ComponentPropsWithoutRef<'select'> & { size?: 'sm' | 'md'; invalid?: boolean }>(function NativeSelect(
+export const NativeSelect = forwardRef<HTMLSelectElement, Omit<ComponentPropsWithoutRef<'select'>, 'size'> & { size?: 'xs' | 'sm' | 'md' | 'lg'; invalid?: boolean }>(function NativeSelect(
   { className, size = 'md', invalid, children, ...props },
   ref,
 ) {
   return (
-    <select ref={ref} aria-invalid={invalid || undefined} className={cn(fieldBase, size === 'sm' ? 'h-7' : 'h-8', 'px-2 text-sm', className)} {...props}>
+    <select ref={ref} aria-invalid={invalid || undefined} className={cn(fieldBase, controlHeight[size], 'px-2 text-sm', className)} {...props}>
       {children}
     </select>
   );

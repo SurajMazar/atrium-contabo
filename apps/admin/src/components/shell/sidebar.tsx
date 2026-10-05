@@ -12,6 +12,8 @@ import { qk } from '@/lib/query-keys';
 import { useSession } from '@/lib/session';
 import { useShell } from './crumbs';
 import { adminNav, orgNav, websiteNav, type NavItem } from './nav-config';
+import { useBranding } from '@/lib/branding';
+import { BrandLogo } from './brand';
 import { OrgSwitcher } from './org-switcher';
 import { UserMenu } from './user-menu';
 
@@ -62,6 +64,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const qc = useQueryClient();
   const { currentOrg, user, can } = useSession();
   const setPaletteOpen = useShell((s) => s.setPaletteOpen);
+  const { productName } = useBranding();
   const websiteId = websiteIdFromPath(pathname);
   const inAdmin = pathname === '/admin' || pathname.startsWith('/admin/');
   const [filter, setFilter] = useState('');
@@ -86,6 +89,9 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <nav aria-label="Main" className="flex h-full flex-col bg-surface-2/60">
       <div className="space-y-1 px-2 pb-2 pt-2">
+        <Link href="/" onClick={onNavigate} className="flex h-8 items-center rounded-md px-2 outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`${productName} home`}>
+          <BrandLogo size="sm" />
+        </Link>
         <OrgSwitcher />
         <button
           type="button"

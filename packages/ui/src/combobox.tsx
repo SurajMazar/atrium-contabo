@@ -3,7 +3,7 @@ import { Check, ChevronDown, X } from 'lucide-react';
 import { Popover as P } from 'radix-ui';
 import { useMemo, useState, type ReactNode } from 'react';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from './command';
-import { cn, fieldBase } from './utils';
+import { cn, controlHeight, fieldBase } from './utils';
 
 export interface ComboboxOption {
   value: string;
@@ -76,7 +76,7 @@ export function Combobox(props: ComboboxProps) {
           aria-expanded={open}
           aria-label={props['aria-label']}
           aria-invalid={invalid || undefined}
-          className={cn(fieldBase, 'flex items-center gap-1.5 px-2 text-left text-sm', props.multiple ? 'min-h-8 flex-wrap py-1' : size === 'sm' ? 'h-7' : 'h-8', className)}
+          className={cn(fieldBase, 'flex items-center gap-1.5 px-2 text-left text-sm', props.multiple ? 'min-h-(--ui-ctl-md) flex-wrap py-1' : controlHeight[size], 'data-[state=open]:border-accent data-[state=open]:ring-2 data-[state=open]:ring-ring', className)}
         >
           {props.multiple ? (
             selected.length ? (

@@ -52,7 +52,17 @@ export const CURATED_FONTS: CuratedFont[] = [
   { family: 'IBM Plex Mono', category: 'mono', weights: [400, 500, 600], fallback: 'ui-monospace, monospace' },
 ];
 
+/**
+ * Families the admin UI itself loads (next/font keeps their real names). A
+ * `text=` subset stylesheet for the same family would register extra faces
+ * that only contain a few glyphs, and the browser would then mix glyphs from
+ * both faces across the whole admin chrome — so never preview-load these.
+ */
+export const ADMIN_UI_FONTS = new Set(['Inter', 'JetBrains Mono']);
+
 export function fontPreviewUrl(families: string[]): string {
-  const q = families.map((f) => `family=${encodeURIComponent(f).replace(/%20/g, '+')}`).join('&');
+  const q = families
+    .filter((f) => !ADMIN_UI_FONTS.has(f))
+    .map((f) => `family=${encodeURIComponent(f).replace(/%20/g, '+')}`).join('&');
   return `https://fonts.googleapis.com/css2?${q}&display=swap&text=AaBbGgRr0123`;
 }

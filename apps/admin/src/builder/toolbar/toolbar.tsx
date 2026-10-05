@@ -30,7 +30,7 @@ function SiteSwitcher() {
   return (
     <Menu>
       <MenuTrigger asChild>
-        <button type="button" className="flex h-7 max-w-44 items-center gap-1.5 rounded-md px-2 text-[13px] font-semibold hover:bg-surface-2">
+        <button type="button" className="flex h-7 max-w-44 items-center gap-1.5 rounded-md px-2 text-[13px] font-semibold outline-none hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-surface-2">
           <span className="truncate">{website?.name ?? 'Website'}</span>
           <ChevronDown className="size-3.5 shrink-0 text-fg-subtle" />
         </button>
@@ -65,7 +65,7 @@ function PageSwitcher() {
   return (
     <Popover onOpenChange={(o) => !o && setQ('')}>
       <PopoverTrigger asChild>
-        <button type="button" className="flex h-7 max-w-52 items-center gap-1.5 rounded-md px-2 text-[13px] hover:bg-surface-2">
+        <button type="button" className="flex h-7 max-w-52 items-center gap-1.5 rounded-md px-2 text-[13px] outline-none hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-surface-2">
           {current?.isHomepage ? <Home className="size-3.5 text-fg-muted" /> : <FileText className="size-3.5 text-fg-muted" />}
           <span className="truncate">{current?.title ?? 'Page'}</span>
           <ChevronDown className="size-3.5 shrink-0 text-fg-subtle" />
@@ -76,7 +76,7 @@ function PageSwitcher() {
         <div className="mt-1 max-h-72 overflow-y-auto">
           {list.map((p) => (
             <PopoverClose asChild key={p.id}>
-              <button type="button" onClick={() => goToPage(p.id)} className={cn('flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-surface-2', p.id === current?.id && 'bg-accent-soft')}>
+              <button type="button" onClick={() => goToPage(p.id)} className={cn('flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] outline-none hover:bg-surface-2 focus-visible:bg-surface-2', p.id === current?.id && 'bg-accent-soft hover:bg-accent-soft')}>
                 {p.isHomepage ? <Home className="size-3.5 text-fg-muted" /> : <FileText className="size-3.5 text-fg-muted" />}
                 <span className="min-w-0 flex-1 truncate">{p.title}</span>
                 <span className="truncate font-mono text-[10px] text-fg-subtle">/{p.slug}</span>
@@ -95,7 +95,7 @@ function DeviceSwitcher() {
   const width = useViewportStore(selectFrameWidth);
   return (
     <div className="flex items-center gap-0.5">
-      <div className="flex rounded-md bg-surface-2 p-0.5">
+      <div className="flex gap-px rounded-md bg-seg p-0.5">
         {DEVICES.map((d) => {
           const Icon = DEVICE_ICON[d.icon];
           return (
@@ -105,7 +105,7 @@ function DeviceSwitcher() {
                 aria-label={d.label}
                 aria-pressed={device === d.id}
                 onClick={() => setDevice(d.id)}
-                className={cn('flex h-6 w-7 items-center justify-center rounded-[5px] text-fg-muted hover:text-fg', device === d.id && 'bg-surface text-fg shadow-sm')}
+                className={cn('flex h-6 w-7 items-center justify-center rounded-[calc(var(--radius-md)-2px)] text-fg-muted outline-none transition-colors duration-75 hover:text-fg focus-visible:ring-2 focus-visible:ring-ring [&_svg]:size-[15px]', device === d.id && 'bg-seg-on text-fg shadow-sm')}
               >
                 <Icon className="size-4" />
               </button>
@@ -115,7 +115,7 @@ function DeviceSwitcher() {
       </div>
       <Popover>
         <PopoverTrigger asChild>
-          <button type="button" className={cn('flex h-7 items-center gap-0.5 rounded-md px-1.5 font-mono text-[11px] text-fg-muted hover:bg-surface-2', device === 'custom' && 'text-accent')}>
+          <button type="button" aria-label="Canvas width" className={cn('flex h-7 items-center gap-0.5 rounded-md px-1.5 text-xs tabular-nums text-fg-muted outline-none hover:bg-surface-2 hover:text-fg focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-surface-2', device === 'custom' && 'text-accent')}>
             {width}
             <ChevronDown className="size-3" />
           </button>
@@ -142,7 +142,7 @@ function ZoomMenu() {
   return (
     <Menu>
       <MenuTrigger asChild>
-        <button type="button" className="flex h-7 w-16 items-center justify-center gap-0.5 rounded-md text-xs text-fg-muted hover:bg-surface-2">
+        <button type="button" aria-label="Zoom" className="flex h-7 w-14 items-center justify-center gap-0.5 rounded-md text-xs tabular-nums text-fg-muted outline-none hover:bg-surface-2 hover:text-fg focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-surface-2">
           {Math.round(zoom * 100)}%
           <ChevronDown className="size-3" />
         </button>
@@ -189,7 +189,7 @@ export function Toolbar() {
   return (
     <header className="flex h-11 shrink-0 items-center gap-1 border-b border-border bg-surface px-1.5">
       <Tip content="Back to dashboard">
-        <Link href={`/w/${websiteId}`} className="flex size-7 items-center justify-center rounded-md text-fg-muted hover:bg-surface-2 hover:text-fg" aria-label="Back to dashboard">
+        <Link href={`/w/${websiteId}`} className="flex size-7 items-center justify-center rounded-md text-fg-muted outline-none hover:bg-surface-2 hover:text-fg focus-visible:ring-2 focus-visible:ring-ring" aria-label="Back to dashboard">
           <ArrowLeft className="size-4" />
         </Link>
       </Tip>
@@ -215,10 +215,10 @@ export function Toolbar() {
           </span>
         </Btn>
       </Tip>
-      <IconBtn label={leftOpen ? 'Hide left panel' : 'Show left panel'} shortcut={`${MOD}\\`} onClick={() => useUiStore.setState({ leftOpen: !leftOpen })} active={leftOpen}>
+      <IconBtn label={leftOpen ? 'Hide left panel' : 'Show left panel'} shortcut={`${MOD}\\`} onClick={() => useUiStore.setState({ leftOpen: !leftOpen })} aria-pressed={leftOpen} className="aria-pressed:text-fg">
         <PanelLeft />
       </IconBtn>
-      <IconBtn label={rightOpen ? 'Hide inspector' : 'Show inspector'} onClick={() => useUiStore.setState({ rightOpen: !rightOpen })} active={rightOpen}>
+      <IconBtn label={rightOpen ? 'Hide inspector' : 'Show inspector'} onClick={() => useUiStore.setState({ rightOpen: !rightOpen })} aria-pressed={rightOpen} className="aria-pressed:text-fg">
         <PanelRight />
       </IconBtn>
       <span className="h-4 w-px bg-border" />

@@ -85,7 +85,7 @@ export function Tip({ content, shortcut, side = 'bottom', children, disabled }: 
     <T.Root delayDuration={350}>
       <T.Trigger asChild>{children}</T.Trigger>
       <T.Portal>
-        <T.Content side={side} sideOffset={6} className="z-[70] flex items-center gap-2 rounded-md bg-fg px-2 py-1 text-xs text-bg shadow-popover animate-fade-in">
+        <T.Content side={side} sideOffset={6} className="z-[70] flex items-center gap-2 rounded-md bg-fg px-2 py-1 text-xs leading-4 text-bg shadow-popover animate-fade-in dark:bg-surface-3 dark:text-fg dark:ring-1 dark:ring-border-strong">
           {content}
           {shortcut && <span className="font-mono text-[11px] opacity-60">{shortcut}</span>}
         </T.Content>
@@ -218,14 +218,14 @@ export function NativeSelect({ value, onChange, options, placeholder, disabled, 
           </option>
         ))}
       </select>
-      <ChevronDown className="pointer-events-none absolute right-1.5 top-1.5 size-4 text-fg-subtle" />
+      <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 size-3.5 -translate-y-1/2 text-fg-subtle" />
     </div>
   );
 }
 
 export function Segmented<T extends string | number | boolean>({ value, onChange, options, disabled, className, size = 'sm' }: { value: T | undefined; onChange: (v: T) => void; options: Array<{ label: ReactNode; value: T; title?: string; icon?: string }>; disabled?: boolean; className?: string; size?: 'xs' | 'sm' }) {
   return (
-    <div role="radiogroup" className={cn('flex w-full rounded-md bg-surface-2 p-0.5', disabled && 'opacity-50', className)}>
+    <div role="radiogroup" className={cn('flex w-full gap-px rounded-md bg-seg p-0.5', disabled && 'opacity-50', className)}>
       {options.map((o) => {
         const on = o.value === value;
         return (
@@ -238,12 +238,13 @@ export function Segmented<T extends string | number | boolean>({ value, onChange
             disabled={disabled}
             onClick={() => onChange(o.value)}
             className={cn(
-              'flex min-w-0 flex-1 items-center justify-center gap-1 truncate rounded-[5px] px-1.5 font-medium transition-colors',
-              size === 'xs' ? 'h-5 text-[11px]' : 'h-6 text-xs',
-              on ? 'bg-surface text-fg shadow-sm' : 'text-fg-muted hover:text-fg',
+              'flex min-w-0 flex-1 items-center justify-center gap-1 overflow-hidden rounded-[calc(var(--radius-md)-2px)] px-1 font-medium outline-none transition-colors duration-75 focus-visible:ring-2 focus-visible:ring-ring',
+              size === 'xs' || options.length >= 3 ? 'text-[11px]' : 'text-xs',
+              size === 'xs' ? 'h-5' : 'h-6',
+              on ? 'bg-seg-on text-fg shadow-sm' : 'text-fg-muted hover:text-fg',
             )}
           >
-            {o.icon && isIconName(o.icon) ? <Icon name={o.icon} size={14} /> : o.label}
+            {o.icon && isIconName(o.icon) ? <Icon name={o.icon} size={14} /> : <span className="min-w-0 truncate">{o.label}</span>}
           </button>
         );
       })}
@@ -258,9 +259,9 @@ export function Switch({ checked, onChange, disabled, label }: { checked: boolea
       onCheckedChange={onChange}
       disabled={disabled}
       aria-label={label}
-      className="relative inline-flex h-4 w-7 shrink-0 items-center rounded-full bg-surface-3 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 data-[state=checked]:bg-accent"
+      className="relative inline-flex h-4 w-[26px] shrink-0 items-center rounded-full bg-track p-0.5 outline-none transition-colors duration-100 hover:bg-border-strong focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 data-[state=checked]:bg-accent"
     >
-      <SW.Thumb className="block size-3 translate-x-0.5 rounded-full bg-white shadow-sm transition-transform data-[state=checked]:translate-x-[14px]" />
+      <SW.Thumb className="pointer-events-none block size-3 translate-x-0 rounded-full bg-white shadow-[0_1px_2px_rgb(0_0_0/0.22),0_0_0_0.5px_rgb(0_0_0/0.06)] transition-transform duration-150 ease-out data-[state=checked]:translate-x-[10px]" />
     </SW.Root>
   );
 }
@@ -304,7 +305,7 @@ export function Row({ label, children, indicator, actions, className, stacked, h
     );
   }
   return (
-    <div className={cn('grid grid-cols-[88px_minmax(0,1fr)] items-center gap-2', className)}>
+    <div className={cn('grid min-h-7 grid-cols-[88px_minmax(0,1fr)] items-center gap-2', className)}>
       <div className="flex min-w-0 items-center gap-1">
         <label htmlFor={htmlFor} className="truncate text-xs text-fg-muted" title={help ?? (typeof label === 'string' ? label : undefined)}>
           {label}
@@ -469,7 +470,7 @@ export function Modal({ open, onOpenChange, title, description, children, footer
   return (
     <D.Root open={open} onOpenChange={onOpenChange}>
       <D.Portal>
-        <D.Overlay className="fixed inset-0 z-[80] bg-black/30 animate-fade-in" />
+        <D.Overlay className="fixed inset-0 z-[80] bg-overlay animate-fade-in" />
         <D.Content
           className={cn(
             'fixed left-1/2 top-[12vh] z-[81] flex max-h-[76vh] w-[calc(100vw-32px)] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-border bg-surface text-fg shadow-dialog outline-none animate-slide-up',
@@ -481,12 +482,12 @@ export function Modal({ open, onOpenChange, title, description, children, footer
               <D.Title className="text-[14px] font-semibold">{title}</D.Title>
               {description ? <D.Description className="mt-0.5 text-xs text-fg-muted">{description}</D.Description> : <D.Description className="sr-only">{typeof title === 'string' ? title : 'Dialog'}</D.Description>}
             </div>
-            <D.Close className="rounded-md p-1 text-fg-muted hover:bg-surface-2" aria-label="Close">
+            <D.Close className="-mr-1 inline-flex size-7 items-center justify-center rounded-md text-fg-muted outline-none hover:bg-surface-2 hover:text-fg focus-visible:ring-2 focus-visible:ring-ring" aria-label="Close">
               <X className="size-4" />
             </D.Close>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">{children}</div>
-          {footer && <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">{footer}</div>}
+          {footer && <div className="flex items-center justify-end gap-2 border-t border-border bg-surface-2/50 px-4 py-3">{footer}</div>}
         </D.Content>
       </D.Portal>
     </D.Root>
@@ -497,12 +498,12 @@ export function Drawer({ open, onOpenChange, title, children, width = 360 }: { o
   return (
     <D.Root open={open} onOpenChange={onOpenChange}>
       <D.Portal>
-        <D.Overlay className="fixed inset-0 z-[80] bg-black/20 animate-fade-in" />
+        <D.Overlay className="fixed inset-0 z-[80] bg-overlay animate-fade-in" />
         <D.Content style={{ width }} className="fixed inset-y-0 right-0 z-[81] flex max-w-[100vw] flex-col border-l border-border bg-surface text-fg shadow-dialog outline-none animate-fade-in">
           <div className="flex h-11 items-center gap-2 border-b border-border px-4">
             <D.Title className="min-w-0 flex-1 truncate text-[14px] font-semibold">{title}</D.Title>
             <D.Description className="sr-only">{typeof title === 'string' ? title : 'Panel'}</D.Description>
-            <D.Close className="rounded-md p-1 text-fg-muted hover:bg-surface-2" aria-label="Close">
+            <D.Close className="-mr-1.5 inline-flex size-7 items-center justify-center rounded-md text-fg-muted outline-none hover:bg-surface-2 hover:text-fg focus-visible:ring-2 focus-visible:ring-ring" aria-label="Close">
               <X className="size-4" />
             </D.Close>
           </div>

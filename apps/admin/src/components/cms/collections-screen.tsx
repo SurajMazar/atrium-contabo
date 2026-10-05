@@ -242,7 +242,7 @@ export function DeleteCollectionDialog({ collection, onOpenChange, onConfirm }: 
       title={`Delete ${collection?.name ?? 'collection'}?`}
       description={
         count > 0
-          ? `This permanently deletes the collection and its ${formatNumber(count)} ${pluralize(count, 'item')}. Pages that list this collection will render empty.`
+          ? `This permanently deletes the collection and its ${pluralize(count, 'item')}. Pages that list this collection will render empty.`
           : 'This permanently deletes the collection. Pages that list this collection will render empty.'
       }
       confirmLabel="Delete collection"

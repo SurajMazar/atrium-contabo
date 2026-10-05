@@ -1,7 +1,7 @@
 import { Check, Minus } from 'lucide-react';
 import { Checkbox as CheckboxPrimitive, RadioGroup as RadioPrimitive, Slider as SliderPrimitive, Switch as SwitchPrimitive, ToggleGroup } from 'radix-ui';
 import { forwardRef, useId, type ComponentPropsWithoutRef, type ReactNode } from 'react';
-import { cn } from './utils';
+import { cn, controlHeight } from './utils';
 
 export interface CheckboxProps extends Omit<ComponentPropsWithoutRef<typeof CheckboxPrimitive.Root>, 'onChange'> {
   label?: ReactNode;
@@ -16,7 +16,7 @@ export const Checkbox = forwardRef<HTMLButtonElement, CheckboxProps>(function Ch
       ref={ref}
       id={cid}
       className={cn(
-        'peer flex size-4 shrink-0 items-center justify-center rounded-xs border border-border-strong bg-surface transition-colors',
+        'peer flex size-4 shrink-0 items-center justify-center rounded-xs border border-border-strong bg-surface shadow-xs transition-colors duration-75 hover:border-fg-subtle',
         'outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50',
         'data-[state=checked]:border-accent data-[state=checked]:bg-accent data-[state=checked]:text-accent-fg',
         'data-[state=indeterminate]:border-accent data-[state=indeterminate]:bg-accent data-[state=indeterminate]:text-accent-fg',
@@ -32,7 +32,7 @@ export const Checkbox = forwardRef<HTMLButtonElement, CheckboxProps>(function Ch
   if (!label) return box;
   return (
     <div className={cn('flex items-start gap-2', className)}>
-      <div className="pt-0.5">{box}</div>
+      <div className="flex h-5 items-center">{box}</div>
       <label htmlFor={cid} className="cursor-pointer select-none text-sm leading-5 text-fg">
         {label}
         {description && <span className="block text-xs text-fg-muted">{description}</span>}
@@ -45,39 +45,65 @@ export interface SwitchProps extends ComponentPropsWithoutRef<typeof SwitchPrimi
   label?: ReactNode;
   description?: ReactNode;
   size?: 'sm' | 'md';
+  /** Put the switch before the label (default: label left, switch right). */
+  labelPosition?: 'start' | 'end';
 }
 
-export const Switch = forwardRef<HTMLButtonElement, SwitchProps>(function Switch({ className, label, description, size = 'md', id, ...props }, ref) {
+const switchSizes = {
+  // track w × h, thumb, travel = w − 2·2px − thumb
+  sm: { track: 'h-4 w-[26px]', thumb: 'size-3 data-[state=checked]:translate-x-[10px]' },
+  md: { track: 'h-[18px] w-8', thumb: 'size-3.5 data-[state=checked]:translate-x-[14px]' },
+} as const;
+
+export const Switch = forwardRef<HTMLButtonElement, SwitchProps>(function Switch({ className, label, description, size = 'md', labelPosition = 'start', id, ...props }, ref) {
   const auto = useId();
   const sid = id ?? auto;
+  const sz = switchSizes[size];
   const sw = (
     <SwitchPrimitive.Root
       ref={ref}
       id={sid}
       className={cn(
-        'relative inline-flex shrink-0 cursor-pointer items-center rounded-full border border-transparent bg-border-strong transition-colors',
-        'outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-accent',
-        size === 'sm' ? 'h-3.5 w-6' : 'h-4 w-7',
+        'group/switch relative inline-flex shrink-0 cursor-pointer items-center rounded-full bg-track p-0.5 transition-colors duration-100',
+        'outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-surface',
+        'hover:bg-border-strong data-[state=checked]:bg-accent data-[state=checked]:hover:bg-accent/90',
+        'disabled:cursor-not-allowed disabled:opacity-50',
+        sz.track,
         !label && className,
       )}
       {...props}
     >
       <SwitchPrimitive.Thumb
         className={cn(
-          'block rounded-full bg-white shadow-xs transition-transform',
-          size === 'sm' ? 'size-2.5 translate-x-0.5 data-[state=checked]:translate-x-[11px]' : 'size-3 translate-x-0.5 data-[state=checked]:translate-x-[13px]',
+          'pointer-events-none block translate-x-0 rounded-full bg-white shadow-[0_1px_2px_rgb(0_0_0/0.22),0_0_0_0.5px_rgb(0_0_0/0.06)] transition-transform duration-150 ease-out',
+          sz.thumb,
         )}
       />
     </SwitchPrimitive.Root>
   );
   if (!label) return sw;
+  const text = (
+    <label htmlFor={sid} className={cn('min-w-0 cursor-pointer select-none text-sm leading-5 text-fg', props.disabled && 'cursor-not-allowed opacity-60')}>
+      {label}
+      {description && <span className="mt-0.5 block text-xs leading-4 text-fg-muted">{description}</span>}
+    </label>
+  );
+  // With a description the switch centres on the first text line (20px);
+  // without one, label and switch share the same centre line.
+  const swWrap = description ? <div className={cn('flex h-5 shrink-0 items-center')}>{sw}</div> : sw;
   return (
-    <div className={cn('flex items-start justify-between gap-4', className)}>
-      <label htmlFor={sid} className="min-w-0 cursor-pointer select-none text-sm text-fg">
-        {label}
-        {description && <span className="mt-0.5 block text-xs text-fg-muted">{description}</span>}
-      </label>
-      <div className="pt-0.5">{sw}</div>
+    <div className={cn('flex gap-3', description ? 'items-start' : 'items-center', labelPosition === 'start' ? 'justify-between' : 'justify-start', className)}>
+      {labelPosition === 'start' ? (
+        <>
+          {text}
+          {swWrap}
+        </>
+      ) : (
+        <>
+          {swWrap}
+          {text}
+        </>
+      )}
     </div>
   );
 });
@@ -143,21 +169,20 @@ export interface SegmentedControlProps<T extends string = string> {
   value: T;
   onValueChange: (value: T) => void;
   options: SegmentedOption<T>[];
-  size?: 'xs' | 'sm' | 'md';
+  size?: 'xs' | 'sm' | 'md' | 'lg';
   className?: string;
   'aria-label'?: string;
   fullWidth?: boolean;
 }
 
 export function SegmentedControl<T extends string = string>({ value, onValueChange, options, size = 'sm', className, fullWidth, ...aria }: SegmentedControlProps<T>) {
-  const h = size === 'xs' ? 'h-6 text-xs' : size === 'sm' ? 'h-7 text-sm' : 'h-8 text-sm';
   return (
     <ToggleGroup.Root
       type="single"
       value={value}
       onValueChange={(v) => v && onValueChange(v as T)}
       aria-label={aria['aria-label']}
-      className={cn('inline-flex items-center gap-0.5 rounded-md bg-surface-3/70 p-0.5', fullWidth && 'flex w-full', className)}
+      className={cn('inline-flex shrink-0 items-stretch gap-0.5 rounded-md bg-seg p-0.5', controlHeight[size], fullWidth && 'flex w-full', className)}
     >
       {options.map((o) => (
         <ToggleGroup.Item
@@ -167,16 +192,16 @@ export function SegmentedControl<T extends string = string>({ value, onValueChan
           aria-label={o.ariaLabel}
           title={o.ariaLabel}
           className={cn(
-            'inline-flex items-center justify-center gap-1.5 rounded-sm px-2 font-medium text-fg-muted transition-colors outline-none',
-            'hover:text-fg focus-visible:ring-2 focus-visible:ring-ring data-[state=on]:bg-surface data-[state=on]:text-fg data-[state=on]:shadow-sm disabled:opacity-50',
-            '[&_svg]:size-3.5 [&_svg]:stroke-[1.5]',
-            h,
-            size === 'xs' ? 'h-5' : size === 'sm' ? 'h-6' : 'h-7',
+            'inline-flex min-w-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-[calc(var(--radius-md)-2px)] font-medium text-fg-muted outline-none transition-colors duration-75',
+            'hover:text-fg focus-visible:ring-2 focus-visible:ring-ring data-[state=on]:bg-seg-on data-[state=on]:text-fg data-[state=on]:shadow-sm disabled:opacity-50',
+            '[&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:stroke-[1.5]',
+            size === 'xs' ? 'px-1.5 text-xs' : 'px-2 text-sm',
+            o.label ? '' : 'aspect-square px-0',
             fullWidth && 'flex-1',
           )}
         >
           {o.icon}
-          {o.label}
+          {o.label !== undefined && <span className="truncate">{o.label}</span>}
         </ToggleGroup.Item>
       ))}
     </ToggleGroup.Root>

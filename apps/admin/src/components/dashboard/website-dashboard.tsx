@@ -177,9 +177,9 @@ function SitePanel({ d, platformUrl, base, canDomains }: { d: Dashboard; platfor
             {
               label: 'Primary domain',
               value: d.primaryDomain ? (
-                <a href={`https://${d.primaryDomain}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:underline">
-                  {d.primaryDomain}
-                  <ExternalLink className="size-3 text-fg-subtle" strokeWidth={1.5} />
+                <a href={`https://${d.primaryDomain}`} target="_blank" rel="noreferrer" className="inline-flex max-w-full items-center gap-1 hover:underline">
+                  <span className="truncate">{d.primaryDomain}</span>
+                  <ExternalLink className="size-3 shrink-0 text-fg-subtle" strokeWidth={1.5} />
                 </a>
               ) : canDomains ? (
                 <Link href={`${base}/domains`} className="text-accent hover:underline">

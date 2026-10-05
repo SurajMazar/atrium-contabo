@@ -4,7 +4,7 @@ import { Button, Spinner } from '@atrium/ui';
 import { X } from 'lucide-react';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
-import { AtriumMark } from '@/components/auth/auth-layout';
+import { BrandLogo } from '@/components/shell/brand';
 import { UserMenu } from '@/components/shell/user-menu';
 import { useSession } from '@/lib/session';
 
@@ -21,9 +21,8 @@ export function FocusShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-dvh flex-col bg-bg">
       <header className="sticky top-0 z-30 flex h-12 shrink-0 items-center gap-3 border-b border-border bg-bg px-4">
-        <Link href="/" className="flex items-center gap-2 rounded-md text-sm font-semibold text-fg outline-none focus-visible:ring-2 focus-visible:ring-ring">
-          <AtriumMark className="size-5" />
-          Atrium
+        <Link href="/" className="flex items-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <BrandLogo size="sm" />
         </Link>
         <div className="flex-1" />
         <div className="w-44">

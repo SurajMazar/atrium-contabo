@@ -215,8 +215,8 @@ export function ItemsView({
       const ok = results.filter((r) => r.status === 'fulfilled').length;
       const failed = results.length - ok;
       const verb = s === 'published' ? 'published' : s === 'draft' ? 'unpublished' : 'archived';
-      if (ok) toast.success(results.length === 1 ? `Item ${verb}` : `${formatNumber(ok)} ${pluralize(ok, 'item')} ${verb}`);
-      if (failed) toast.error(`${formatNumber(failed)} ${pluralize(failed, 'item')} could not be updated`);
+      if (ok) toast.success(results.length === 1 ? `Item ${verb}` : `${pluralize(ok, 'item')} ${verb}`);
+      if (failed) toast.error(`${pluralize(failed, 'item')} could not be updated`);
       setSelected(new Set());
     },
     onError: (err) => toast.error(errorMessage(err)),
@@ -234,7 +234,7 @@ export function ItemsView({
       qc.setQueriesData({ queryKey: qk.collectionItemsAll(cid) }, (d: unknown) => (isInfinite(d) && d.pages[0] && typeof d.pages[0].total === 'number' ? { ...d, pages: d.pages.map((p, i) => (i === 0 ? { ...p, total: Math.max(0, (p.total ?? 0) - removed.size) } : p)) } : d));
       const failed = ids.length - removed.size;
       if (removed.size) toast.success(removed.size === 1 ? 'Item deleted' : `${formatNumber(removed.size)} items deleted`);
-      if (failed) toast.error(`${formatNumber(failed)} ${pluralize(failed, 'item')} could not be deleted`);
+      if (failed) toast.error(`${pluralize(failed, 'item')} could not be deleted`);
       setSelected(new Set());
       refreshCounts();
     },
@@ -337,7 +337,7 @@ export function ItemsView({
       <div className="flex-1" />
       {total !== undefined && (
         <span className="text-xs tabular-nums text-fg-muted">
-          {formatNumber(total)} {pluralize(total, 'item')}
+          {pluralize(total, 'item')}
         </span>
       )}
       {canEdit && (
@@ -669,7 +669,7 @@ export function ItemsView({
         open={confirmBulkDelete}
         onOpenChange={setConfirmBulkDelete}
         tone="danger"
-        title={`Delete ${formatNumber(selected.size)} ${pluralize(selected.size, 'item')}?`}
+        title={`Delete ${pluralize(selected.size, 'item')}?`}
         description="This permanently deletes the selected items. References to them from other collections will be empty."
         confirmLabel="Delete items"
         onConfirm={() => removeItems.mutateAsync(selectedIds)}

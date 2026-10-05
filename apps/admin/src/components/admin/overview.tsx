@@ -100,7 +100,7 @@ export function AdminOverview() {
           ))
         )}
 
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
           <Card>
             <CardHeader
               title="System health"
@@ -121,7 +121,7 @@ export function AdminOverview() {
             ) : (
               <ul className="divide-y divide-border">
                 {checks.map(([k, v]) => (
-                  <li key={k} className="flex items-start justify-between gap-3 px-4 py-2.5">
+                  <li key={k} className="flex items-center justify-between gap-3 px-4 py-2.5">
                     <StatusDot tone={v === 'ok' ? 'success' : 'danger'} label={<span className="text-sm text-fg">{humanizeKey(k)}</span>} />
                     <span className={v === 'ok' ? 'text-xs text-fg-muted' : 'max-w-[60%] break-words text-right text-xs text-danger'}>{v === 'ok' ? 'OK' : v}</span>
                   </li>

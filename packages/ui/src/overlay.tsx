@@ -20,7 +20,7 @@ const dialogSizes = { sm: 'max-w-sm', md: 'max-w-lg', lg: 'max-w-2xl', xl: 'max-
 export const DialogContent = forwardRef<HTMLDivElement, DialogContentProps>(function DialogContent({ className, size = 'md', hideClose, children, ...props }, ref) {
   return (
     <D.Portal>
-      <D.Overlay className="fixed inset-0 z-50 bg-black/30 animate-fade-in data-[state=closed]:opacity-0" />
+      <D.Overlay className="fixed inset-0 z-50 bg-overlay animate-fade-in data-[state=closed]:opacity-0" />
       <D.Content
         ref={ref}
         className={cn(
@@ -81,12 +81,12 @@ export interface SheetContentProps extends Omit<ComponentPropsWithoutRef<typeof 
 const sheetSizes = { sm: 'sm:max-w-sm', md: 'sm:max-w-md', lg: 'sm:max-w-xl', xl: 'sm:max-w-3xl' } as const;
 
 export const SheetContent = forwardRef<HTMLDivElement, SheetContentProps>(function SheetContent(
-  { side = 'right', size = 'md', title, description, actions, footer, className, bodyClassName, children, ...props },
+  { side = 'right', size = 'md', title, description, actions, footer, className, bodyClassName, children, onOpenAutoFocus, ...props },
   ref,
 ) {
   return (
     <D.Portal>
-      <D.Overlay className="fixed inset-0 z-50 bg-black/20 animate-fade-in" />
+      <D.Overlay className="fixed inset-0 z-50 bg-overlay animate-fade-in" />
       <D.Content
         ref={ref}
         className={cn(
@@ -95,6 +95,14 @@ export const SheetContent = forwardRef<HTMLDivElement, SheetContentProps>(functi
           sheetSizes[size],
           className,
         )}
+        onOpenAutoFocus={(e) => {
+          onOpenAutoFocus?.(e);
+          if (e.defaultPrevented) return;
+          // Focus the panel itself rather than the first header button, so
+          // header tooltips don't pop open the moment the sheet appears.
+          e.preventDefault();
+          (e.currentTarget as HTMLElement | null)?.focus({ preventScroll: true });
+        }}
         {...props}
       >
         <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border pl-4 pr-2">
@@ -159,10 +167,10 @@ export function Tooltip({ content, children, side = 'top', align = 'center', sho
           side={side}
           align={align}
           sideOffset={6}
-          className="z-[60] flex max-w-xs items-center gap-2 rounded-sm bg-fg px-2 py-1 text-xs text-bg shadow-popover animate-fade-in"
+          className="z-[60] flex max-w-xs items-center gap-2 rounded-sm bg-fg px-2 py-1 text-xs leading-4 text-bg shadow-popover animate-fade-in dark:bg-surface-3 dark:text-fg dark:ring-1 dark:ring-border-strong"
         >
           {content}
-          {shortcut && <span className="text-bg/60">{shortcut}</span>}
+          {shortcut && <span className="text-bg/60 dark:text-fg-subtle">{shortcut}</span>}
         </T.Content>
       </T.Portal>
     </T.Root>
@@ -212,7 +220,7 @@ export function ConfirmDialog({ open, onOpenChange, title, description, confirmL
                 autoComplete="off"
                 value={typed}
                 onChange={(e) => setTyped(e.target.value)}
-                className="h-8 w-full rounded-md border border-border bg-surface px-2.5 text-sm outline-none focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-ring"
+                className="h-(--ui-ctl-md) w-full rounded-md border border-border bg-surface px-2.5 text-sm outline-none focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-ring"
               />
             </div>
           )}

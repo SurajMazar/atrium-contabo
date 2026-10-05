@@ -42,8 +42,8 @@ export function VersionHistoryDrawer() {
 
   return (
     <Drawer open={open} onOpenChange={(o) => useUiStore.setState({ historyOpen: o })} title={`Versions · ${title ?? ''}`}>
-      <div className="flex items-center justify-between border-b border-border px-4 py-2">
-        <p className="text-[11px] text-fg-subtle">Checkpoints are created with ⌘S, on publish and before restores.</p>
+      <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2.5">
+        <p className="min-w-0 text-[11px] leading-4 text-fg-subtle">Checkpoints are created with ⌘S, on publish and before restores.</p>
         <Btn
           size="xs"
           variant="secondary"
@@ -65,36 +65,40 @@ export function VersionHistoryDrawer() {
       {versions.data && !versions.data.length && <Empty icon={<History className="size-6" />} title="No versions yet">Press ⌘S to save a named checkpoint.</Empty>}
       <ul className="divide-y divide-border">
         {versions.data?.map((v) => (
-          <li key={v.id} className="group px-4 py-2.5">
-           <div className="flex items-start gap-3">
-            <span className="mt-0.5 font-mono text-[11px] text-fg-subtle">v{v.number}</span>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-[13px] font-medium">{v.message || v.title}</p>
-              <p className="text-[11px] text-fg-muted">
-                {new Date(v.createdAt).toLocaleString()} {v.createdBy ? `· ${v.createdBy}` : ''}
-              </p>
+          <li key={v.id} className="group relative px-4 py-2.5 hover:bg-surface-2/50">
+            <div className="flex items-start gap-3">
+              <span className="mt-px w-6 shrink-0 font-mono text-[11px] tabular-nums text-fg-subtle">v{v.number}</span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <p className="min-w-0 truncate text-[13px] font-medium">{v.message || v.title}</p>
+                  <Badge className="shrink-0 capitalize">{v.source.toLowerCase()}</Badge>
+                </div>
+                <p className="mt-0.5 truncate text-[11px] text-fg-muted">
+                  {new Date(v.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
+                  {v.createdBy ? ` · ${v.createdBy}` : ''}
+                </p>
+              </div>
             </div>
-            <Badge className="mt-0.5 capitalize">{v.source.toLowerCase()}</Badge>
-            <Btn size="xs" variant="ghost" className="opacity-0 group-hover:opacity-100" icon={<GitCompare className="size-3" />} onClick={() => runCompare(v.id)}>
-              Compare
-            </Btn>
-            <Btn
-              size="xs"
-              variant="ghost"
-              className="opacity-0 group-hover:opacity-100"
-              disabled={!perms.edit || restoring !== null}
-              icon={restoring === v.id ? <Loader2 className="size-3 animate-spin" /> : <RotateCcw className="size-3" />}
-              onClick={async () => {
-                if (!pageId) return;
-                setRestoring(v.id);
-                await restorePageVersion(pageId, v.id);
-                setRestoring(null);
-                void qc.invalidateQueries({ queryKey: qk.pageVersions(pageId) });
-              }}
-            >
-              Restore
-            </Btn>
-           </div>
+            <div className="absolute right-3 top-2 hidden items-center gap-0.5 rounded-md border border-border bg-surface p-0.5 shadow-sm group-focus-within:flex group-hover:flex">
+              <Btn size="xs" variant="ghost" icon={<GitCompare className="size-3" />} onClick={() => runCompare(v.id)}>
+                Compare
+              </Btn>
+              <Btn
+                size="xs"
+                variant="ghost"
+                disabled={!perms.edit || restoring !== null}
+                icon={restoring === v.id ? <Loader2 className="size-3 animate-spin" /> : <RotateCcw className="size-3" />}
+                onClick={async () => {
+                  if (!pageId) return;
+                  setRestoring(v.id);
+                  await restorePageVersion(pageId, v.id);
+                  setRestoring(null);
+                  void qc.invalidateQueries({ queryKey: qk.pageVersions(pageId) });
+                }}
+              >
+                Restore
+              </Btn>
+            </div>
             {compare?.id === v.id && (
               <div className="mt-2 rounded-md border border-border bg-surface-2 px-2.5 py-2 text-xs">
                 {compare.loading && <span className="flex items-center gap-1.5 text-fg-muted"><Loader2 className="size-3 animate-spin" /> Comparing…</span>}

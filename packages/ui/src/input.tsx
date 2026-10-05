@@ -1,9 +1,9 @@
 import { Label as LabelPrimitive } from 'radix-ui';
 import { cloneElement, forwardRef, isValidElement, useId, type ComponentPropsWithoutRef, type InputHTMLAttributes, type ReactElement, type ReactNode, type TextareaHTMLAttributes } from 'react';
-import { cn, fieldBase } from './utils';
+import { cn, controlHeight, fieldBase } from './utils';
 
 export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'size' | 'prefix'> {
-  size?: 'sm' | 'md';
+  size?: 'xs' | 'sm' | 'md' | 'lg';
   /** Icon or text rendered inside the field on the left. */
   prefix?: ReactNode;
   /** Icon, text or button rendered inside the field on the right. */
@@ -12,17 +12,17 @@ export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(function Input({ className, size = 'md', prefix, suffix, invalid, ...props }, ref) {
-  const h = size === 'sm' ? 'h-7 text-sm' : 'h-8 text-sm';
+  const h = cn(controlHeight[size], size === 'xs' ? 'text-xs' : 'text-sm');
   if (!prefix && !suffix) {
     return <input ref={ref} aria-invalid={invalid || undefined} className={cn(fieldBase, h, 'px-2.5', className)} {...props} />;
   }
   return (
     <div className={cn('relative flex items-center', className)}>
-      {prefix && <span className="pointer-events-none absolute left-2.5 flex items-center text-fg-subtle [&_svg]:size-4 [&_svg]:stroke-[1.5]">{prefix}</span>}
+      {prefix && <span className={cn('pointer-events-none absolute flex items-center text-fg-subtle [&_svg]:stroke-[1.5]', size === 'xs' || size === 'sm' ? 'left-2 [&_svg]:size-3.5' : 'left-2.5 [&_svg]:size-4')}>{prefix}</span>}
       <input
         ref={ref}
         aria-invalid={invalid || undefined}
-        className={cn(fieldBase, h, prefix ? 'pl-8' : 'pl-2.5', suffix ? 'pr-8' : 'pr-2.5')}
+        className={cn(fieldBase, h, prefix ? (size === 'xs' || size === 'sm' ? 'pl-7' : 'pl-8') : 'pl-2.5', suffix ? 'pr-8' : 'pr-2.5')}
         {...props}
       />
       {suffix && <span className="absolute right-1.5 flex items-center text-fg-subtle [&_svg]:size-4 [&_svg]:stroke-[1.5]">{suffix}</span>}
@@ -48,7 +48,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
 });
 
 export const Label = forwardRef<HTMLLabelElement, ComponentPropsWithoutRef<typeof LabelPrimitive.Root>>(function Label({ className, ...props }, ref) {
-  return <LabelPrimitive.Root ref={ref} className={cn('text-sm font-medium text-fg select-none', className)} {...props} />;
+  return <LabelPrimitive.Root ref={ref} className={cn('text-sm font-medium leading-5 text-fg select-none', className)} {...props} />;
 });
 
 export interface FieldProps {
@@ -111,7 +111,7 @@ export function Field({ label, help, error, required, optional, hint, htmlFor, c
   if (inline) {
     return (
       <div className={cn('grid gap-x-6 gap-y-1.5 py-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] sm:items-start', className)}>
-        <div className="space-y-0.5 pt-1">
+        <div className="space-y-0.5 sm:pt-1.5">
           {labelNode}
           {help && !error && <p className="text-xs text-fg-muted">{help}</p>}
         </div>

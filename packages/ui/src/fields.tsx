@@ -3,7 +3,7 @@ import { Check, Copy, Eye, EyeOff, Pencil, X } from 'lucide-react';
 import { forwardRef, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Button, IconButton } from './button';
 import { Input } from './input';
-import { cn, fieldBase } from './utils';
+import { cn, controlHeight, fieldBase } from './utils';
 
 /* --------------------------------------------------------------- CopyField */
 
@@ -50,7 +50,7 @@ export function CopyButton({ value, label = 'Copy', size = 'xs', className }: { 
 
 export function CopyField({ value, mono = true, className, size = 'md', label }: { value: string; mono?: boolean; className?: string; size?: 'sm' | 'md'; label?: string }) {
   return (
-    <div className={cn('flex items-center rounded-md border border-border bg-surface-2/60', size === 'sm' ? 'h-7' : 'h-8', className)}>
+    <div className={cn('flex items-center rounded-md border border-border bg-surface-2/60', controlHeight[size], className)}>
       <input
         readOnly
         value={value}
@@ -87,7 +87,7 @@ export function SecretInput({ maskedValue, value, onChange, placeholder = 'Enter
   const editing = value !== undefined || !maskedValue;
   if (!editing) {
     return (
-      <div className={cn('flex h-8 items-center gap-2 rounded-md border border-border bg-surface-2/60 pl-2.5 pr-1')}>
+      <div className={cn('flex items-center gap-2 rounded-md border border-border bg-surface-2/60 pl-2.5 pr-1', controlHeight.md)}>
         <span className="min-w-0 flex-1 truncate font-mono text-xs text-fg-muted" aria-label="Stored secret (masked)">
           {maskedValue}
         </span>
@@ -151,7 +151,7 @@ export function ColorInput({ value, onChange, id, disabled, className, presets }
   const valid = HEX.test(draft) || draft.startsWith('var(') || draft.startsWith('rgb') || draft.startsWith('hsl') || draft.startsWith('oklch');
   return (
     <div className={cn('space-y-2', className)}>
-      <div className={cn('flex h-8 items-center gap-2 rounded-md border border-border bg-surface pl-1 pr-2 focus-within:border-accent focus-within:ring-2 focus-within:ring-ring', !valid && 'border-danger')}>
+      <div className={cn('flex items-center gap-2 rounded-md border border-border bg-surface pl-1 pr-2 transition-colors hover:border-border-strong focus-within:border-accent focus-within:ring-2 focus-within:ring-ring', controlHeight.md, !valid && 'border-danger')}>
         <label className="relative size-6 shrink-0 cursor-pointer overflow-hidden rounded-sm border border-border" style={{ background: valid ? draft : 'transparent' }}>
           <input
             type="color"
@@ -221,7 +221,7 @@ export const TagInput = forwardRef<HTMLInputElement, TagInputProps>(function Tag
   };
   const listId = id ? `${id}-suggestions` : undefined;
   return (
-    <div className={cn(fieldBase, 'flex min-h-8 flex-wrap items-center gap-1 px-1.5 py-1 focus-within:border-accent focus-within:ring-2 focus-within:ring-ring', className)}>
+    <div className={cn(fieldBase, 'flex min-h-(--ui-ctl-md) flex-wrap items-center gap-1 px-1.5 py-1 focus-within:border-accent focus-within:ring-2 focus-within:ring-ring', className)}>
       {value.map((t) => (
         <span key={t} className="inline-flex h-5 items-center gap-0.5 rounded-sm bg-surface-3 pl-1.5 pr-0.5 text-xs text-fg">
           {t}
@@ -406,22 +406,22 @@ export function DateRangePicker({ value, onChange, presets = [{ label: '7d', day
   });
   return (
     <div className={cn('flex flex-wrap items-center gap-2', className)}>
-      <div className="inline-flex items-center gap-0.5 rounded-md bg-surface-3/70 p-0.5">
+      <div className={cn('inline-flex items-stretch gap-0.5 rounded-md bg-seg p-0.5', controlHeight.sm)}>
         {presets.map((p) => (
           <button
             key={p.label}
             type="button"
             onClick={() => onChange(presetRange(p.days))}
-            className={cn('h-6 rounded-sm px-2 text-xs font-medium text-fg-muted outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-ring', activePreset === p && 'bg-surface text-fg shadow-sm')}
+            className={cn('rounded-[calc(var(--radius-md)-2px)] px-2 text-xs font-medium text-fg-muted outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-ring', activePreset === p && 'bg-seg-on text-fg shadow-sm')}
           >
             {p.label}
           </button>
         ))}
       </div>
       <div className="flex items-center gap-1 text-sm">
-        <input type="date" aria-label="From" value={value.from} max={value.to} onChange={(e) => e.target.value && onChange({ ...value, from: e.target.value })} className={cn(fieldBase, 'h-7 w-[132px] px-2 text-xs')} />
+        <input type="date" aria-label="From" value={value.from} max={value.to} onChange={(e) => e.target.value && onChange({ ...value, from: e.target.value })} className={cn(fieldBase, controlHeight.sm, 'w-[132px] px-2 text-xs tabular-nums')} />
         <span className="text-fg-subtle">–</span>
-        <input type="date" aria-label="To" value={value.to} min={value.from} onChange={(e) => e.target.value && onChange({ ...value, to: e.target.value })} className={cn(fieldBase, 'h-7 w-[132px] px-2 text-xs')} />
+        <input type="date" aria-label="To" value={value.to} min={value.from} onChange={(e) => e.target.value && onChange({ ...value, to: e.target.value })} className={cn(fieldBase, controlHeight.sm, 'w-[132px] px-2 text-xs tabular-nums')} />
       </div>
     </div>
   );
@@ -443,7 +443,7 @@ export function ChoiceChips<T extends string>({ options, value, onChange, multip
             aria-checked={on}
             onClick={() => (multiple ? onChange(on ? sel.filter((x) => x !== o.value) : [...sel, o.value]) : onChange(o.value))}
             className={cn(
-              'inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring',
+              cn('inline-flex items-center gap-1.5 rounded-md border px-2.5 text-sm outline-none transition-colors duration-75 focus-visible:ring-2 focus-visible:ring-ring', controlHeight.sm),
               on ? 'border-accent bg-accent-soft text-accent' : 'border-border bg-surface text-fg-muted hover:border-border-strong hover:text-fg',
             )}
             title={typeof o.description === 'string' ? o.description : undefined}

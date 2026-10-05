@@ -6,6 +6,7 @@ import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from '@ta
 import { Suspense, useState, type ReactNode } from 'react';
 import { AuthRedirect } from '@/components/auth/auth-redirect';
 import { OfflineBanner } from '@/components/shell/offline-banner';
+import { BrandingProvider } from '@/lib/branding';
 import { SessionProvider } from '@/lib/session';
 import { ThemeProvider, useTheme } from '@/lib/theme';
 
@@ -43,6 +44,7 @@ export function Providers({ children }: { children: ReactNode }) {
     <QueryClientProvider client={client}>
       <ThemeProvider>
         <SessionProvider>
+          <BrandingProvider>
           <TooltipProvider delayDuration={400} skipDelayDuration={200}>
             <Suspense fallback={null}>
               <AuthRedirect />
@@ -51,6 +53,7 @@ export function Providers({ children }: { children: ReactNode }) {
             {children}
             <ThemedToaster />
           </TooltipProvider>
+          </BrandingProvider>
         </SessionProvider>
       </ThemeProvider>
     </QueryClientProvider>

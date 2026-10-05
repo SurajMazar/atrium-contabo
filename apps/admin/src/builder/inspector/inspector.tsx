@@ -82,17 +82,20 @@ function NodeInspector({ node }: { node: Node }) {
         {target && <p className="mt-2 rounded-md bg-surface-2 px-2 py-1 text-[11px] text-fg-muted">Site-wide {target}: changes apply to every page.</p>}
         {def.variants && def.variants.length > 1 && <VariantPicker node={node} disabled={disabled} />}
       </div>
-      <div className="flex shrink-0 border-b border-border px-1.5" role="tablist">
+      <div className="flex shrink-0 border-b border-border px-1" role="tablist">
         {TABS.map((t) => (
           <button
             key={t.id}
             role="tab"
             aria-selected={tab === t.id}
             onClick={() => useUiStore.setState({ inspectorTab: t.id })}
-            className={cn('relative h-9 flex-1 px-1 text-xs font-medium text-fg-muted hover:text-fg', tab === t.id && 'text-fg after:absolute after:inset-x-1.5 after:bottom-0 after:h-0.5 after:rounded-full after:bg-accent')}
+            className={cn(
+              'relative inline-flex h-9 flex-auto items-center justify-center gap-1 whitespace-nowrap px-1 text-xs font-medium text-fg-muted outline-none transition-colors duration-75 hover:text-fg focus-visible:text-fg',
+              tab === t.id && 'text-fg after:absolute after:inset-x-1 after:-bottom-px after:h-0.5 after:rounded-full after:bg-fg',
+            )}
           >
             {t.label}
-            {t.id === 'motion' && node.animation && <span className="absolute right-1 top-2 size-1.5 rounded-full bg-accent" />}
+            {t.id === 'motion' && node.animation && <span className="size-1.5 shrink-0 rounded-full bg-accent" aria-label="Has animation" />}
           </button>
         ))}
       </div>
@@ -156,7 +159,7 @@ function VariantPicker({ node, disabled }: { node: Node; disabled?: boolean }) {
   return (
     <Popover>
       <PopoverTrigger asChild disabled={disabled}>
-        <button type="button" disabled={disabled} className="mt-2 flex h-8 w-full items-center gap-2 rounded-md border border-border bg-surface px-2 text-left hover:border-border-strong disabled:opacity-50">
+        <button type="button" disabled={disabled} className="mt-2.5 flex h-8 w-full items-center gap-2 rounded-md border border-border bg-surface px-2 text-left outline-none transition-colors duration-75 hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 data-[state=open]:border-accent">
           <span className="text-[11px] text-fg-subtle">Variant</span>
           <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{current.name}</span>
           <ChevronDown className="size-3.5 text-fg-subtle" />

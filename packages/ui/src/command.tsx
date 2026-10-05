@@ -94,7 +94,7 @@ export function CommandPalette({ open, onOpenChange, placeholder = 'Type a comma
   return (
     <D.Root open={open} onOpenChange={onOpenChange}>
       <D.Portal>
-        <D.Overlay className="fixed inset-0 z-50 bg-black/25 animate-fade-in" />
+        <D.Overlay className="fixed inset-0 z-50 bg-overlay animate-fade-in" />
         <D.Content className="fixed left-1/2 top-[12vh] z-50 w-[calc(100vw-32px)] max-w-xl -translate-x-1/2 overflow-hidden rounded-lg border border-border bg-surface shadow-dialog outline-none animate-slide-up">
           <D.Title className="sr-only">Command palette</D.Title>
           <D.Description className="sr-only">Search for pages, websites and actions</D.Description>

@@ -10,6 +10,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { AuthFrame } from '@/components/auth/auth-layout';
+import { useBranding } from '@/lib/branding';
 import { safeNext } from '@/components/auth/auth-redirect';
 import { useApi } from '@/lib/api';
 import { useSession } from '@/lib/session';
@@ -21,6 +22,7 @@ const schema = z.object({
 type Values = z.infer<typeof schema>;
 
 export function LoginForm() {
+  const { productName } = useBranding();
   const api = useApi();
   const { signIn } = useSession();
   const router = useRouter();
@@ -111,10 +113,11 @@ export function LoginForm() {
 
   return (
     <AuthFrame
-      title="Sign in to Atrium"
+      title={`Sign in to ${productName}`}
+      brandHeadline
       footer={
         <>
-          New to Atrium?{' '}
+          New to {productName}?{' '}
           <Link href={`/register${params.get('next') ? `?next=${encodeURIComponent(next)}` : ''}`} className="font-medium text-fg hover:underline">
             Create an account
           </Link>

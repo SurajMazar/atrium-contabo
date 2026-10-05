@@ -90,7 +90,7 @@ export function SelectAllCheckbox({ total, selected, onChange }: { total: number
 
 export function RowCheckbox({ checked, onChange, label = 'Select row' }: { checked: boolean; onChange: (v: boolean) => void; label?: string }) {
   return (
-    <span onClick={(e) => e.stopPropagation()} className="inline-flex">
+    <span onClick={(e) => e.stopPropagation()} className="flex items-center">
       <Checkbox aria-label={label} checked={checked} onCheckedChange={(v) => onChange(v === true)} />
     </span>
   );

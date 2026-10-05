@@ -99,7 +99,7 @@ export const TabsList = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<type
       data-variant={variant}
       className={cn(
         'group/tabs flex items-center',
-        variant === 'underline' ? 'gap-4 border-b border-border' : 'gap-0.5 rounded-md bg-surface-3/70 p-0.5',
+        variant === 'underline' ? 'gap-5 border-b border-border' : 'h-(--ui-ctl-sm) w-fit gap-0.5 rounded-md bg-seg p-0.5',
         'overflow-x-auto [scrollbar-width:none]',
         className,
       )}
@@ -116,15 +116,15 @@ export const TabsTrigger = forwardRef<HTMLButtonElement, ComponentPropsWithoutRe
         'inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-sm font-medium text-fg-muted outline-none transition-colors hover:text-fg focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50',
         'group-data-[variant=underline]/tabs:-mb-px group-data-[variant=underline]/tabs:h-9 group-data-[variant=underline]/tabs:border-b-2 group-data-[variant=underline]/tabs:border-transparent',
         'group-data-[variant=underline]/tabs:data-[state=active]:border-fg group-data-[variant=underline]/tabs:data-[state=active]:text-fg',
-        'group-data-[variant=pill]/tabs:h-6 group-data-[variant=pill]/tabs:rounded-sm group-data-[variant=pill]/tabs:px-2.5',
-        'group-data-[variant=pill]/tabs:data-[state=active]:bg-surface group-data-[variant=pill]/tabs:data-[state=active]:text-fg group-data-[variant=pill]/tabs:data-[state=active]:shadow-sm',
+        'group-data-[variant=pill]/tabs:h-full group-data-[variant=pill]/tabs:rounded-[calc(var(--radius-md)-2px)] group-data-[variant=pill]/tabs:px-2.5',
+        'group-data-[variant=pill]/tabs:data-[state=active]:bg-seg-on group-data-[variant=pill]/tabs:data-[state=active]:text-fg group-data-[variant=pill]/tabs:data-[state=active]:shadow-sm',
         '[&_svg]:size-4 [&_svg]:stroke-[1.5]',
         className,
       )}
       {...props}
     >
       {children}
-      {count !== undefined && <span className="rounded-sm bg-surface-3 px-1 text-2xs tabular-nums text-fg-muted">{count}</span>}
+      {count !== undefined && <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-sm bg-surface-3 px-1 text-2xs font-medium tabular-nums text-fg-muted">{count}</span>}
     </Tb.Trigger>
   );
 });
@@ -265,8 +265,8 @@ export function DescriptionList({ items, className }: { items: Array<{ label: Re
   return (
     <dl className={cn('divide-y divide-border text-sm', className)}>
       {items.map((it, i) => (
-        <div key={i} className="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-3 py-2">
-          <dt className="text-fg-muted">{it.label}</dt>
+        <div key={i} className="grid grid-cols-[minmax(6rem,max-content)_minmax(0,1fr)] items-baseline gap-x-4 py-2">
+          <dt className="whitespace-nowrap text-fg-muted">{it.label}</dt>
           <dd className="min-w-0 break-words text-fg">{it.value}</dd>
         </div>
       ))}

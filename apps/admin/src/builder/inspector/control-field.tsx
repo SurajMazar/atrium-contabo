@@ -40,6 +40,18 @@ const REGISTRY: Record<ControlType, ComponentType<ControlProps<never>>> = {
 
 const STACKED = new Set<ControlType>(['textarea', 'richtext', 'media', 'list', 'link', 'code', 'button', 'slider']);
 
+/** Inline value column is ~168px at the default inspector width. */
+const INLINE_WIDTH = 168;
+
+/** Segmented controls whose labels would be clipped inline get the full row width instead. */
+function segmentedNeedsRow(control: Control): boolean {
+  if (control.type !== 'segmented') return false;
+  const options = control.options ?? [];
+  // Segments share the width equally, so the widest label decides.
+  const widest = options.reduce((w, o) => Math.max(w, o.icon ? 28 : String(o.label ?? '').length * (options.length >= 3 ? 6.1 : 6.6) + 10), 28);
+  return options.length * widest + 4 > INLINE_WIDTH;
+}
+
 export interface ControlFieldProps {
   control: Control;
   value: unknown;
@@ -70,7 +82,7 @@ export const ControlField = memo(function ControlField({ control, value, onChang
     );
   }
   return (
-    <Row label={control.label} help={control.help} htmlFor={id} stacked={STACKED.has(control.type)} actions={rewrite}>
+    <Row label={control.label} help={control.help} htmlFor={id} stacked={STACKED.has(control.type) || segmentedNeedsRow(control)} actions={rewrite}>
       {body}
     </Row>
   );

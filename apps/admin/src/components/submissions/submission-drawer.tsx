@@ -184,7 +184,7 @@ export function SubmissionDrawer({ websiteId, organizationId, submissionId, summ
             <div className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-x-3 gap-y-2.5 px-4 py-4 text-sm">
               <span className="text-xs text-fg-muted">Status</span>
               {canUpdate ? (
-                <Select size="sm" className="w-44" aria-label="Status" value={s.status} onValueChange={(v) => update.mutate({ status: v as SubmissionStatus })} options={STATUS_OPTIONS} />
+                <Select size="sm" className="w-56" aria-label="Status" value={s.status} onValueChange={(v) => update.mutate({ status: v as SubmissionStatus })} options={STATUS_OPTIONS} />
               ) : (
                 <span>
                   <SubmissionStatusBadge status={s.status} />
@@ -408,7 +408,7 @@ function DrawerSkeleton() {
   return (
     <div className="space-y-6 p-4">
       <div className="space-y-2.5">
-        <Skeleton className="h-7 w-44" />
+        <Skeleton className="h-7 w-56" />
         <Skeleton className="h-7 w-56" />
         <Skeleton className="h-7 w-full" />
       </div>

@@ -14,14 +14,16 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@atrium/ui';
-import { KeyRound, LogOut, Monitor, Palette, ShieldCheck, User } from 'lucide-react';
+import { KeyRound, LifeBuoy, LogOut, Monitor, Palette, ShieldCheck, User } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { useBranding } from '@/lib/branding';
 import { useSession } from '@/lib/session';
 import { useTheme, type ThemePreference } from '@/lib/theme';
 
 export function UserMenu() {
   const { user, signOut } = useSession();
   const { theme, setTheme } = useTheme();
+  const { branding } = useBranding();
   const router = useRouter();
   if (!user) return null;
   return (
@@ -60,6 +62,11 @@ export function UserMenu() {
             </DropdownMenuRadioGroup>
           </DropdownMenuSubContent>
         </DropdownMenuSub>
+        {branding.supportUrl && (
+          <DropdownMenuItem icon={<LifeBuoy />} onSelect={() => window.open(branding.supportUrl, '_blank', 'noopener,noreferrer')}>
+            Help &amp; support
+          </DropdownMenuItem>
+        )}
         {user.isSuperAdmin && (
           <>
             <DropdownMenuSeparator />

@@ -165,7 +165,7 @@ function KeyEditor({ k, value, placeholder, set, disabled, nodeId }: KeyEditorPr
     case 'position':
       return <NativeSelect value={str} placeholder={ph ? `Inherited (${ph})` : 'static'} disabled={disabled} onChange={(v) => set(v || undefined)} options={['static', 'relative', 'absolute', 'sticky', 'fixed'].map((v) => ({ label: v, value: v }))} />;
     case 'overflow':
-      return <Segmented value={str ?? ph} disabled={disabled} onChange={(v) => set(v)} options={[A('visible'), A('hidden'), A('clip'), A('auto')]} />;
+      return <NativeSelect value={str} placeholder={ph ? `Inherited (${ph})` : 'visible'} disabled={disabled} onChange={(v) => set(v || undefined)} options={['visible', 'hidden', 'clip', 'auto'].map((v) => ({ label: v, value: v }))} />;
     default:
       return <TokenInput value={str} placeholder={ph} onCommit={set} disabled={disabled} />;
   }

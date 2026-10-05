@@ -101,7 +101,7 @@ export function SchemaEditor({ websiteId, collection, collections, canManage, ac
       setShowErrors(true);
       const first = draft.find((f) => errors[f._id]);
       if (first) setEditingId(first._id);
-      toast.error(`Fix ${errorCount} ${pluralize(errorCount, 'field')} before saving`);
+      toast.error(`Fix ${pluralize(errorCount, 'field')} before saving`);
       return;
     }
     save.mutate();
@@ -209,7 +209,7 @@ export function SchemaEditor({ websiteId, collection, collections, canManage, ac
   const removalCopy = (p: PendingRemoval) => {
     if (p.withData < 0) return `Existing items may contain values for “${p.field.label}”. They will no longer be shown, and are dropped the next time each item is saved.`;
     const partial = p.scanned < p.total;
-    return `${partial ? 'At least ' : ''}${formatNumber(p.withData)} of ${formatNumber(p.total)} ${pluralize(p.total, 'item')} ${p.withData === 1 && !partial ? 'has' : 'have'} a value for “${p.field.label}”. Those values will no longer be shown, and are dropped the next time each item is saved.`;
+    return `${partial ? 'At least ' : ''}${formatNumber(p.withData)} of ${pluralize(p.total, 'item')} ${p.withData === 1 && !partial ? 'has' : 'have'} a value for “${p.field.label}”. Those values will no longer be shown, and are dropped the next time each item is saved.`;
   };
 
   return (
