@@ -5,6 +5,7 @@ import {
   RENDERER_CSS_HASH, resolvePageForPath, siteRootAttrs, SiteStyles, type RenderContext,
 } from '@atrium/renderer-core';
 import { SiteRuntime } from '@atrium/renderer-core/client';
+import { ClientLinks } from './client-links';
 import { PageDocumentSchema, type PageDocument, type ScriptDefinition, type SiteSnapshot } from '@atrium/schema';
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
@@ -167,7 +168,9 @@ export function SiteDocument({ r, req, children }: { r: Resolution; req: SiteReq
           analytics={settings.analytics.builtIn}
           consent={settings.cookieConsent}
           scripts={gated}
+          routeKey={`${page.id}:${r.locale}`}
         />
+        <ClientLinks />
         {bodyEnd.map((s) => <ScriptTag key={s.id} s={s} />)}
         <PageCode code={page.scripts?.body} />
       </body>
