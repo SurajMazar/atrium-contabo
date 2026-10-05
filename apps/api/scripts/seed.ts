@@ -1,6 +1,7 @@
 /**
- * Idempotent development/demo seed.
- *   pnpm db:seed            (root)  → super admin + demo organization + published demo websites
+ * Idempotent development seed.
+ *   pnpm db:seed                       (root) → reference data, super admin and an empty organization
+ *   SEED_DEMO_SITES=1 pnpm db:seed     (root) → also the published demo websites (used by the tutorial recorder)
  * Uses the same site-store pipeline as the API, so seeded sites are fully editable.
  */
 import 'dotenv/config';
@@ -10,7 +11,7 @@ import { createPrismaClient } from '@atrium/db';
 import { DEFAULT_PLANS, DEFAULT_ROLES, FEATURE_FLAGS, PERMISSIONS, type WebsiteInput } from '@atrium/schema';
 import { createWebsiteFromDefinition, freezeVersion } from '@atrium/site-store';
 import * as argon2 from 'argon2';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { config } from 'dotenv';
 import { blankWebsite } from '../src/modules/websites/blank';
@@ -55,15 +56,57 @@ async function reference() {
   log('reference data (permissions, plans, feature flags)');
 }
 
-async function admin() {
-  const email = (process.env.SEED_ADMIN_EMAIL ?? 'admin@atrium.localhost').toLowerCase();
-  const password = process.env.SEED_ADMIN_PASSWORD ?? 'Atrium!2026';
+const EXAMPLE_ADMIN_EMAIL = 'admin@atrium.localhost';
+const EXAMPLE_ADMIN_PASSWORD = 'Atrium!2026';
+const MIN_ADMIN_PASSWORD = 12;
+/** Database hosts that count as "local development" (compose service name included). */
+const LOCAL_DB_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]', 'postgres']);
+
+function databaseHost(env: NodeJS.ProcessEnv): string | undefined {
+  try {
+    return new URL(env.DATABASE_URL ?? '').hostname.toLowerCase();
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Local dev (NODE_ENV≠production and a local DATABASE_URL host) keeps the documented .env.example
+ * credentials. Anywhere else the super-admin credentials must be explicit and strong: SEED_ADMIN_EMAIL
+ * is required, the .env.example values are rejected, and a missing SEED_ADMIN_PASSWORD is replaced by a
+ * random one-time password printed once (change it after the first sign-in).
+ */
+export function resolveSeedAdmin(env: NodeJS.ProcessEnv = process.env): { email: string; password: string; generated: boolean } {
+  const host = databaseHost(env);
+  const local = env.NODE_ENV !== 'production' && !!host && LOCAL_DB_HOSTS.has(host);
+  const email = (env.SEED_ADMIN_EMAIL ?? '').trim().toLowerCase();
+  const password = env.SEED_ADMIN_PASSWORD ?? '';
+  if (local) return { email: email || EXAMPLE_ADMIN_EMAIL, password: password || EXAMPLE_ADMIN_PASSWORD, generated: false };
+
+  const why = env.NODE_ENV === 'production' ? 'NODE_ENV=production' : `DATABASE_URL host "${host ?? '?'}" is not local`;
+  const problems: string[] = [];
+  if (!email) problems.push('SEED_ADMIN_EMAIL is required');
+  else if (email === EXAMPLE_ADMIN_EMAIL || email.endsWith('.localhost')) problems.push(`SEED_ADMIN_EMAIL "${email}" is the .env.example/local value`);
+  if (password && password === EXAMPLE_ADMIN_PASSWORD) problems.push('SEED_ADMIN_PASSWORD is the .env.example value');
+  else if (password && password.length < MIN_ADMIN_PASSWORD) problems.push(`SEED_ADMIN_PASSWORD must be at least ${MIN_ADMIN_PASSWORD} characters`);
+  else if (password && /change[-_ ]?me|replace[-_ ]?me/i.test(password)) problems.push('SEED_ADMIN_PASSWORD is a placeholder');
+  if (problems.length) throw new Error(`Refusing to seed (${why}):\n${problems.map((p) => `  - ${p}`).join('\n')}\nSet strong values in the deploy env file (e.g. \`atrium config set SEED_ADMIN_PASSWORD --generate\`).`);
+  if (password) return { email, password, generated: false };
+  return { email, password: randomBytes(18).toString('base64url'), generated: true };
+}
+
+async function admin({ email, password, generated }: ReturnType<typeof resolveSeedAdmin>) {
+  const existing = await prisma.user.findUnique({ where: { email }, select: { id: true } });
   const user = await prisma.user.upsert({
     where: { email },
     create: { email, name: 'Atrium Admin', isSuperAdmin: true, emailVerifiedAt: new Date(), passwordHash: await argon2.hash(password, { type: argon2.argon2id }) },
     update: { isSuperAdmin: true },
   });
   log(`super admin ${email}`);
+  if (generated && !existing) {
+    // Printed once — it is not stored anywhere else.
+    console.log(`\n  One-time super-admin password (sign in and change it now): ${password}\n`);
+  }
   return user;
 }
 
@@ -142,12 +185,16 @@ async function sites(orgId: string, userId: string) {
 }
 
 async function main() {
+  // Validate the super-admin credentials before touching the database.
+  const credentials = resolveSeedAdmin();
   console.log('Seeding Atrium…');
   await reference();
-  const user = await admin();
+  const user = await admin(credentials);
   const org = await organization(user.id);
-  await sites(org.id, user.id);
-  console.log(`Done. Sign in at ${process.env.ADMIN_URL ?? 'http://localhost:3000'} with ${process.env.SEED_ADMIN_EMAIL ?? 'admin@atrium.localhost'}`);
+  // Demo websites are opt-in: a normal seed leaves the organization empty, ready for your own sites.
+  if (['1', 'true', 'yes'].includes((process.env.SEED_DEMO_SITES ?? '').toLowerCase())) await sites(org.id, user.id);
+  else log('demo websites skipped (set SEED_DEMO_SITES=1 to add them)');
+  console.log(`Done. Sign in at ${process.env.ADMIN_URL ?? 'http://localhost:3000'} with ${user.email}`);
 }
 
 main()

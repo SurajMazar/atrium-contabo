@@ -20,6 +20,8 @@ export interface KindMeta {
   testRecipient?: 'email' | 'phone';
   /** Whether rows can be enabled/disabled (integrations table only). */
   toggleable?: boolean;
+  /** Platform-wide provider managed by super admins (/admin/providers) instead of an organization. */
+  platform?: boolean;
 }
 
 export const KINDS: KindMeta[] = [
@@ -94,8 +96,29 @@ export function kindMeta(kind: string): KindMeta {
   return KINDS.find((k) => k.kind === kind) ?? KINDS[0]!;
 }
 
+/** Scope id used in query keys for platform providers. */
+export const PLATFORM_SCOPE = 'platform';
+
+/** Platform variants of the provider kinds (super-admin panel). */
+export const PLATFORM_KINDS: KindMeta[] = [
+  { ...KINDS[0]!, platform: true, scoped: false, emptyTitle: 'Using environment SMTP', emptyDescription: 'Password resets, invitations and organizations without their own mailer send through this provider. Until you add one, SMTP_* environment variables are used.' },
+  { ...KINDS[1]!, platform: true, scoped: false, emptyTitle: 'No platform SMS provider', emptyDescription: 'A shared SMS gateway for organizations that have not connected their own. Without one, SMS form actions stay inactive.' },
+  { ...KINDS[2]!, platform: true, scoped: false, emptyTitle: 'Using environment storage', emptyDescription: 'Where uploads go for organizations without their own bucket. Until you add one, STORAGE_DRIVER / S3_* environment variables (or the local disk) are used.' },
+  { ...KINDS[3]!, platform: true, scoped: false, toggleable: true, emptyTitle: 'No platform AI key', emptyDescription: 'A shared Claude, OpenAI or Gemini key that powers AI generation and editing for every organization that has not connected its own. Usage counts against each plan’s AI credits.' },
+];
+
 /** Uniform CRUD for every provider kind (dedicated tables vs the integrations table). */
 export function providerApi(api: AtriumClient, meta: KindMeta) {
+  if (meta.platform) {
+    const p = api.admin.providers;
+    return {
+      list: (_orgId?: string): Promise<ProviderRecord[]> => p.list(meta.kind as 'email' | 'sms' | 'storage' | 'ai'),
+      create: (_orgId: string, body: ProviderInput) => p.create({ ...body, kind: meta.kind as 'email' | 'sms' | 'storage' | 'ai' }),
+      update: (id: string, body: Partial<ProviderInput>) => p.update(id, body),
+      remove: (id: string) => p.remove(id),
+      test: (id: string, to?: string): Promise<TestResult> => p.test(id, to ? { to } : {}),
+    };
+  }
   const crud = meta.kind === 'email' ? api.providers.email : meta.kind === 'sms' ? api.providers.sms : meta.kind === 'storage' ? api.providers.storage : api.providers.integrations;
   return {
     list: (orgId: string): Promise<ProviderRecord[]> => (meta.integrationKind ? crud.list(orgId, { kind: meta.integrationKind }) : crud.list(orgId)),

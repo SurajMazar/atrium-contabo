@@ -301,6 +301,19 @@ export interface ProviderRecord {
   kind?: string;
   enabled?: boolean;
 }
+export type PlatformProviderKind = 'email' | 'sms' | 'storage' | 'ai';
+/** Where each platform capability comes from: the admin panel, env variables, or nowhere. */
+export type PlatformProviderStatus = Record<PlatformProviderKind, { source: 'admin' | 'env' | 'none'; provider?: { id: string; name: string; driver: string } }>;
+export interface AiStatus {
+  ready: boolean;
+  source: 'demo' | 'explicit' | 'website' | 'organization' | 'platform' | null;
+  provider: { driver: string; name: string } | null;
+  /** Caller may connect a provider for the organization (integration.manage). */
+  canConfigure: boolean;
+  /** Caller is a super admin and may set the platform-wide key. */
+  canConfigurePlatform: boolean;
+  demoMode: boolean;
+}
 export interface ProviderInput {
   name: string;
   driver: string;

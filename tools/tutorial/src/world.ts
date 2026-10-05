@@ -29,8 +29,17 @@ export async function resetWorld(): Promise<World> {
   const org = me.memberships.find((m) => m.organization.slug === 'atrium-demo')!.organization;
   const sites = await api<Array<{ id: string; name: string; slug: string }>>('GET', `/organizations/${org.id}/websites`, login.accessToken);
   for (const s of sites) if (TUTORIAL_SITES.test(s.name)) await api('DELETE', `/websites/${s.id}`, login.accessToken);
-  execSync('pnpm db:seed', { cwd: REPO, stdio: 'ignore' });
+  await clearTutorialUploads(org.id, login.accessToken);
+  execSync('pnpm db:seed', { cwd: REPO, stdio: 'ignore', env: { ...process.env, SEED_DEMO_SITES: '1' } });
   return getWorld(true);
+}
+
+/** Files the media scene uploads (tools/tutorial/.cache/upload). Removed so a re-take isn't a "duplicate upload". */
+const TUTORIAL_UPLOADS = new Set(['fine-dining.jpg', 'lake-view-room.jpg', 'spa-massage.jpg']);
+
+export async function clearTutorialUploads(orgId: string, token: string) {
+  const res = await api<{ items: Array<{ id: string; filename: string }> }>('GET', `/organizations/${orgId}/media?limit=200`, token);
+  for (const m of res.items) if (TUTORIAL_UPLOADS.has(m.filename)) await api('DELETE', `/media/${m.id}`, token);
 }
 
 export async function getWorld(fresh = false): Promise<World> {

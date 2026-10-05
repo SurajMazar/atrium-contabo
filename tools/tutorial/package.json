@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "tts:test": "tsx src/tts-test.ts",
-    "build": "tsx src/main.ts"
+    "render": "tsx src/main.ts"
   },
   "dependencies": {
     "kokoro-js": "^1.2.1",

@@ -14,6 +14,7 @@ import { useDocumentStore } from '../store/document';
 import { useEditorStore, usePerms } from '../store/editor';
 import { useSelectionStore } from '../store/ui';
 import { Badge, Btn, Empty, IconBtn, PanelHeader, Segmented } from '../ui/primitives';
+import { AiSetupCard, useAiStatus } from '@/components/ai/ai-setup';
 
 type Mode = 'edit' | 'section' | 'page';
 
@@ -31,6 +32,7 @@ export function AiPanel() {
   const selected = useDocumentStore((s) => findInDef(s.definition, s.pageId, selectedId));
   const pageTitle = useDocumentStore((s) => s.definition?.pages.find((p) => p.id === s.pageId)?.title);
   const orgId = useEditorStore((s) => s.organizationId);
+  const aiStatus = useAiStatus(orgId);
 
   useEffect(() => {
     if (draft) setText(draft);
@@ -47,6 +49,23 @@ export function AiPanel() {
       <div className="flex min-h-0 flex-1 flex-col">
         <PanelHeader title="AI" />
         <Empty icon={<Sparkles className="size-6" />} title="AI is not available for your role">Ask an administrator for the “Use AI generation and editing” permission.</Empty>
+      </div>
+    );
+  }
+
+  if (orgId && aiStatus.data && !aiStatus.data.ready) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <PanelHeader
+          title={
+            <span className="flex items-center gap-1.5">
+              <Sparkles className="size-4 text-accent" /> Ask AI
+            </span>
+          }
+        />
+        <div className="min-h-0 flex-1 overflow-y-auto p-3">
+          <AiSetupCard orgId={orgId} status={aiStatus.data} compact />
+        </div>
       </div>
     );
   }

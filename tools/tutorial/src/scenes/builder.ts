@@ -5,8 +5,16 @@ import { siteId } from './workspace';
 
 const CH = 'Visual builder';
 const canvas = (d: Director) => d.page.frameLocator('iframe[title="Page canvas"]');
-const rail = (d: Director, label: string) => d.click(d.page.getByRole('navigation', { name: 'Editor panels' }).getByRole('button', { name: label, exact: true }));
-const tab = (d: Director, name: string) => d.click(d.page.getByRole('tab', { name, exact: true }).first());
+/** Open a left-rail panel (rail buttons toggle, so an already-open panel is left alone). */
+const rail = async (d: Director, label: string) => {
+  const btn = d.page.getByRole('navigation', { name: 'Editor panels' }).getByRole('button', { name: label, exact: true });
+  if ((await btn.getAttribute('aria-pressed').catch(() => null)) === 'true') return d.moveTo(btn, 400);
+  return d.click(btn);
+};
+/** Inspector tab; the Motion tab's name gains "Has animation" when the node is animated. */
+const tab = (d: Director, name: string) => d.click(d.page.getByRole('tab', { name: new RegExp(`^${name}`) }).first());
+/** The inspector's variant picker trigger (library items mention "variant" in their descriptions). */
+const variantPicker = (d: Director) => d.page.getByRole('button', { name: /^Variant/ }).first();
 const editor = async (d: Director) => {
   await d.goto(`${ADMIN}/w/${await siteId('aranya')}/editor`, 'iframe[title="Page canvas"]');
   await canvas(d).locator('[data-node-type="hero"]').first().waitFor({ timeout: 20_000 }).catch(() => undefined);
@@ -75,11 +83,11 @@ export const builderScenes: Scene[] = [
       } },
       { say: 'Every major section has design variations. Switching the variant changes the layout but keeps your content, so you can try ideas freely.', do: async (d) => {
         await d.click(hero(d).locator('[data-edit-prop="subheading"]').first());
-        await d.click(d.page.getByRole('button', { name: /Variant/ }).first());
+        await d.click(variantPicker(d));
         await d.wait(700);
         await d.click(popoverButton(d, /^Split/));
         await d.wait(2400);
-        await d.click(d.page.getByRole('button', { name: /Variant/ }).first());
+        await d.click(variantPicker(d));
         await d.wait(500);
         await d.click(popoverButton(d, /^Cinematic/));
         await d.wait(1500);

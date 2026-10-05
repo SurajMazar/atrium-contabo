@@ -186,7 +186,7 @@ export class Director {
       try {
         await s.do?.(this);
       } catch (err) {
-        console.warn(`    ⚠ [${this.scene.id}] action failed: ${(err as Error).message.split('\n')[0]}`);
+        console.warn(`    ⚠ [${this.scene.id}] step "${s.say.slice(0, 48)}…" failed: ${(err as Error).message.split('\n')[0]}`);
       }
     })();
     await Promise.all([action, sleep(clip.durationMs + 280)]);

@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import * as exporterLib from '@atrium/exporter';
 import type { WebsiteDefinition, WebsiteInput } from '@atrium/schema';
 import path from 'node:path';
-import { notConfigured } from '../../common/errors';
+import { badRequest, notConfigured } from '../../common/errors';
 import { apiPublicBase } from './websites.service';
 
 type Files = Map<string, Buffer | string> | Record<string, Buffer | string>;
@@ -36,11 +36,23 @@ export class ExportService {
   }
 
   /** Parse an uploaded .json or .zip export into website input. */
-  async parseUpload(buf: Buffer, filename: string): Promise<unknown> {
+  async parseUpload(buf: Buffer, filename: string, resolveAssets?: (files: Map<string, Buffer>) => Promise<Map<string, Buffer>>): Promise<unknown> {
     if (/\.zip$/i.test(filename) || buf.subarray(0, 2).toString() === 'PK') {
       if (!lib.unzip || !lib.parseSiteBundle) throw notConfigured('Zip import is unavailable');
-      return lib.parseSiteBundle(await lib.unzip(buf));
+      let files: Map<string, Buffer>;
+      try {
+        files = (await (lib.unzip as (b: Buffer, limits?: object) => Promise<Map<string, Buffer>>)(buf, { maxFiles: 2000, maxTotalBytes: 400 * 1024 * 1024 })) as Map<string, Buffer>;
+      } catch (err) {
+        throw badRequest(`This archive could not be read: ${(err as Error).message}`);
+      }
+      // Bundled media (assets/…) is uploaded and its `asset:` references rewritten before validation.
+      if (resolveAssets && [...files.keys()].some((k) => k.startsWith('assets/'))) files = await resolveAssets(files);
+      return lib.parseSiteBundle(files);
     }
-    return JSON.parse(buf.toString('utf8'));
+    try {
+      return JSON.parse(buf.toString('utf8'));
+    } catch {
+      throw badRequest('This file is not valid JSON');
+    }
   }
 }

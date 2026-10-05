@@ -31,6 +31,7 @@ import { authFetch, useApi } from '@/lib/api';
 import { formatDuration, formatNumber, formatUsd } from '@/lib/format';
 import { qk } from '@/lib/query-keys';
 import { useSession } from '@/lib/session';
+import { AiDemoNote, AiSetupCard, useAiStatus } from '@/components/ai/ai-setup';
 
 const BUSINESS_TYPES = [
   'Hotel or resort',
@@ -151,6 +152,7 @@ export function AiCreate({ generationId: initialGen, websiteId: initialSite }: {
 /* ------------------------------------------------------------------ Brief */
 
 function BriefForm({ orgId, brief, setBrief, onStarted }: { orgId: string; brief: BriefState; setBrief: (b: BriefState | ((p: BriefState) => BriefState)) => void; onStarted: (g: { generationId: string; websiteId: string }) => void }) {
+  const aiStatus = useAiStatus(orgId);
   const api = useApi();
   const qc = useQueryClient();
   const [errors, setErrors] = useState<Partial<Record<keyof BriefState, string>>>({});
@@ -370,15 +372,9 @@ function BriefForm({ orgId, brief, setBrief, onStarted }: { orgId: string; brief
                 <Select size="sm" value={brief.model} onValueChange={(v) => set('model', v)} options={modelOptions} />
               </Field>
             )}
-            {models.isSuccess && configured.length === 0 && (
-              <Banner tone="warning" icon={<AlertCircle />} className="mt-3 text-xs">
-                No AI provider is configured for this organization. The platform default will be used if available.{' '}
-                <Link href={`/org/${orgId}/integrations?tab=ai`} className="font-medium underline">
-                  Add one
-                </Link>
-              </Banner>
-            )}
-            <Button type="submit" variant="primary" className="mt-4 w-full" leadingIcon={<Sparkles />} loading={generate.isPending}>
+            {aiStatus.data && !aiStatus.data.ready && <AiSetupCard orgId={orgId} status={aiStatus.data} compact className="mt-3" />}
+            <AiDemoNote status={aiStatus.data} className="mt-3" />
+            <Button type="submit" variant="primary" className="mt-4 w-full" leadingIcon={<Sparkles />} loading={generate.isPending} disabled={aiStatus.data ? !aiStatus.data.ready : false}>
               Generate website
             </Button>
           </div>

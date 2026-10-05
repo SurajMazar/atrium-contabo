@@ -206,12 +206,15 @@ export function createAtriumClient(opts: AtriumClientOptions) {
       edit: (websiteId: string, body: { prompt: string; pageId?: string; nodeId?: string; provider?: string; model?: string }) => http.post<T.AiProposal>(`/websites/${websiteId}/ai/edit`, body),
       generatePage: (websiteId: string, body: { prompt: string }) => http.post<T.AiProposal>(`/websites/${websiteId}/ai/generate-page`, body),
       generateSection: (websiteId: string, body: { prompt: string; pageId: string; index?: number }) => http.post<T.AiProposal>(`/websites/${websiteId}/ai/generate-section`, body),
-      apply: (generationId: string) => http.post<{ revisions: T.DraftRevisions }>(`/ai/generations/${generationId}/apply`),
+      /** Called after the user reviewed the proposal preview and clicked Apply — that click is the confirmation. */
+      apply: (generationId: string, body: { confirm?: boolean } = { confirm: true }) => http.post<{ revisions: T.DraftRevisions }>(`/ai/generations/${generationId}/apply`, body),
       revert: (generationId: string) => http.post<{ revisions: T.DraftRevisions }>(`/ai/generations/${generationId}/revert`),
       rewrite: (websiteId: string, body: { text: string; mode: T.RewriteMode; locale?: string; context?: string }) => http.post<{ text: string }>(`/websites/${websiteId}/ai/rewrite`, body),
       seo: (websiteId: string, pageId: string) => http.post<{ recommendations: Array<{ field: string; current: string | null; suggested: string; reason: string }> }>(`/websites/${websiteId}/ai/seo`, { pageId }),
       history: (websiteId: string) => http.get<T.AiGenerationSummary[]>(`/websites/${websiteId}/ai/generations`),
       usage: (orgId: string) => http.get<{ period: string; requests: number; inputTokens: number; outputTokens: number; costUsd: number; limit: Record<string, number> }>(`/organizations/${orgId}/ai/usage`),
+      /** Whether AI works for this organization and where the key comes from (organization, platform, demo). */
+      status: (orgId: string) => http.get<T.AiStatus>(`/organizations/${orgId}/ai/status`),
     },
     registry: {
       components: () => http.get<T.RegistryComponent[]>('/registry/components'),
@@ -238,6 +241,15 @@ export function createAtriumClient(opts: AtriumClientOptions) {
       abuseReports: () => http.get<Array<Record<string, unknown>>>('/admin/abuse-reports'),
       updateAbuseReport: (id: string, body: { status: string }) => http.patch<void>(`/admin/abuse-reports/${id}`, body),
       aiUsage: () => http.get<Array<Record<string, unknown>>>('/admin/ai-usage'),
+      /** Platform providers (email, SMS, storage, AI) configured from the panel instead of env. */
+      providers: {
+        list: (kind?: T.PlatformProviderKind) => http.get<T.ProviderRecord[]>('/admin/providers', q({ kind })),
+        status: () => http.get<T.PlatformProviderStatus>('/admin/providers/status'),
+        create: (body: T.ProviderInput & { kind: T.PlatformProviderKind }) => http.post<T.ProviderRecord>('/admin/providers', body),
+        update: (id: string, body: Partial<T.ProviderInput>) => http.patch<T.ProviderRecord>(`/admin/providers/${id}`, body),
+        remove: (id: string) => http.delete<void>(`/admin/providers/${id}`),
+        test: (id: string, body: { to?: string } = {}) => http.post<T.TestResult>(`/admin/providers/${id}/test`, body),
+      },
     },
     branding: {
       /** Public: platform defaults merged with an organization's overrides. */

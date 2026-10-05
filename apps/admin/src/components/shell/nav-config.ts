@@ -12,6 +12,7 @@ import {
   Inbox,
   KeyRound,
   LayoutDashboard,
+  Palette,
   type LucideIcon,
   PenTool,
   Plug,
@@ -64,6 +65,7 @@ export function orgNav(orgId: string): NavItem[] {
     { label: 'Integrations', href: `${b}/integrations`, icon: Plug, permission: 'integration.manage' },
     { label: 'Webhooks', href: `${b}/webhooks`, icon: Webhook, permission: 'webhook.manage' },
     { label: 'Audit log', href: `${b}/audit`, icon: ListChecks, permission: 'audit.read' },
+    { label: 'Branding', href: `${b}/branding`, icon: Palette, permission: 'organization.update' },
     { label: 'Usage & billing', href: `${b}/usage`, icon: Gauge },
   ];
 }
@@ -76,6 +78,8 @@ export const adminNav: NavItem[] = [
   { label: 'Jobs', href: '/admin/jobs', icon: GitBranch },
   { label: 'Feature flags', href: '/admin/flags', icon: ListChecks },
   { label: 'Plans', href: '/admin/plans', icon: Gauge },
+  { label: 'Providers', href: '/admin/providers', icon: Plug },
+  { label: 'Branding', href: '/admin/branding', icon: Palette },
   { label: 'AI usage', href: '/admin/ai-usage', icon: BarChart3 },
   { label: 'Audit logs', href: '/admin/audit', icon: History },
   { label: 'Abuse reports', href: '/admin/abuse', icon: ShieldCheck },
