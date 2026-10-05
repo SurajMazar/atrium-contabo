@@ -13,8 +13,10 @@ import {
   SCHEDULES,
   type QueueName,
 } from '@atrium/server-kit';
+import { outboundAllowPrivate } from '@atrium/providers';
 import { Worker, type Job } from 'bullmq';
 import type { WorkerContext, WorkerSettings } from './context';
+import { redisQuotaStore } from './lib/quota';
 import { routeJob } from './router';
 
 /** Default per-queue concurrency; override with WORKER_CONCURRENCY_<QUEUE> (e.g. WORKER_CONCURRENCY_MEDIA=4). */
@@ -87,7 +89,7 @@ export async function startWorker(opts: { handleSignals?: boolean } = {}) {
     adminUrl: env.ADMIN_URL,
     rendererUrl: env.RENDERER_URL,
     repoRoot: process.env.ATRIUM_REPO_ROOT || undefined,
-    allowPrivateNetwork: process.env.WORKER_ALLOW_PRIVATE_NETWORK ? process.env.WORKER_ALLOW_PRIVATE_NETWORK === '1' : env.NODE_ENV !== 'production',
+    allowPrivateNetwork: process.env.WORKER_ALLOW_PRIVATE_NETWORK ? process.env.WORKER_ALLOW_PRIVATE_NETWORK === '1' : outboundAllowPrivate(process.env),
     enableLocalBuilds: process.env.WORKER_ENABLE_LOCAL_BUILDS === '1',
     deploymentPollIntervalMs: int(process.env.WORKER_DEPLOYMENT_POLL_MS, 5000),
     deploymentPollMaxAttempts: int(process.env.WORKER_DEPLOYMENT_POLL_MAX_ATTEMPTS, 720),
@@ -99,6 +101,7 @@ export async function startWorker(opts: { handleSignals?: boolean } = {}) {
     settings,
     enqueue: (name, data, opts) => enqueue(queues, name, data, opts),
     fetch: globalThis.fetch.bind(globalThis),
+    quota: redisQuotaStore(connection, `${env.QUEUE_PREFIX}:quota:`),
     now: () => new Date(),
   };
 

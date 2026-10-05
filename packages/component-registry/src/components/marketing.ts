@@ -1,3 +1,4 @@
+import { safeUrlSchema } from '@atrium/schema';
 import { z } from 'zod';
 import { defineComponent } from '../types';
 import { ButtonSchema, buttonsControl, headingLevel, introControls, media, mediaControl, sectionBase, sectionControls } from '../fields';
@@ -354,7 +355,7 @@ export const team = defineComponent({
   props: z.object({
     ...sectionBase,
     ...optionalIntro,
-    members: z.array(z.object({ name: z.string().max(120), role: z.string().max(160).optional(), bio: z.string().max(1200).optional(), photo: media.optional(), links: z.array(z.object({ label: z.string().max(40), url: z.string().max(500) })).max(5).default([]) })).max(60).default([]),
+    members: z.array(z.object({ name: z.string().max(120), role: z.string().max(160).optional(), bio: z.string().max(1200).optional(), photo: media.optional(), links: z.array(z.object({ label: z.string().max(40), url: safeUrlSchema('link', '#', 500) })).max(5).default([]) })).max(60).default([]),
     columns: columnsProp(4, 5),
     portraitAspect: aspect.default('4:5'),
   }),

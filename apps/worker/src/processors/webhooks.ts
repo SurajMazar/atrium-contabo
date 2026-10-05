@@ -1,7 +1,8 @@
 import { decryptJson, decryptSecret, webhookHeaders, type JobPayload } from '@atrium/server-kit';
 import { isFinalAttempt, type JobInfo, type WorkerContext } from '../context';
 import { errorMessage, PermanentError } from '../lib/errors';
-import { assertPublicUrl, truncate } from '../lib/net';
+import { assertOutboundUrl, OutboundBlockedError } from '@atrium/providers';
+import { fetchTenantUrl, readResponseExcerpt, truncate } from '../lib/net';
 
 export const WEBHOOK_TIMEOUT_MS = 10_000;
 /** Mirrors DEFAULT_JOB_OPTIONS['webhook.deliver'] backoff (exponential, 30s base). */
@@ -52,6 +53,13 @@ export async function processWebhookDispatch(ctx: WorkerContext, data: JobPayloa
   return { deliveries: created };
 }
 
+/** The outbound guard's rejection, whether thrown directly or wrapped by fetch (`TypeError: fetch failed`). */
+export function blockedError(err: unknown): OutboundBlockedError | undefined {
+  if (err instanceof OutboundBlockedError) return err;
+  const cause = (err as { cause?: unknown } | undefined)?.cause;
+  return cause instanceof OutboundBlockedError ? cause : undefined;
+}
+
 /** The API stores secrets with encryptJson(secret); older rows may be encryptSecret(plain). */
 export function readWebhookSecret(enc: string): string {
   try {
@@ -95,7 +103,7 @@ export async function processWebhookDeliver(ctx: WorkerContext, data: JobPayload
     return fail(`Cannot decrypt webhook secret: ${errorMessage(err)}`, true);
   }
   try {
-    await assertPublicUrl(delivery.webhook.url, ctx.settings.allowPrivateNetwork);
+    assertOutboundUrl(delivery.webhook.url, { allowPrivate: ctx.settings.allowPrivateNetwork });
   } catch (err) {
     return fail(errorMessage(err), true);
   }
@@ -106,13 +114,17 @@ export async function processWebhookDeliver(ctx: WorkerContext, data: JobPayload
   const started = Date.now();
   let res: Response;
   try {
-    res = await ctx.fetch(delivery.webhook.url, { method: 'POST', headers, body, redirect: 'manual', signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS) });
+    // Connections are validated at connect time (DNS rebinding safe); redirects are not followed.
+    res = await fetchTenantUrl(ctx, delivery.webhook.url, { method: 'POST', headers, body, signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS) });
   } catch (err) {
+    const blocked = blockedError(err);
+    if (blocked) return fail(blocked.message, true, { durationMs: Date.now() - started });
     const timedOut = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
     return fail(timedOut ? `Timed out after ${WEBHOOK_TIMEOUT_MS / 1000}s` : `Network error: ${errorMessage(err)}`, false, { durationMs: Date.now() - started });
   }
   const durationMs = Date.now() - started;
-  const responseBody = truncate(await res.text().catch(() => ''), 4096);
+  // INT-4: read at most 64 KB (then abort), store at most 4 KB.
+  const responseBody = await readResponseExcerpt(res);
   if (res.status >= 200 && res.status < 300) {
     await ctx.prisma.webhookDelivery.update({ where: { id: delivery.id }, data: { status: 'SUCCESS', attempts: attemptNumber, responseStatus: res.status, responseBody, durationMs, error: null, nextAttemptAt: null } });
     return { status: res.status, durationMs };

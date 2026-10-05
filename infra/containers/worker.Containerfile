@@ -73,12 +73,14 @@ ENV NODE_ENV=production \
     VIPS_CONCURRENCY=2 \
     MALLOC_ARENA_MAX=2
 WORKDIR /app
-COPY --from=builder --chown=node:node /repo ./
+# App code is owned by root and not writable by the runtime `node` user; only the dirs below are.
+# The worker writes only to os.tmpdir() (mount a tmpfs at /tmp).
+COPY --from=builder /repo ./
 # Independent deployments: the exporter (packages/exporter) builds a standalone Next.js project
 # from the renderer app + the source of its workspace packages, so ship those sources too
 # (source only — no node_modules; they are read, not executed, by the worker).
-COPY --from=pruner --chown=node:node /repo/apps/renderer ./apps/renderer
-COPY --from=pruner --chown=node:node /repo/packages ./packages
+COPY --from=pruner /repo/apps/renderer ./apps/renderer
+COPY --from=pruner /repo/packages ./packages
 WORKDIR /app/apps/worker
 USER node
 # No HTTP port: liveness is the process itself. The worker exits on unrecoverable errors

@@ -5,7 +5,7 @@ import {
 } from '@atrium/schema';
 import { z } from 'zod';
 import { normalizePage } from './normalize';
-import { cloneWithNewIds, deepMerge, findNode, insertNode, jsonClone, moveNode, removeNode, setPath } from './tree';
+import { cloneWithNewIds, deepMerge, findNode, insertNode, jsonClone, moveNode, OperationError, removeNode, setPath } from './tree';
 
 /**
  * Serializable site operations. The visual builder, the REST API and AI agent
@@ -59,7 +59,8 @@ export interface ApplyResult {
   warnings: string[];
 }
 
-export class OperationError extends Error {}
+// One error class for every builder-core failure (tree helpers throw it too).
+export { OperationError };
 
 function treeFor(def: WebsiteDefinition, pageId: string) {
   if (pageId === 'header') return [def.header];
@@ -144,7 +145,10 @@ export function applyOperation(def: WebsiteDefinition, rawOp: SiteOperation, reg
       else style[op.key] = next;
       const parsed = StyleSchema.safeParse(style);
       if (!parsed.success) throw new OperationError(`Invalid style ${op.key}`);
-      loc.node.style = Object.keys(style).length ? (style as typeof loc.node.style) : undefined;
+      // The sanitizing schema drops unsafe values: refuse them instead of storing them, and persist the parsed result.
+      const clean = parsed.data as Record<string, unknown>;
+      if (droppedBySanitizer(next, clean[op.key])) throw new OperationError(`Unsafe value for style ${op.key}`);
+      loc.node.style = Object.keys(clean).length ? (clean as typeof loc.node.style) : undefined;
       return { warnings };
     }
     case 'replaceNode': {
@@ -257,4 +261,15 @@ export function applyOperation(def: WebsiteDefinition, rawOp: SiteOperation, reg
       def.customCss = op.css;
       return { warnings };
   }
+}
+
+/** True when the sanitizing style schema removed a value (or a responsive breakpoint) that was set. */
+function droppedBySanitizer(input: unknown, output: unknown): boolean {
+  if (input === undefined || input === null) return false;
+  if (output === undefined || output === null) return true;
+  if (typeof input === 'object' && !Array.isArray(input)) {
+    const out = output as Record<string, unknown>;
+    return Object.entries(input as Record<string, unknown>).some(([k, v]) => v !== undefined && v !== null && droppedBySanitizer(v, out[k]));
+  }
+  return false;
 }

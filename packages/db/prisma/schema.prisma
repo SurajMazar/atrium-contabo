@@ -29,6 +29,8 @@ model User {
   mfaEnabled      Boolean   @default(false) @map("mfa_enabled")
   mfaSecretEnc    String?   @map("mfa_secret_enc")
   mfaRecoveryEnc  String?   @map("mfa_recovery_enc")
+  /// Last accepted TOTP time-step (replay protection).
+  mfaLastStep     Int?      @map("mfa_last_step")
   locale          String    @default("en")
   lastLoginAt     DateTime? @map("last_login_at")
   disabledAt      DateTime? @map("disabled_at")
@@ -47,6 +49,9 @@ model Session {
   id               String    @id @default(cuid())
   userId           String    @map("user_id")
   refreshTokenHash String    @unique @map("refresh_token_hash")
+  /// Hash of the refresh token this session rotated away from (reuse detection).
+  previousRefreshTokenHash String? @unique @map("previous_refresh_token_hash")
+  rotatedAt        DateTime? @map("rotated_at")
   userAgent        String?   @map("user_agent")
   ip               String?
   mfaVerified      Boolean   @default(false) @map("mfa_verified")
@@ -87,6 +92,8 @@ model UserToken {
   tokenHash String        @unique @map("token_hash")
   expiresAt DateTime      @map("expires_at")
   usedAt    DateTime?     @map("used_at")
+  /// Failed verification attempts (MFA challenges are burned after 5).
+  attempts  Int           @default(0)
   createdAt DateTime      @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1079,6 +1086,30 @@ model AuditLog {
 // ───────────────────────────── Platform ─────────────────────────────
 
 /// Platform-wide key/value settings managed by super admins (e.g. `branding`).
+/// Platform-wide providers configured by super admins (encrypted secrets). They back platform email
+/// (password resets, invitations), platform storage and the shared AI/SMS/captcha keys used by
+/// organizations without their own provider. Env variables remain the last fallback.
+model PlatformProvider {
+  id           String    @id @default(cuid())
+  /// email | sms | storage | ai | captcha
+  kind         String
+  name         String
+  driver       String
+  config       Json
+  secretsEnc   String?   @map("secrets_enc")
+  fromEmail    String?   @map("from_email")
+  fromName     String?   @map("from_name")
+  isDefault    Boolean   @default(false) @map("is_default")
+  enabled      Boolean   @default(true)
+  lastTestedAt DateTime? @map("last_tested_at")
+  lastTestOk   Boolean?  @map("last_test_ok")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@index([kind, enabled])
+  @@map("platform_providers")
+}
+
 model PlatformSetting {
   key       String   @id
   value     Json

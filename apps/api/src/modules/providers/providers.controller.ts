@@ -1,7 +1,8 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
 import type { ProviderKind } from '@atrium/providers';
 import { z } from 'zod';
-import { Access, CurrentUser, type AuthUser } from '../../common/decorators';
+import { AccessService } from '../../common/access.service';
+import { Access, CurrentAccess, CurrentUser, type AccessContext, type AuthUser } from '../../common/decorators';
 import { ZodBody } from '../../common/zod.pipe';
 import { ProvidersService, type ProviderTable } from './providers.service';
 
@@ -28,7 +29,7 @@ const ROUTES: Array<[string, ProviderTable, 'emailProvider' | 'smsProvider' | 's
 
 @Controller()
 export class ProvidersController {
-  constructor(private readonly providers: ProvidersService) {}
+  constructor(private readonly providers: ProvidersService, private readonly access: AccessService) {}
 
   @Get('providers/drivers')
   drivers(@Query('kind') kind?: ProviderKind) {
@@ -37,9 +38,9 @@ export class ProvidersController {
 
   // email
   @Access('integration.manage', 'organization', 'orgId') @Get('organizations/:orgId/email-providers')
-  listEmail(@Param('orgId') o: string, @Query() q: Record<string, string>) { return this.providers.list('email', o, q); }
+  async listEmail(@Param('orgId') o: string, @Query() q: Record<string, string>, @CurrentAccess() a: AccessContext) { await this.access.assertWebsiteInScope(a, q.websiteId); return this.providers.list('email', o, q); }
   @Access('integration.manage', 'organization', 'orgId') @Post('organizations/:orgId/email-providers')
-  createEmail(@Param('orgId') o: string, @Body(new ZodBody(Body_)) b: B, @CurrentUser() u: AuthUser) { return this.providers.create('email', o, b, u); }
+  async createEmail(@Param('orgId') o: string, @Body(new ZodBody(Body_)) b: B, @CurrentUser() u: AuthUser, @CurrentAccess() a: AccessContext) { await this.access.assertWebsiteInScope(a, b.websiteId); return this.providers.create('email', o, b, u); }
   @Access('integration.manage', 'emailProvider', 'id') @Patch('email-providers/:id')
   updateEmail(@Param('id') id: string, @Body(new ZodBody(Body_.partial())) b: Partial<B>, @CurrentUser() u: AuthUser) { return this.providers.update('email', id, b, u); }
   @Access('integration.manage', 'emailProvider', 'id') @HttpCode(204) @Delete('email-providers/:id')
@@ -49,9 +50,9 @@ export class ProvidersController {
 
   // sms
   @Access('integration.manage', 'organization', 'orgId') @Get('organizations/:orgId/sms-providers')
-  listSms(@Param('orgId') o: string, @Query() q: Record<string, string>) { return this.providers.list('sms', o, q); }
+  async listSms(@Param('orgId') o: string, @Query() q: Record<string, string>, @CurrentAccess() a: AccessContext) { await this.access.assertWebsiteInScope(a, q.websiteId); return this.providers.list('sms', o, q); }
   @Access('integration.manage', 'organization', 'orgId') @Post('organizations/:orgId/sms-providers')
-  createSms(@Param('orgId') o: string, @Body(new ZodBody(Body_)) b: B, @CurrentUser() u: AuthUser) { return this.providers.create('sms', o, b, u); }
+  async createSms(@Param('orgId') o: string, @Body(new ZodBody(Body_)) b: B, @CurrentUser() u: AuthUser, @CurrentAccess() a: AccessContext) { await this.access.assertWebsiteInScope(a, b.websiteId); return this.providers.create('sms', o, b, u); }
   @Access('integration.manage', 'smsProvider', 'id') @Patch('sms-providers/:id')
   updateSms(@Param('id') id: string, @Body(new ZodBody(Body_.partial())) b: Partial<B>, @CurrentUser() u: AuthUser) { return this.providers.update('sms', id, b, u); }
   @Access('integration.manage', 'smsProvider', 'id') @HttpCode(204) @Delete('sms-providers/:id')
@@ -61,9 +62,9 @@ export class ProvidersController {
 
   // storage
   @Access('integration.manage', 'organization', 'orgId') @Get('organizations/:orgId/storage-providers')
-  listStorage(@Param('orgId') o: string, @Query() q: Record<string, string>) { return this.providers.list('storage', o, q); }
+  async listStorage(@Param('orgId') o: string, @Query() q: Record<string, string>, @CurrentAccess() a: AccessContext) { await this.access.assertWebsiteInScope(a, q.websiteId); return this.providers.list('storage', o, q); }
   @Access('integration.manage', 'organization', 'orgId') @Post('organizations/:orgId/storage-providers')
-  createStorage(@Param('orgId') o: string, @Body(new ZodBody(Body_)) b: B, @CurrentUser() u: AuthUser) { return this.providers.create('storage', o, b, u); }
+  async createStorage(@Param('orgId') o: string, @Body(new ZodBody(Body_)) b: B, @CurrentUser() u: AuthUser, @CurrentAccess() a: AccessContext) { await this.access.assertWebsiteInScope(a, b.websiteId); return this.providers.create('storage', o, b, u); }
   @Access('integration.manage', 'storageProvider', 'id') @Patch('storage-providers/:id')
   updateStorage(@Param('id') id: string, @Body(new ZodBody(Body_.partial())) b: Partial<B>, @CurrentUser() u: AuthUser) { return this.providers.update('storage', id, b, u); }
   @Access('integration.manage', 'storageProvider', 'id') @HttpCode(204) @Delete('storage-providers/:id')
@@ -73,9 +74,9 @@ export class ProvidersController {
 
   // integrations (ai, deployment, captcha, analytics, git)
   @Access('integration.manage', 'organization', 'orgId') @Get('organizations/:orgId/integrations')
-  listIntegrations(@Param('orgId') o: string, @Query() q: Record<string, string>) { return this.providers.list('integration', o, q); }
+  async listIntegrations(@Param('orgId') o: string, @Query() q: Record<string, string>, @CurrentAccess() a: AccessContext) { await this.access.assertWebsiteInScope(a, q.websiteId); return this.providers.list('integration', o, q); }
   @Access('integration.manage', 'organization', 'orgId') @Post('organizations/:orgId/integrations')
-  createIntegration(@Param('orgId') o: string, @Body(new ZodBody(Body_)) b: B, @CurrentUser() u: AuthUser) { return this.providers.create('integration', o, b, u); }
+  async createIntegration(@Param('orgId') o: string, @Body(new ZodBody(Body_)) b: B, @CurrentUser() u: AuthUser, @CurrentAccess() a: AccessContext) { await this.access.assertWebsiteInScope(a, b.websiteId); return this.providers.create('integration', o, b, u); }
   @Access('integration.manage', 'integration', 'id') @Patch('integrations/:id')
   updateIntegration(@Param('id') id: string, @Body(new ZodBody(Body_.partial())) b: Partial<B>, @CurrentUser() u: AuthUser) { return this.providers.update('integration', id, b, u); }
   @Access('integration.manage', 'integration', 'id') @HttpCode(204) @Delete('integrations/:id')

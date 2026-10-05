@@ -13,6 +13,7 @@ import { TemplatesService } from '../templates/templates.service';
 import { DraftService } from './draft.service';
 import { ExportService } from './export.service';
 import { WebsitesService } from './websites.service';
+import { BundleAssetsService } from './bundle-assets.service';
 
 const Source = z.discriminatedUnion('type', [
   z.object({ type: z.literal('blank'), presetKey: z.string().optional() }),
@@ -35,6 +36,7 @@ export class WebsitesController {
     private readonly templates: TemplatesService,
     private readonly publishing: PublishingService,
     private readonly access: AccessService,
+    private readonly bundleAssets: BundleAssetsService,
   ) {}
 
   @Access('website.read', 'organization', 'orgId')
@@ -51,9 +53,15 @@ export class WebsitesController {
 
   @Access('website.create', 'organization', 'orgId')
   @Post('organizations/:orgId/websites/import')
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 50 * 1024 * 1024 } }))
-  async import(@Param('orgId') orgId: string, @UploadedFile() file: { buffer: Buffer; originalname: string } | undefined, @Body() body: { definition?: unknown; name?: string }, @CurrentUser() user: AuthUser) {
-    const raw = file ? await this.exporter.parseUpload(file.buffer, file.originalname) : body.definition;
+  // Bundles may carry their own images/video (assets/…), hence the larger limit.
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 300 * 1024 * 1024, files: 1 } }))
+  async import(@Param('orgId') orgId: string, @UploadedFile() file: { buffer: Buffer; originalname: string } | undefined, @Body() body: { definition?: unknown; name?: string }, @CurrentUser() user: AuthUser, @CurrentAccess() access: AccessContext) {
+    const resolveAssets = async (files: Map<string, Buffer>) => {
+      // Uploading media is part of the import: require the same permission as the media library.
+      if (!this.access.can(access, 'media.upload')) throw forbidden('Importing a bundle with media requires media.upload');
+      return (await this.bundleAssets.resolve(orgId, files, user)).files;
+    };
+    const raw = file ? await this.exporter.parseUpload(file.buffer, file.originalname, resolveAssets) : body.definition;
     if (!raw) throw badRequest('Upload a site export (.json or .zip) or send { definition }');
     const input = this.templates.parseImport(raw);
     const name = body.name?.trim() || input.settings.name;
@@ -71,7 +79,7 @@ export class WebsitesController {
   @Patch('websites/:id')
   async update(@Param('id') id: string, @Body(new ZodBody(UpdateBody)) body: z.infer<typeof UpdateBody>, @CurrentUser() user: AuthUser, @CurrentAccess() access: AccessContext) {
     if ((body.deploymentMode || body.deploymentIntegrationId !== undefined) && !this.access.can(access, 'deployment.publish')) throw forbidden('Changing deployment settings requires deployment.publish');
-    return this.websites.update(id, body, user);
+    return this.websites.update(id, body, user, access);
   }
 
   @Access('website.delete', 'website', 'id')
@@ -93,31 +101,24 @@ export class WebsitesController {
     return this.drafts.load(id);
   }
 
+  /** Site-level draft units. Authorized by what actually changes (settings, SEO, scripts, CSS, navigation). */
   @Access('website.read', 'website', 'id')
   @Put('websites/:id/draft/site')
   async saveSite(@Param('id') id: string, @Body(new ZodBody(SiteBody)) body: z.infer<typeof SiteBody>, @CurrentUser() user: AuthUser, @CurrentAccess() access: AccessContext) {
-    if ((body.navigation || body.header || body.footer) && !this.access.can(access, 'navigation.update')) throw forbidden('Editing navigation requires navigation.update');
-    if (body.settings && !this.access.can(access, 'website.update')) {
-      // SEO managers may change settings.seo only
-      const { definition } = await this.drafts.load(id);
-      const { seo: _a, ...rest } = body.settings;
-      const { seo: _b, ...current } = definition.settings;
-      if (!this.access.can(access, 'seo.manage') || JSON.stringify(rest) !== JSON.stringify(current)) throw forbidden('Editing site settings requires website.update');
-    }
-    if (body.customCss !== undefined && !body.settings && !body.navigation && !body.header && !body.footer && !this.access.can(access, 'website.update') && !this.access.can(access, 'code.manage')) throw forbidden('Editing custom CSS requires code.manage');
-    return this.websites.saveSite(id, body, user, this.access.can(access, 'code.manage'));
+    return this.websites.saveSite(id, body, user, access);
   }
 
   @Access('theme.update', 'website', 'id')
   @Put('websites/:id/theme')
-  saveTheme(@Param('id') id: string, @Body(new ZodBody(ThemeBody)) body: { tokens: ThemeTokens; presetKey?: string; revision: number }, @CurrentUser() user: AuthUser) {
-    return this.websites.saveTheme(id, body, user);
+  saveTheme(@Param('id') id: string, @Body(new ZodBody(ThemeBody)) body: { tokens: ThemeTokens; presetKey?: string; revision: number }, @CurrentUser() user: AuthUser, @CurrentAccess() access: AccessContext) {
+    return this.websites.saveTheme(id, body, user, access);
   }
 
   @Access('page.update', 'website', 'id')
   @Post('websites/:id/operations')
-  async operations(@Param('id') id: string, @Body(new ZodBody(OpsBody)) body: z.infer<typeof OpsBody>, @CurrentUser() user: AuthUser) {
-    const res = await this.drafts.applyOperations(id, body.operations, { userId: user.id, versionSource: 'MANUAL', versionMessage: body.label });
+  async operations(@Param('id') id: string, @Body(new ZodBody(OpsBody)) body: z.infer<typeof OpsBody>, @CurrentUser() user: AuthUser, @CurrentAccess() access: AccessContext) {
+    // The route needs page.update; anything else the operations touch (scripts, theme, forms…) is checked on the diff.
+    const res = await this.drafts.applyOperations(id, body.operations, { userId: user.id, versionSource: 'MANUAL', versionMessage: body.label }, { access });
     return { results: res.results, revisions: res.revisions };
   }
 

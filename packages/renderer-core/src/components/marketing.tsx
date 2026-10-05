@@ -1,3 +1,4 @@
+import { safeHref } from '@atrium/schema';
 import type { CSSProperties, ReactNode } from 'react';
 import { Carousel } from '../islands/carousel';
 import type { RenderContext, RenderProps } from '../types';
@@ -386,7 +387,7 @@ export function TeamRenderer(rp: RenderProps) {
   const members = toArray<{ name: string; role?: string; bio?: string; photo?: unknown; links?: Array<{ label: string; url: string }> }>(props.members);
   const level = subLevel(props.headingLevel);
   const links = (m: (typeof members)[number]) =>
-    m.links?.length ? <ul className="a-member__links">{m.links.map((l, j) => <li key={j}><a href={l.url} target="_blank" rel="noopener noreferrer" className="a-link">{l.label}</a></li>)}</ul> : null;
+    m.links?.length ? <ul className="a-member__links">{m.links.filter((l) => safeHref(l.url)).map((l, j) => <li key={j}><a href={safeHref(l.url)} target="_blank" rel="noopener noreferrer" className="a-link">{l.label}</a></li>)}</ul> : null;
   return (
     <Section rp={rp} labelled>
       <Intro ctx={ctx} props={props} nodeId={node.id} />

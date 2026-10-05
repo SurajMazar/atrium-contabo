@@ -2,10 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { DEFAULT_PLANS, DEFAULT_ROLES, PERMISSIONS, slugify, type Permission } from '@atrium/schema';
 import { env } from '../../config/env';
 import { AuditService } from '../../common/audit.service';
-import type { AuthUser } from '../../common/decorators';
+import type { AccessContext, AuthUser } from '../../common/decorators';
 import { badRequest, conflict, forbidden, limitExceeded, notFound } from '../../common/errors';
 import { PrismaService } from '../../common/prisma.service';
 import { QueueService } from '../../common/queue.service';
+import { escapeHtml } from '../../common/html';
 import { hashToken, randomToken } from '../../common/tokens';
 
 @Injectable()
@@ -99,20 +100,48 @@ export class OrganizationsService {
     return rows.map((m) => ({ id: m.id, user: { id: m.user.id, email: m.user.email, name: m.user.name, avatarUrl: m.user.avatarUrl }, role: { id: m.role.id, key: m.role.key, name: m.role.name }, websiteIds: m.websiteIds, createdAt: m.createdAt.toISOString() }));
   }
 
-  async updateMember(orgId: string, memberId: string, body: { roleId?: string; websiteIds?: string[] }, user: AuthUser) {
+  // ── privilege ceiling ──
+  // Nobody can grant, assign, edit or remove access beyond what they hold themselves,
+  // and only owners can create owners or act on owners.
+
+  private isOwner(access: AccessContext) {
+    return access.roleKey === 'owner' || access.permissions.has('*');
+  }
+
+  private async rolePermissions(roleId: string): Promise<string[]> {
+    return (await this.db.rolePermission.findMany({ where: { roleId }, select: { permissionKey: true } })).map((p) => p.permissionKey);
+  }
+
+  private async assertCanGrantRole(access: AccessContext, role: { id: string; key: string }, action: string) {
+    if (role.key === 'owner' && !this.isOwner(access)) throw forbidden(`Only organization owners can ${action} the Owner role`);
+    const perms = await this.rolePermissions(role.id);
+    const extra = access.permissions.has('*') ? [] : perms.filter((p) => !access.permissions.has(p));
+    if (extra.length) throw forbidden(`You cannot ${action} a role with permissions you do not have: ${extra.join(', ')}`);
+  }
+
+  private assertCanGrantPermissions(access: AccessContext, perms: string[]) {
+    const extra = access.permissions.has('*') ? [] : perms.filter((p) => !access.permissions.has(p));
+    if (extra.length) throw forbidden(`You cannot grant permissions you do not have: ${extra.join(', ')}`);
+  }
+
+  async updateMember(orgId: string, memberId: string, body: { roleId?: string; websiteIds?: string[] }, user: AuthUser, access: AccessContext) {
     const member = await this.db.organizationMember.findFirst({ where: { id: memberId, organizationId: orgId }, include: { role: true } });
     if (!member) throw notFound('Member');
+    if (member.userId === user.id && !access.permissions.has('*')) throw forbidden('You cannot change your own access. Ask another administrator.');
+    // Acting on someone means being at least as privileged as their current role.
+    await this.assertCanGrantRole(access, member.role, 'manage members with');
     if (body.roleId) {
       const role = await this.db.role.findFirst({ where: { id: body.roleId, organizationId: orgId } });
       if (!role) throw badRequest('Role not found in this organization');
+      await this.assertCanGrantRole(access, role, 'assign');
       if (member.role.key === 'owner' && role.key !== 'owner') await this.assertAnotherOwner(orgId, memberId);
     }
     if (body.websiteIds?.length) {
       const count = await this.db.website.count({ where: { id: { in: body.websiteIds }, organizationId: orgId } });
       if (count !== body.websiteIds.length) throw badRequest('Unknown website in access list');
     }
-    await this.db.organizationMember.update({ where: { id: memberId }, data: body });
-    await this.audit.log({ organizationId: orgId, actor: user, action: 'member.updated', resourceType: 'member', resourceId: memberId, summary: `${user.name} changed access for a member` });
+    await this.db.organizationMember.update({ where: { id: memberId }, data: { roleId: body.roleId, websiteIds: body.websiteIds } });
+    await this.audit.log({ organizationId: orgId, actor: user, action: 'member.updated', resourceType: 'member', resourceId: memberId, summary: `${user.name} changed access for a member`, metadata: { roleId: body.roleId, previousRoleId: member.roleId, websiteIds: body.websiteIds } });
     return (await this.members(orgId)).find((m) => m.id === memberId);
   }
 
@@ -121,9 +150,11 @@ export class OrganizationsService {
     if (owners === 0) throw badRequest('An organization must keep at least one owner');
   }
 
-  async removeMember(orgId: string, memberId: string, user: AuthUser) {
+  async removeMember(orgId: string, memberId: string, user: AuthUser, access: AccessContext) {
     const member = await this.db.organizationMember.findFirst({ where: { id: memberId, organizationId: orgId }, include: { role: true } });
     if (!member) throw notFound('Member');
+    // Leaving an organization yourself is always allowed (except as its last owner).
+    if (member.userId !== user.id) await this.assertCanGrantRole(access, member.role, 'remove members with');
     if (member.role.key === 'owner') await this.assertAnotherOwner(orgId, memberId);
     await this.db.organizationMember.delete({ where: { id: memberId } });
     await this.audit.log({ organizationId: orgId, actor: user, action: 'member.removed', resourceType: 'member', resourceId: memberId, summary: `${user.name} removed a member` });
@@ -135,22 +166,29 @@ export class OrganizationsService {
     return rows.map((i) => ({ id: i.id, email: i.email, role: { id: i.role.id, key: i.role.key, name: i.role.name }, expiresAt: i.expiresAt.toISOString(), acceptedAt: null, createdAt: i.createdAt.toISOString() }));
   }
 
-  async invite(orgId: string, body: { email: string; roleId: string }, user: AuthUser) {
+  async invite(orgId: string, body: { email: string; roleId: string }, user: AuthUser, access: AccessContext) {
     const email = body.email.trim().toLowerCase();
     const role = await this.db.role.findFirst({ where: { id: body.roleId, organizationId: orgId } });
     if (!role) throw badRequest('Role not found');
+    await this.assertCanGrantRole(access, role, 'invite people to');
     const existing = await this.db.organizationMember.findFirst({ where: { organizationId: orgId, user: { email } } });
     if (existing) throw conflict('This person is already a member');
-    await this.assertLimit(orgId, 'members');
+    // Pending invitations count toward the seat limit, and invitation email volume is capped per day.
+    const pending = await this.db.invitation.count({ where: { organizationId: orgId, acceptedAt: null, expiresAt: { gt: new Date() } } });
+    await this.assertLimit(orgId, 'members', 1 + pending);
+    const today = await this.db.invitation.count({ where: { organizationId: orgId, createdAt: { gte: new Date(Date.now() - 86_400_000) } } });
+    if (today >= 100) throw limitExceeded('Too many invitations sent today. Try again tomorrow.');
+    await this.db.invitation.deleteMany({ where: { organizationId: orgId, email, acceptedAt: null } });
     const token = randomToken();
     const inv = await this.db.invitation.create({ data: { organizationId: orgId, email, roleId: role.id, tokenHash: hashToken(token), invitedById: user.id, expiresAt: new Date(Date.now() + 7 * 86_400_000) } });
     const org = await this.db.organization.findUniqueOrThrow({ where: { id: orgId } });
     const url = `${env().ADMIN_URL}/invite/${token}`;
     await this.queues.platformEmail({
       to: [{ email }],
-      subject: `${user.name} invited you to ${org.name} on Atrium`,
+      // Names are user-controlled: strip line breaks from the subject and escape everything in HTML.
+      subject: `${user.name} invited you to ${org.name} on Atrium`.replace(/[\r\n]+/g, ' ').slice(0, 200),
       text: `${user.name} invited you to join ${org.name} as ${role.name}.\n\nAccept: ${url}\n\nThis invitation expires in 7 days.`,
-      html: `<p>${user.name} invited you to join <strong>${org.name}</strong> as ${role.name}.</p><p><a href="${url}" style="display:inline-block;padding:10px 18px;background:#1b1b19;color:#fff;text-decoration:none;border-radius:6px">Accept invitation</a></p><p style="color:#666">This invitation expires in 7 days.</p>`,
+      html: `<p>${escapeHtml(user.name)} invited you to join <strong>${escapeHtml(org.name)}</strong> as ${escapeHtml(role.name)}.</p><p><a href="${escapeHtml(url)}" style="display:inline-block;padding:10px 18px;background:#1b1b19;color:#fff;text-decoration:none;border-radius:6px">Accept invitation</a></p><p style="color:#666">This invitation expires in 7 days.</p>`,
     });
     await this.audit.log({ organizationId: orgId, actor: user, action: 'user.invited', resourceType: 'invitation', resourceId: inv.id, summary: `${user.name} invited ${email}` });
     await this.queues.emit(orgId, null, 'user.invited', { email, role: role.key });
@@ -164,11 +202,17 @@ export class OrganizationsService {
   async acceptInvitation(token: string, user: AuthUser) {
     const inv = await this.db.invitation.findUnique({ where: { tokenHash: hashToken(token) } });
     if (!inv || inv.acceptedAt || inv.expiresAt < new Date()) throw badRequest('This invitation is invalid or has expired');
-    if (inv.email !== user.email.toLowerCase()) throw forbidden(`This invitation was sent to ${inv.email}`);
-    await this.db.$transaction([
-      this.db.organizationMember.upsert({ where: { organizationId_userId: { organizationId: inv.organizationId, userId: user.id } }, create: { organizationId: inv.organizationId, userId: user.id, roleId: inv.roleId }, update: {} }),
-      this.db.invitation.update({ where: { id: inv.id }, data: { acceptedAt: new Date() } }),
-    ]);
+    if (inv.email !== user.email.toLowerCase()) throw forbidden('This invitation was sent to a different email address. Sign in with that address to accept it.');
+    if (env().NODE_ENV === 'production') {
+      const u = await this.db.user.findUniqueOrThrow({ where: { id: user.id }, select: { emailVerifiedAt: true } });
+      if (!u.emailVerifiedAt) throw forbidden('Confirm your email address before joining an organization. Check your inbox for the confirmation link.');
+    }
+    await this.db.$transaction(async (tx) => {
+      // Single use under concurrency.
+      const claimed = await tx.invitation.updateMany({ where: { id: inv.id, acceptedAt: null }, data: { acceptedAt: new Date() } });
+      if (claimed.count !== 1) throw badRequest('This invitation is invalid or has expired');
+      await tx.organizationMember.upsert({ where: { organizationId_userId: { organizationId: inv.organizationId, userId: user.id } }, create: { organizationId: inv.organizationId, userId: user.id, roleId: inv.roleId }, update: {} });
+    });
     await this.audit.log({ organizationId: inv.organizationId, actor: user, action: 'invitation.accepted', resourceType: 'invitation', resourceId: inv.id, summary: `${user.name} joined the organization` });
     return { organizationId: inv.organizationId };
   }
@@ -186,8 +230,9 @@ export class OrganizationsService {
     return [...new Set(perms)] as Permission[];
   }
 
-  async createRole(orgId: string, body: { name: string; description?: string; permissions: string[] }, user: AuthUser) {
+  async createRole(orgId: string, body: { name: string; description?: string; permissions: string[] }, user: AuthUser, access: AccessContext) {
     const perms = this.cleanPermissions(body.permissions);
+    this.assertCanGrantPermissions(access, perms);
     let key = slugify(body.name).replace(/-/g, '_') || 'custom';
     for (let i = 2; await this.db.role.findUnique({ where: { organizationId_key: { organizationId: orgId, key } } }); i++) key = `${slugify(body.name).replace(/-/g, '_')}_${i}`;
     const role = await this.db.role.create({ data: { organizationId: orgId, key, name: body.name, description: body.description, permissions: { create: perms.map((p) => ({ permissionKey: p })) } } });
@@ -195,10 +240,14 @@ export class OrganizationsService {
     return (await this.roles(orgId)).find((r) => r.id === role.id);
   }
 
-  async updateRole(orgId: string, roleId: string, body: { name?: string; description?: string; permissions?: string[] }, user: AuthUser) {
+  async updateRole(orgId: string, roleId: string, body: { name?: string; description?: string; permissions?: string[] }, user: AuthUser, access: AccessContext) {
     const role = await this.db.role.findFirst({ where: { id: roleId, organizationId: orgId } });
     if (!role) throw notFound('Role');
     if (role.key === 'owner' && body.permissions) throw badRequest('Owner permissions cannot be changed');
+    if (role.isSystem && body.permissions && !this.isOwner(access)) throw forbidden('Only owners can change the permissions of built-in roles');
+    await this.assertCanGrantRole(access, role, 'edit');
+    if (body.permissions) this.assertCanGrantPermissions(access, this.cleanPermissions(body.permissions));
+    if (access.roleKey === role.key && body.permissions && !this.isOwner(access)) throw forbidden('You cannot change the permissions of your own role');
     await this.db.$transaction(async (tx) => {
       await tx.role.update({ where: { id: roleId }, data: { name: body.name, description: body.description } });
       if (body.permissions) {
@@ -211,9 +260,10 @@ export class OrganizationsService {
     return (await this.roles(orgId)).find((r) => r.id === roleId);
   }
 
-  async deleteRole(orgId: string, roleId: string, user: AuthUser) {
+  async deleteRole(orgId: string, roleId: string, user: AuthUser, access: AccessContext) {
     const role = await this.db.role.findFirst({ where: { id: roleId, organizationId: orgId }, include: { _count: { select: { members: true } } } });
     if (!role) throw notFound('Role');
+    await this.assertCanGrantRole(access, role, 'delete');
     if (role.isSystem) throw badRequest('System roles cannot be deleted');
     if (role._count.members > 0) throw badRequest('Reassign members before deleting this role');
     await this.db.role.delete({ where: { id: roleId } });

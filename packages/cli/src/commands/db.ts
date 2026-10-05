@@ -1,8 +1,9 @@
 import { existsSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import repl from 'node:repl';
 import type { Command } from 'commander';
 import { context, type Context } from '../lib/context';
+import { EnvFile } from '../lib/env';
 import { loadDbPackage, migrationStatus, requireFrom, type PrismaLike } from '../lib/db';
 import { run, which } from '../lib/exec';
 import { examples } from '../lib/help';
@@ -149,11 +150,26 @@ export function registerDb(program: Command) {
     .command('seed')
     .description('Seed plans, permissions, platform templates and the super-admin (idempotent)')
     .option('--demo', 'also create the demo organization and websites (SEED_DEMO=1)')
-    .action(async function (this: Command, opts: { demo?: boolean }) {
+    .option(
+      '--env-file <file>',
+      'seed with a deploy env file (e.g. deploy/podman/.env: NODE_ENV=production, SEED_ADMIN_*) instead of the checkout .env',
+    )
+    .option('--database-url <url>', 'override DATABASE_URL (e.g. a tunnel to a private database)')
+    .action(async function (
+      this: Command,
+      opts: { demo?: boolean; envFile?: string; databaseUrl?: string },
+    ) {
       const ctx = context(this);
-      await seed(ctx, !!opts.demo);
+      let extra: Record<string, string | undefined> = {};
+      if (opts.envFile) {
+        const file = EnvFile.read(resolve(opts.envFile));
+        if (!file) throw new CliError(`Env file not found: ${opts.envFile}`);
+        extra = file.toObject();
+      }
+      if (opts.databaseUrl) extra.DATABASE_URL = opts.databaseUrl;
+      await seed(ctx, !!opts.demo, { env: extra });
       log.success(
-        `Seeded${opts.demo ? ' (with demo content)' : ''}. Super-admin: ${color.cyan(ctx.vars.SEED_ADMIN_EMAIL ?? '?')}`,
+        `Seeded${opts.demo ? ' (with demo content)' : ''}. Super-admin: ${color.cyan(extra.SEED_ADMIN_EMAIL ?? ctx.vars.SEED_ADMIN_EMAIL ?? '?')}`,
       );
     });
 

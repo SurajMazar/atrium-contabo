@@ -34,15 +34,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4 # version from package.json "packageManager"
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Turborepo cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: .turbo/cache
           key: turbo-${{ runner.os }}-${{ github.sha }}
@@ -58,11 +60,14 @@ jobs:
       - name: Build
         run: pnpm build
       - name: CLI smoke test
+        env:
+          REPO_OWNER: ${{ github.repository_owner }}
+          GIT_SHA: ${{ github.sha }}
         run: |
           pnpm atrium --help
           pnpm atrium --version
           pnpm atrium setup production --target podman --domain ci.example.com --out "$RUNNER_TEMP/podman"
-          pnpm atrium setup production --target k8s --domain ci.example.com --registry ghcr.io/${{ github.repository_owner }} --tag ${{ github.sha }} --out "$RUNNER_TEMP/k8s"
+          pnpm atrium setup production --target k8s --domain ci.example.com --registry "ghcr.io/$REPO_OWNER" --tag "$GIT_SHA" --out "$RUNNER_TEMP/k8s"
           pnpm atrium --root . setup check --env-file "$RUNNER_TEMP/podman/.env" || true
 
   manifests:
@@ -70,7 +75,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - name: kustomize build (base + overlays)
         run: |
           kubectl version --client
@@ -81,13 +88,26 @@ jobs:
             echo "$env: $(grep -c '^kind:' "$RUNNER_TEMP/$env.yaml") resources"
           done
       - name: Validate against the Kubernetes API schemas
+        env:
+          # sha256 from the release's CHECKSUMS file (v0.6.7, kubeconform-linux-amd64.tar.gz)
+          KUBECONFORM_SHA256: 95f14e87aa28c09d5941f11bd024c1d02fdc0303ccaa23f61cef67bc92619d73
         run: |
-          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz kubeconform
+          curl -fsSLo "$RUNNER_TEMP/kubeconform.tar.gz" https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz
+          echo "$KUBECONFORM_SHA256  $RUNNER_TEMP/kubeconform.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/kubeconform.tar.gz" kubeconform
           ./kubeconform -strict -summary -ignore-missing-schemas "$RUNNER_TEMP/staging.yaml" "$RUNNER_TEMP/production.yaml"
       - name: docker compose config
         run: |
           cp .env.example .env
-          printf 'POSTGRES_PASSWORD=ci\nATRIUM_SRC_DIR=%s\n' "$PWD" > infra/.env
+          # Every variable compose.prod.yaml requires (`atrium setup production` generates real values).
+          {
+            printf 'ATRIUM_SRC_DIR=%s\n' "$PWD"
+            printf '%s\n' POSTGRES_PASSWORD=ci POSTGRES_APP_PASSWORD=ci-app REDIS_PASSWORD=ci-redis \
+              MIGRATE_DATABASE_URL=postgresql://atrium:ci@postgres:5432/atrium RENDERER_SECRET=ci-renderer-secret \
+              ACME_EMAIL=ops@ci.example.com ADMIN_HOST=admin.ci.example.com API_HOST=api.ci.example.com \
+              SITES_DOMAIN=sites.ci.example.com MEDIA_HOST=media.ci.example.com PLATFORM_SITES_DOMAIN=sites.ci.example.com \
+              ADMIN_URL=https://admin.ci.example.com API_URL=https://api.ci.example.com RENDERER_URL=https://sites.ci.example.com
+          } > infra/.env
           docker compose -f infra/compose.yaml config -q
           docker compose -f infra/compose.prod.yaml --env-file infra/.env config -q
 
@@ -97,7 +117,7 @@ jobs:
     timeout-minutes: 15
     services:
       postgres:
-        image: postgres:17-alpine
+        image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
         env:
           POSTGRES_USER: atrium
           POSTGRES_PASSWORD: atrium
@@ -109,9 +129,11 @@ jobs:
     env:
       DATABASE_URL: postgresql://atrium:atrium@localhost:5432/atrium
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -146,21 +168,23 @@ jobs:
     timeout-minutes: 45
     services:
       postgres:
-        image: postgres:17-alpine
+        image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
         env: { POSTGRES_USER: atrium, POSTGRES_PASSWORD: atrium, POSTGRES_DB: atrium }
         ports: ['55432:5432']
         options: --health-cmd "pg_isready -U atrium -d atrium" --health-interval 5s --health-retries 20
       redis:
-        image: redis:7-alpine
+        image: redis:7-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
         ports: ['56379:6379']
         options: --health-cmd "redis-cli ping" --health-interval 5s --health-retries 20
       mailpit:
-        image: axllent/mailpit:latest
+        image: axllent/mailpit:v1.31.4@sha256:b68349e3a014b90c5610bfb26b2ae36f3892d7b8cf25ee140c6c71c98d2fcf48
         ports: ['51025:1025', '58025:8025']
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -175,7 +199,7 @@ jobs:
       - name: Start the platform (built servers, background)
         run: |
           pnpm atrium start --prod --detach --no-infra
-          for i in $(seq 1 60); do curl -fsS http://localhost:4000/v1/health/ready && break; sleep 2; done
+          for _ in $(seq 1 60); do curl -fsS http://localhost:4000/v1/health/ready && break; sleep 2; done
           pnpm atrium status
       - name: Install Chromium
         run: pnpm --filter @atrium/e2e exec playwright install --with-deps chromium
@@ -191,7 +215,7 @@ jobs:
       - name: App logs on failure
         if: failure()
         run: pnpm atrium logs -n 300 || true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: playwright-report
@@ -209,8 +233,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
-      contents: read
-      packages: write
+      contents: read # checkout
+      packages: write # push images to ghcr.io
     strategy:
       fail-fast: false
       matrix:
@@ -221,15 +245,17 @@ jobs:
           - { image: renderer, file: renderer.Containerfile, target: runtime }
           - { image: admin, file: admin.Containerfile, target: runtime }
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
           images: ghcr.io/${{ github.repository_owner }}/atrium-${{ matrix.image }}
           tags: |
@@ -237,7 +263,48 @@ jobs:
             type=ref,event=branch
             type=semver,pattern={{version}}
             type=raw,value=latest,enable={{is_default_branch}}
-      - uses: docker/build-push-action@v6
+      # Cache note (zizmor cache-poisoning is suppressed for ci.yml in .github/zizmor.yml): the pnpm/turbo caches only
+      # feed lint/test/e2e jobs; the published images are built from source inside the Containerfiles and
+      # only use the BuildKit gha cache written by this job on push events. No pull_request_target here.
+      # Vulnerability gate BEFORE anything reaches the registry:
+      #   1. build the image into the runner's local Docker store (load: true, push: false, local tag only),
+      #   2. Trivy-scan that local image — fail on fixable HIGH/CRITICAL,
+      #   3. only then build again with push: true. The second build reuses the BuildKit/GHA layer cache
+      #      from step 1, so it is cheap and produces the same layers that were scanned; provenance and
+      #      SBOM attestations are attached on the push (they cannot be exported with load: true).
+      # Scanning the pushed digest instead would publish (and move `latest` to) a vulnerable image first.
+      - name: Build (local, for scanning)
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: infra/containers/${{ matrix.file }}
+          target: ${{ matrix.target }}
+          push: false
+          load: true
+          tags: atrium-${{ matrix.image }}:scan
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            GIT_SHA=${{ github.sha }}
+            ATRIUM_API_INTERNAL_URL=${{ vars.ATRIUM_API_INTERNAL_URL || 'http://api:4000' }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+          provenance: false
+          sbom: false
+      - name: Trivy image scan (fixable HIGH/CRITICAL fail the build)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: atrium-${{ matrix.image }}:scan
+          scanners: vuln
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table
+          version: v0.70.0 # Trivy binary version (pinned; installed by the action's SHA-pinned setup-trivy)
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           file: infra/containers/${{ matrix.file }}

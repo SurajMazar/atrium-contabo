@@ -1,2 +1,3 @@
+# Edge network: Caddy, admin, renderer, api, worker and the S3 gateway (egress allowed).
 [Network]
 NetworkName=atrium

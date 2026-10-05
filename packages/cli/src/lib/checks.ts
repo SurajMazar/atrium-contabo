@@ -102,6 +102,33 @@ export function productionChecks(env: Record<string, string | undefined>): Check
     `COOKIE_SECURE=${env.COOKIE_SECURE ?? '(unset, defaults to false)'}`,
     'atrium config set COOKIE_SECURE true',
   );
+  add(
+    'JWT access and refresh secrets differ',
+    !env.JWT_ACCESS_SECRET || env.JWT_ACCESS_SECRET !== env.JWT_REFRESH_SECRET,
+    'JWT_ACCESS_SECRET equals JWT_REFRESH_SECRET',
+    'atrium config set JWT_REFRESH_SECRET --generate',
+  );
+  let redisAuth = false;
+  try {
+    const u = new URL(env.REDIS_URL ?? '');
+    redisAuth = !!u.password;
+  } catch {
+    /* unset/invalid → flagged below */
+  }
+  add(
+    'Redis requires a password',
+    redisAuth,
+    `REDIS_URL has no password (${env.REDIS_URL ? 'redis://<host>' : 'unset'})`,
+    'Set requirepass / managed AUTH and use redis://:<password>@host:6379',
+    true,
+  );
+  add(
+    'TRUST_PROXY is set explicitly',
+    !!env.TRUST_PROXY && env.TRUST_PROXY !== 'false',
+    'TRUST_PROXY is unset/false behind a reverse proxy — client IPs (rate limits, audit log) will be the proxy',
+    'atrium config set TRUST_PROXY loopback,uniquelocal   # or the number of proxy hops',
+    true,
+  );
   out.push(
     ...secretChecks(env, g).map((c) =>
       c.status === 'warn' ? { ...c, status: 'fail' as const } : c,

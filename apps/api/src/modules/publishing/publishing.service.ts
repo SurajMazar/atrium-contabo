@@ -5,7 +5,7 @@ import { freezeVersion, toPublishedDefinition } from '@atrium/site-store';
 import * as argon2 from 'argon2';
 import { env } from '../../config/env';
 import { AuditService } from '../../common/audit.service';
-import type { AuthUser } from '../../common/decorators';
+import type { AccessContext, AuthUser } from '../../common/decorators';
 import { ApiError, notFound, unauthorized } from '../../common/errors';
 import { PrismaService } from '../../common/prisma.service';
 import { QueueService } from '../../common/queue.service';
@@ -51,7 +51,8 @@ export class PublishingService {
   }
 
   async primaryDomain(websiteId: string) {
-    return (await this.db.domain.findFirst({ where: { websiteId, isPrimary: true } }))?.hostname;
+    // Canonical URLs only ever point at domains the customer has proven they own.
+    return (await this.db.domain.findFirst({ where: { websiteId, isPrimary: true, verifiedAt: { not: null }, status: 'active' } }))?.hostname;
   }
 
   /** Build a renderable snapshot from the draft (previews/exports) or a stored version. */
@@ -148,7 +149,7 @@ export class PublishingService {
     return diffWebsites(await load(from), await load(to));
   }
 
-  async restore(websiteId: string, versionId: string, user: AuthUser) {
+  async restore(websiteId: string, versionId: string, user: AuthUser, access: AccessContext) {
     const v = await this.version(websiteId, versionId);
     const snap = v.snapshot as unknown as SiteSnapshot;
     await this.drafts.transform(
@@ -158,6 +159,7 @@ export class PublishingService {
         Object.assign(d, keep, { pages: keep.pages.map((p) => ({ ...p, status: 'draft' as const })) });
       },
       { userId: user.id, versionSource: 'RESTORE', versionMessage: `Before restoring site version ${v.number}` },
+      { access },
     );
     const site = await this.db.website.findUniqueOrThrow({ where: { id: websiteId } });
     await this.audit.log({ organizationId: site.organizationId, websiteId, actor: user, action: 'site.version_restored', resourceType: 'website', resourceId: websiteId, summary: `${user.name} restored the draft to version ${v.number}` });

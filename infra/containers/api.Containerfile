@@ -66,15 +66,19 @@ RUN rm -rf node_modules apps/*/node_modules packages/*/node_modules \
  && pnpm install --prod --frozen-lockfile --offline --ignore-scripts ${PNPM_INSTALL_FLAGS} \
  && rm -rf apps/api/src apps/api/test .turbo apps/*/.turbo packages/*/.turbo
 
-# ── migration bundle: Prisma CLI pinned to the workspace's exact version + schema/migrations ──
+# ── migration bundle: Prisma CLI + pg + dotenv pinned to the EXACT versions in pnpm-lock.yaml
+# (read from the frozen-lockfile install in `deps`) + schema/migrations.
 # (a plain npm install of 6 packages; `pnpm deploy` needs far more memory)
 FROM deps AS migrate-build
 COPY --from=pruner /out/full/packages/db/prisma ./packages/db/prisma
 RUN set -eu; \
-    V="$(node -p "require('./packages/db/node_modules/prisma/package.json').version")"; \
+    ver() { node -p "require('./packages/db/node_modules/$1/package.json').version"; }; \
+    V="$(ver prisma)"; PG="$(ver pg)"; DOTENV="$(ver dotenv)"; \
     mkdir -p /prod/db && cp -R packages/db/prisma packages/db/prisma.config.ts /prod/db/; \
     cd /prod/db && printf '{"name":"atrium-migrate","private":true,"type":"commonjs"}\n' > package.json; \
-    npm install --no-fund --no-audit --loglevel=error "prisma@$V" "@prisma/client@$V" "@prisma/adapter-pg@$V" pg dotenv
+    npm install --save-exact --no-fund --no-audit --loglevel=error \
+      "prisma@$V" "@prisma/client@$V" "@prisma/adapter-pg@$V" "pg@$PG" "dotenv@$DOTENV"; \
+    npm ls --depth=0
 
 # ── migration image: `podman run --rm --env-file .env atrium-migrate` ──
 FROM docker.io/library/node:${NODE_VERSION}-slim AS migrate
@@ -87,9 +91,11 @@ LABEL org.opencontainers.image.title="atrium-migrate" \
       org.opencontainers.image.revision="${GIT_SHA}" \
       org.opencontainers.image.licenses="UNLICENSED"
 RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/*
-ENV NODE_ENV=production
+ENV NODE_ENV=production \
+    CHECKPOINT_DISABLE=1 \
+    PRISMA_HIDE_UPDATE_MESSAGE=1
 WORKDIR /app
-COPY --from=migrate-build --chown=node:node /prod/db ./
+COPY --from=migrate-build /prod/db ./
 USER node
 CMD ["node_modules/.bin/prisma", "migrate", "deploy"]
 
@@ -111,8 +117,11 @@ ENV NODE_ENV=production \
     API_PORT=4000 \
     ATRIUM_VERSION=${VERSION}
 WORKDIR /app
-COPY --from=builder --chown=node:node /repo ./
+# App code is owned by root and not writable by the runtime `node` user; only the dirs below are.
+COPY --from=builder /repo ./
 WORKDIR /app/apps/api
+# STORAGE_DRIVER=local writes to LOCAL_STORAGE_DIR (./storage): the only writable app dir (mount a volume).
+RUN mkdir -p storage && chown node:node storage
 USER node
 EXPOSE 4000
 HEALTHCHECK --interval=15s --timeout=5s --start-period=40s --retries=5 \

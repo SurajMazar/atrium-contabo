@@ -3,15 +3,21 @@ Description=Atrium Redis 7 (BullMQ)
 
 [Container]
 ContainerName=atrium-redis
-Image=docker.io/library/redis:7-alpine
-Exec=redis-server --appendonly yes --appendfsync everysec --maxmemory-policy noeviction
-Network=atrium.network
+Image=docker.io/library/redis:7.4.11-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+# redis.conf (generated, contains requirepass): appendonly, noeviction, requirepass.
+# It must be readable by the container's redis user (chmod 644; keep ~/.config/atrium at 700).
+Volume=%h/.config/atrium/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro,Z
+Exec=redis-server /usr/local/etc/redis/redis.conf
+Network=atrium-data.network
 NetworkAlias=redis
 Volume=atrium-redis.volume:/data
+# REDISCLI_AUTH for the health check
+EnvironmentFile=%h/.config/atrium/redis.env
 HealthCmd=redis-cli ping
 HealthInterval=5s
 HealthRetries=30
 Notify=healthy
+NoNewPrivileges=true
 
 [Service]
 Restart=always

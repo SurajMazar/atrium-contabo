@@ -27,11 +27,30 @@ export const captchaConfigSchema = z.object({
   allowedHostnames: z.array(z.string()).default([]),
   /** reCAPTCHA v3 only: default minimum score (0–1) when the form doesn't specify one. */
   minScore: z.number().min(0).max(1).default(0.5),
-  /** reCAPTCHA Enterprise / self-hosted proxies can override the verify endpoint. */
-  verifyUrl: z.string().url().optional(),
+  // NOTE: a tenant-configurable `verifyUrl` used to exist; it was removed (SSRF + it let a
+  // tenant point verification at a server that always answers success). Stored values are
+  // stripped by the schema and the official vendor endpoint is always used.
 });
 export const captchaSecretsSchema = z.object({ secretKey: z.string().min(1) });
 export type CaptchaConfig = z.output<typeof captchaConfigSchema>;
+
+function normalizeHostname(h: string): string {
+  return h.trim().toLowerCase().replace(/:\d+$/, '').replace(/\.+$/, '');
+}
+
+/**
+ * Caller-supplied hostnames (the website's verified domains + its platform subdomain) match
+ * exactly; an entry of the form `*.example.com` also matches any subdomain of example.com.
+ */
+export function matchesExpectedHostname(hostname: string, expected: readonly string[]): boolean {
+  const host = normalizeHostname(hostname);
+  return expected.some((raw) => {
+    const e = normalizeHostname(raw);
+    if (!e) return false;
+    if (e.startsWith('*.')) return host.endsWith(e.slice(1)) && host.length > e.length - 1;
+    return host === e;
+  });
+}
 
 /**
  * Server-side siteverify for reCAPTCHA v2/v3, Cloudflare Turnstile and hCaptcha.
@@ -56,8 +75,10 @@ export class SiteverifyCaptcha implements CaptchaVerifier {
     if (this.driver === 'hcaptcha') form.set('sitekey', this.config.siteKey);
     let data: SiteverifyResponse;
     try {
-      const res = await httpRequest<SiteverifyResponse>(this.driver, this.config.verifyUrl ?? ENDPOINTS[this.driver], {
+      const res = await httpRequest<SiteverifyResponse>(this.driver, ENDPOINTS[this.driver], {
         method: 'POST',
+        revealErrorBody: true,
+        maxResponseBytes: 64 * 1024,
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: form,
         timeoutMs: 8000,
@@ -75,7 +96,10 @@ export class SiteverifyCaptcha implements CaptchaVerifier {
     };
     if (!result.success) return result;
     const errors: string[] = [];
-    if (this.config.allowedHostnames.length && result.hostname && !this.config.allowedHostnames.some((h) => h === result.hostname || result.hostname!.endsWith(`.${h}`))) {
+    const hostname = result.hostname ? normalizeHostname(result.hostname) : undefined;
+    if (hostname && this.config.allowedHostnames.length && !this.config.allowedHostnames.map(normalizeHostname).some((h) => h === hostname || hostname.endsWith(`.${h}`))) {
+      errors.push('hostname-mismatch');
+    } else if (hostname && input.expectedHostnames?.length && !matchesExpectedHostname(hostname, input.expectedHostnames)) {
       errors.push('hostname-mismatch');
     }
     if (this.driver === 'recaptcha-v3') {

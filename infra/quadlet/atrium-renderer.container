@@ -9,9 +9,15 @@ Image=ghcr.io/your-org/atrium-renderer:latest
 AutoUpdate=registry
 Network=atrium.network
 NetworkAlias=renderer
-EnvironmentFile=%h/.config/atrium/atrium.env
+# RENDERER_SECRET + public URLs only: ~/.config/atrium/renderer.env
+EnvironmentFile=%h/.config/atrium/renderer.env
 Environment=ATRIUM_API_INTERNAL_URL=http://api:4000
 Volume=atrium-renderer-cache.volume:/app/apps/renderer/.next/cache
+# Immutable root filesystem (tmpfs /tmp, /var/tmp, /run), no capabilities, no privilege escalation.
+ReadOnly=true
+ReadOnlyTmpfs=true
+DropCapability=all
+NoNewPrivileges=true
 
 [Service]
 Restart=always

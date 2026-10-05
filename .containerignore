@@ -3,6 +3,7 @@
 .git
 **/node_modules
 **/.next
+**/.next-*
 **/dist
 **/.turbo
 **/coverage
@@ -14,6 +15,9 @@ packages/db/src/generated
 !.env.example
 **/.env
 **/.env.*
+**/*.env
+**/secrets.env
+**/secrets*.env
 !**/.env.example
 /.atrium
 /backups
@@ -23,5 +27,8 @@ packages/db/src/generated
 /test-results
 tests/e2e/.auth
 .DS_Store
+.claude
+tools/tutorial/.cache
+tools/tutorial/out
 .idea
 .vscode

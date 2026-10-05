@@ -1,4 +1,6 @@
 import { ProviderError } from './driver';
+import { guardedFetch, OutboundBlockedError, readBodyLimited, ResponseTooLargeError } from './net/guard';
+import { isProductionEnv, type NetworkPolicy } from './net/policy';
 
 /**
  * Thin fetch wrapper shared by every HTTP-based adapter (email/SMS/captcha/deployment).
@@ -7,6 +9,11 @@ import { ProviderError } from './driver';
  * - JSON bodies are serialized automatically (plain objects/arrays).
  * - Non-2xx responses throw `ProviderError` (retryable for 408/425/429/5xx and network errors).
  * - Error messages include a truncated response excerpt, never request headers (which hold secrets).
+ *   In production remote bodies are NOT echoed unless the endpoint is a fixed vendor API
+ *   (`revealErrorBody`), so a tenant-chosen URL can't turn errors into a read primitive.
+ * - Every request goes through the outbound guard (`net/guard.ts`): `network: 'public-only'`
+ *   (the default) restricts targets to public addresses (validated at connect time), follows at
+ *   most 3 re-validated redirects and caps the response size.
  */
 export type HttpBody = string | Buffer | Uint8Array | URLSearchParams | FormData | Record<string, unknown> | unknown[] | undefined;
 
@@ -22,7 +29,16 @@ export interface HttpRequestOptions {
   allowStatus?: number[];
   /** Response parsing; `auto` parses JSON when the content-type says so. */
   responseType?: 'auto' | 'json' | 'text' | 'buffer' | 'none';
+  /** Outbound policy: `public-only` (default; tenant config) or `trusted` (platform env config). */
+  network?: NetworkPolicy;
+  /** Max response bytes (default 1 MB for text/json, 50 MB for `buffer`). */
+  maxResponseBytes?: number;
+  /** Fixed vendor endpoint: error bodies may be shown even in production. */
+  revealErrorBody?: boolean;
 }
+
+export const DEFAULT_MAX_RESPONSE_BYTES = 1024 * 1024;
+const DEFAULT_MAX_BUFFER_BYTES = 50 * 1024 * 1024;
 
 export interface HttpResponse<T = unknown> {
   status: number;
@@ -91,38 +107,67 @@ export async function httpRequest<T = unknown>(provider: string, url: string, op
   const timeout = AbortSignal.timeout(opts.timeoutMs ?? 30_000);
   const signal = opts.signal ? AbortSignal.any([opts.signal, timeout]) : timeout;
   const finalUrl = buildUrl(url, opts.query);
+  const host = (() => {
+    try {
+      return new URL(finalUrl).host;
+    } catch {
+      return 'invalid URL';
+    }
+  })();
   let res: Response;
   try {
-    res = await fetch(finalUrl, { method: opts.method ?? (body ? 'POST' : 'GET'), headers, body, signal });
+    res = await guardedFetch(finalUrl, { method: opts.method ?? (body ? 'POST' : 'GET'), headers, body, signal }, { network: opts.network ?? 'public-only' });
   } catch (err) {
+    const blocked = err instanceof OutboundBlockedError ? err : (err as { cause?: unknown })?.cause instanceof OutboundBlockedError ? ((err as { cause: OutboundBlockedError }).cause) : undefined;
+    if (blocked) throw new ProviderError(`${provider}: ${blocked.message}`, provider, false, blocked);
     const name = err instanceof Error ? err.name : '';
-    const msg = name === 'TimeoutError' ? `request timed out after ${opts.timeoutMs ?? 30_000}ms` : err instanceof Error ? err.message : String(err);
-    throw new ProviderError(`${provider}: network error calling ${new URL(finalUrl).host}: ${msg}`, provider, true, err);
+    const msg = name === 'TimeoutError' ? `request timed out after ${opts.timeoutMs ?? 30_000}ms` : networkMessage(err);
+    throw new ProviderError(`${provider}: network error calling ${host}: ${msg}`, provider, true, err);
   }
   const type = opts.responseType ?? 'auto';
+  const limit = opts.maxResponseBytes ?? (type === 'buffer' ? DEFAULT_MAX_BUFFER_BYTES : DEFAULT_MAX_RESPONSE_BYTES);
   let data: unknown = undefined;
-  if (type !== 'none' && res.status !== 204 && opts.method !== 'HEAD') {
-    if (type === 'buffer') data = Buffer.from(await res.arrayBuffer());
-    else {
-      const text = await res.text();
-      const ct = res.headers.get('content-type') ?? '';
-      if (type === 'json' || (type === 'auto' && (ct.includes('json') || /^\s*[[{]/.test(text)))) {
-        try {
-          data = text ? JSON.parse(text) : undefined;
-        } catch {
-          data = text;
-        }
-      } else data = text;
+  try {
+    if (type === 'none' || res.status === 204 || opts.method === 'HEAD') {
+      await res.body?.cancel().catch(() => undefined);
+    } else {
+      const { buffer } = await readBodyLimited(res, limit, 'throw');
+      if (type === 'buffer') data = buffer;
+      else {
+        const text = buffer.toString('utf8');
+        const ct = res.headers.get('content-type') ?? '';
+        if (type === 'json' || (type === 'auto' && (ct.includes('json') || /^\s*[[{]/.test(text)))) {
+          try {
+            data = text ? JSON.parse(text) : undefined;
+          } catch {
+            data = text;
+          }
+        } else data = text;
+      }
     }
+  } catch (err) {
+    if (err instanceof ResponseTooLargeError) throw new ProviderError(`${provider}: response from ${host} exceeds ${limit} bytes`, provider, false, err);
+    throw new ProviderError(`${provider}: failed reading response from ${host}: ${networkMessage(err)}`, provider, true, err);
   }
   if (!res.ok && !(opts.allowStatus ?? []).includes(res.status)) {
-    const detail = extractErrorMessage(data) ?? res.statusText;
-    throw new ProviderError(`${provider}: HTTP ${res.status} — ${detail}`, provider, RETRYABLE_STATUS.has(res.status), {
+    const reveal = opts.revealErrorBody || !isProductionEnv();
+    const detail = reveal ? excerpt(extractErrorMessage(data) ?? res.statusText ?? '', 300) : '';
+    throw new ProviderError(`${provider}: HTTP ${res.status}${detail ? ` — ${detail}` : ' (remote error details hidden)'}`, provider, RETRYABLE_STATUS.has(res.status), {
       status: res.status,
-      body: typeof data === 'string' ? excerpt(data, 2000) : data,
+      body: typeof data === 'string' ? excerpt(data, 500) : data,
     });
   }
   return { status: res.status, ok: res.ok, headers: res.headers, data: data as T };
+}
+
+/** Error text for network failures (codes only; never remote content). */
+function networkMessage(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+  const cause = (err as { cause?: unknown }).cause;
+  if (cause instanceof OutboundBlockedError) return cause.message;
+  const code = (cause as NodeJS.ErrnoException | undefined)?.code ?? (err as NodeJS.ErrnoException).code;
+  if (cause instanceof Error) return code ? `${cause.message} (${code})` : cause.message;
+  return code ? `${err.message} (${code})` : err.message;
 }
 
 export function basicAuth(user: string, pass: string): string {

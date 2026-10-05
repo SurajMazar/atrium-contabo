@@ -1,6 +1,6 @@
 # Atrium edge proxy (Caddy 2). Values come from the environment (.env):
 #   ADMIN_HOST=admin.example.com  API_HOST=api.example.com  SITES_DOMAIN=sites.example.com
-#   MEDIA_HOST=media.example.com  ACME_EMAIL=ops@example.com
+#   MEDIA_HOST=media.example.com  ACME_EMAIL=ops@example.com  S3_BUCKET=atrium-media
 #
 # TLS:
 #  - admin/api/media/sites apex: automatic HTTPS (HTTP-01/TLS-ALPN-01).
@@ -54,13 +54,34 @@
 	}
 }
 
-# Public, read-only media bucket (S3_PUBLIC_URL=https://MEDIA_HOST/<bucket>).
+# Public, read-only media bucket (S3_PUBLIC_URL=https://MEDIA_HOST/<bucket>). Only anonymous GET/HEAD
+# of objects inside the media bucket reach the S3 gateway: no other bucket, no bucket listing, no S3
+# sub-resources (?acl, ?uploads, …), no credentials forwarded. User uploads are served with a
+# sandboxing CSP so an uploaded HTML/SVG file cannot run script on this origin.
 {$MEDIA_HOST} {
 	import common
 	@write not method GET HEAD OPTIONS
 	respond @write 405
-	header Cache-Control "public, max-age=31536000, immutable"
-	reverse_proxy s3:8333
+	# Plain object reads only: no S3 sub-resources/queries (?acl, ?uploads, ?list-type, ?X-Amz-…).
+	@query expression {http.request.uri.query} != ""
+	respond @query 400
+	@object {
+		path /{$S3_BUCKET:atrium-media}/*
+		not path /{$S3_BUCKET:atrium-media}/
+	}
+	handle @object {
+		header Cache-Control "public, max-age=31536000, immutable"
+		header Content-Security-Policy "default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'; sandbox"
+		header Cross-Origin-Resource-Policy "cross-origin"
+		reverse_proxy s3:8333 {
+			header_up -Authorization
+			header_up -Cookie
+			header_down -Set-Cookie
+		}
+	}
+	handle {
+		respond 404
+	}
 }
 
 # Renderer apex (RENDERER_URL / PREVIEW_URL).

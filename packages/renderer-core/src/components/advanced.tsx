@@ -1,3 +1,4 @@
+import { IFRAME_SANDBOX_TRUSTED, IFRAME_SANDBOX_UNTRUSTED, isAllowedIframeHost, parseHttpsUrl } from '@atrium/schema';
 import { Children, createElement, type CSSProperties, type ReactNode } from 'react';
 import { BeforeAfter, Dialog, RotatingWords, StickySteps, Tabs } from '../islands/interactive';
 import type { RenderProps } from '../types';
@@ -217,32 +218,63 @@ export function AnimatedTextRenderer({ props, ctx, attrs }: RenderProps) {
 
 // ---------------------------------------------------------------- embed
 
-function safeIframeUrl(url?: string): string | undefined {
-  if (!url) return undefined;
-  try {
-    const u = new URL(url);
-    return u.protocol === 'https:' ? u.toString() : undefined;
-  } catch {
-    return undefined;
-  }
+/** https URL for an iframe embed (no credentials), or undefined. */
+export function safeIframeUrl(url?: string): string | undefined {
+  return parseHttpsUrl(url)?.href;
 }
 
+/** Static stand-in for third-party content inside the builder canvas (same origin as the admin). */
+function EmbedPlaceholder({ label, detail }: { label: string; detail?: string }) {
+  return (
+    <div className="a-embed__placeholder" role="img" aria-label={`${label}${detail ? `: ${detail}` : ''}`}>
+      <span className="a-embed__placeholder-label">{label}</span>
+      {detail ? <span className="a-embed__placeholder-host">{detail}</span> : null}
+      <span className="a-embed__placeholder-note">Live content loads on the published site and in preview.</span>
+    </div>
+  );
+}
+
+/**
+ * Embeds. Third-party code never runs inside the builder canvas (it shares the admin origin):
+ * editor mode renders a static placeholder for every mode. On public sites:
+ *  - `iframe`: allowlisted hosts (EMBED_IFRAME_HOSTS) keep their own origin; any other https page
+ *    is sandboxed without `allow-same-origin` (opaque origin, no cookies/storage).
+ *  - `html`: sanitized markup; iframes only from the allowlist.
+ *  - `sandbox`: srcDoc in an opaque-origin sandbox.
+ */
 export function EmbedRenderer({ props, ctx, attrs }: RenderProps) {
   const style: CSSProperties = props.height ? { height: `${props.height}px` } : { aspectRatio: aspectStyle(props.aspect)?.aspectRatio ?? '16 / 9' };
-  let content: ReactNode = null;
+  const editor = ctx.mode === 'editor';
   if (props.mode === 'html') {
-    content = <div className="a-embed__html" dangerouslySetInnerHTML={{ __html: sanitizeHtml(String(props.html ?? ''), { allowIframes: true }) }} />;
+    if (editor) return <div {...root(attrs, 'a-embed', 'a-embed--placeholder')} style={style}><EmbedPlaceholder label="HTML embed" detail={props.title} /></div>;
+    const content = <div className="a-embed__html" dangerouslySetInnerHTML={{ __html: sanitizeHtml(String(props.html ?? ''), { allowIframes: true }) }} />;
     return <div {...root(attrs, 'a-embed', 'a-embed--html')}>{content}</div>;
   }
+  let content: ReactNode = null;
   if (props.mode === 'sandbox') {
-    content = <iframe className="a-embed__frame" title={props.title} srcDoc={String(props.html ?? '')} sandbox="allow-scripts allow-popups allow-forms" loading="lazy" referrerPolicy="no-referrer" />;
+    content = editor
+      ? <EmbedPlaceholder label="Sandboxed embed" detail={props.title} />
+      : <iframe className="a-embed__frame" title={props.title} srcDoc={String(props.html ?? '')} sandbox={IFRAME_SANDBOX_UNTRUSTED} loading="lazy" referrerPolicy="no-referrer" />;
   } else {
     const src = safeIframeUrl(props.url);
-    content = src ? (
-      <iframe className="a-embed__frame" title={props.title} src={src} allow={props.allow} loading="lazy" referrerPolicy="strict-origin-when-cross-origin" sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-presentation" allowFullScreen />
-    ) : ctx.mode === 'editor' ? (
-      <div className="a-editor-notice">Add an https:// URL to embed.</div>
-    ) : null;
+    const host = src ? parseHttpsUrl(src)?.hostname : undefined;
+    if (!src) content = editor ? <div className="a-editor-notice">Add an https:// URL to embed.</div> : null;
+    else if (editor) content = <EmbedPlaceholder label="Embedded page" detail={host} />;
+    else {
+      const trusted = isAllowedIframeHost(src);
+      content = (
+        <iframe
+          className="a-embed__frame"
+          title={props.title}
+          src={src}
+          allow={trusted ? props.allow : undefined}
+          loading="lazy"
+          referrerPolicy="strict-origin-when-cross-origin"
+          sandbox={trusted ? IFRAME_SANDBOX_TRUSTED : IFRAME_SANDBOX_UNTRUSTED}
+          allowFullScreen={trusted}
+        />
+      );
+    }
   }
   return <div {...root(attrs, 'a-embed')} style={style}>{content}</div>;
 }
@@ -353,5 +385,10 @@ export const ADVANCED_CSS = /* css */ `
 .atrium-site .a-embed{position:relative;width:100%;overflow:hidden;border-radius:var(--a-radius-sm)}
 .atrium-site .a-embed--html{overflow:visible}
 .atrium-site .a-embed__frame{position:absolute;inset:0;width:100%;height:100%;border:0}
+.atrium-site .a-embed__placeholder{position:absolute;inset:0;display:grid;place-content:center;justify-items:center;gap:.35rem;padding:1rem;text-align:center;border:1px dashed color-mix(in srgb,var(--t-text) 30%,transparent);border-radius:inherit;background:color-mix(in srgb,var(--t-text) 4%,transparent);color:var(--t-muted);font-size:var(--a-text-sm)}
+.atrium-site .a-embed--placeholder{min-height:8rem}
+.atrium-site .a-embed__placeholder-label{font-weight:600;color:var(--t-text)}
+.atrium-site .a-embed__placeholder-host{font-family:ui-monospace,monospace;overflow-wrap:anywhere}
+.atrium-site .a-embed__placeholder-note{font-size:var(--a-text-xs)}
 .atrium-site .a-global{display:contents}
 `;

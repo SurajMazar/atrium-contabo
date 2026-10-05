@@ -3,7 +3,10 @@ import type { JobPayload } from '@atrium/server-kit';
 import type { JobInfo, WorkerContext } from '../context';
 import { appendActionsLog, type ActionLogEntry } from '../lib/actions-log';
 import { errorMessage } from '../lib/errors';
-import { assertPublicUrl, truncate } from '../lib/net';
+import { assertOutboundUrl } from '@atrium/providers';
+import { fetchTenantUrl, readResponseExcerpt } from '../lib/net';
+import { checkAutoresponderQuota, checkEmailQuota, checkSmsQuota, cleanSmsRecipient, memoryQuotaStore, type QuotaStore } from '../lib/quota';
+import { blockedError } from './webhooks';
 import { buildSubmissionScope, defaultSubmissionHtml, renderHtml, renderRecipients, renderText, ruleData, textToHtml, type SubmissionValueRow } from '../lib/templates';
 import { signSubmissionFiles, websiteUrl } from './scope';
 
@@ -33,6 +36,12 @@ export function rulesFromRows(rows: RuleRow[], fallback: unknown): { rules: Form
     else invalid.push({ ruleId: String((raw as { id?: unknown })?.id ?? '?'), error: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') });
   }
   return { rules, invalid };
+}
+
+/** Process-local fallback when no Redis-backed store is wired (unit tests, scripts). */
+let fallbackQuota: QuotaStore | undefined;
+function quotaStore(ctx: WorkerContext): QuotaStore {
+  return ctx.quota ?? (fallbackQuota ??= memoryQuotaStore());
 }
 
 const STATUS_MAP: Record<string, 'NEW' | 'CONTACTED' | 'QUALIFIED' | 'CONVERTED' | 'REJECTED' | 'SPAM' | 'ARCHIVED'> = Object.fromEntries(
@@ -80,6 +89,7 @@ export async function processFormSubmission(ctx: WorkerContext, data: JobPayload
   const settings = (sub.form.settings ?? {}) as { storeSubmissions?: boolean; rules?: unknown };
   const organizationId = sub.website.organizationId;
   const now = () => ctx.now().toISOString();
+  const quota = quotaStore(ctx);
 
   if (sub.status === 'SPAM') {
     await appendActionsLog(ctx.prisma, sub.id, { at: now(), type: 'rules', status: 'skipped', detail: 'Submission flagged as spam — actions not run' });
@@ -130,6 +140,10 @@ export async function processFormSubmission(ctx: WorkerContext, data: JobPayload
           case 'email': {
             const to = renderRecipients(a.to, scope);
             if (!to.length) return { status: 'skipped', detail: 'No valid recipients' };
+            const cc = renderRecipients(a.cc, scope);
+            const bcc = renderRecipients(a.bcc, scope);
+            const q = await checkEmailQuota(quota, { organizationId, recipients: to.length + cc.length + bcc.length, nowMs: ctx.now().getTime() });
+            if (!q.allowed) return { status: 'skipped', target: to.map((t) => t.email).join(', '), detail: q.reason };
             if (a.html === undefined && files.length && !filesSigned) {
               await signSubmissionFiles(ctx, organizationId, files);
               filesSigned = true;
@@ -143,7 +157,7 @@ export async function processFormSubmission(ctx: WorkerContext, data: JobPayload
                 organizationId,
                 websiteId: sub!.website.id,
                 providerId: a.providerId ?? null,
-                message: { to, cc: renderRecipients(a.cc, scope), bcc: renderRecipients(a.bcc, scope), replyTo, subject: renderText(a.subject, scope), text, html, tags: { form: sub!.form.slug, kind: 'form-notification' } },
+                message: { to, cc, bcc, replyTo, subject: renderText(a.subject, scope), text, html, tags: { form: sub!.form.slug, kind: 'form-notification' } },
                 context: { submissionId: sub!.id, ruleId: planned.ruleId, actionType: 'email', kind: 'form-notification', rendered: true },
               },
               { jobId: jobKey },
@@ -153,13 +167,16 @@ export async function processFormSubmission(ctx: WorkerContext, data: JobPayload
           case 'autoresponder': {
             const to = renderRecipients([`{{${a.emailField}}}`], scope);
             if (!to.length) return { status: 'skipped', detail: `Field "${a.emailField}" has no valid email` };
+            const to0 = to.slice(0, 1);
+            const q = await checkAutoresponderQuota(quota, { organizationId, formId: sub!.form.id, email: to0[0]!.email, nowMs: ctx.now().getTime() });
+            if (!q.allowed) return { status: 'skipped', target: to0[0]!.email, detail: q.reason };
             await enqueue(
               'email.send',
               {
                 organizationId,
                 websiteId: sub!.website.id,
                 providerId: a.providerId ?? null,
-                message: { to, subject: renderText(a.subject, scope), html: renderHtml(a.html, scope), tags: { form: sub!.form.slug, kind: 'autoresponder' } },
+                message: { to: to0, subject: renderText(a.subject, scope), html: renderHtml(a.html, scope), tags: { form: sub!.form.slug, kind: 'autoresponder' } },
                 context: { submissionId: sub!.id, ruleId: planned.ruleId, actionType: 'autoresponder', kind: 'autoresponder', rendered: true },
               },
               { jobId: jobKey },
@@ -167,17 +184,31 @@ export async function processFormSubmission(ctx: WorkerContext, data: JobPayload
             return { status: 'queued', target: to[0]!.email };
           }
           case 'sms': {
-            const recipients = [...new Set(a.to.flatMap((t) => renderText(t, scope).split(/[,;\n]/)).map((s) => s.trim()).filter(Boolean))];
-            if (!recipients.length) return { status: 'skipped', detail: 'No recipients' };
+            const rendered = [...new Set(a.to.flatMap((t) => renderText(t, scope).split(/[,;\n]/)).map((s) => s.trim()).filter(Boolean))];
+            if (!rendered.length) return { status: 'skipped', detail: 'No recipients' };
+            // Only phone-number shaped recipients (E.164 / 8–15 digits); at most 10 per action.
+            const recipients = [...new Set(rendered.map(cleanSmsRecipient).filter((r): r is string => !!r))].slice(0, 10);
+            const invalid = rendered.length - rendered.filter((r) => cleanSmsRecipient(r)).length;
+            if (!recipients.length) return { status: 'skipped', detail: 'No valid phone numbers' };
             const body = renderText(a.body, scope).slice(0, 1600);
+            const sent: string[] = [];
+            const limited: string[] = [];
             for (const [i, to] of recipients.entries()) {
+              const q = await checkSmsQuota(quota, { organizationId, phone: to, nowMs: ctx.now().getTime() });
+              if (!q.allowed) {
+                limited.push(`${to}: ${q.reason}`);
+                continue;
+              }
               await enqueue(
                 'sms.send',
                 { organizationId, websiteId: sub!.website.id, providerId: a.providerId ?? null, to, body, context: { submissionId: sub!.id, ruleId: planned.ruleId, actionType: 'sms', rendered: true } },
                 { jobId: `${jobKey}-${i}` },
               );
+              sent.push(to);
             }
-            return { status: 'queued', target: recipients.join(', ') };
+            const notes = [...(invalid ? [`${invalid} invalid number(s) ignored`] : []), ...limited];
+            if (!sent.length) return { status: 'skipped', target: recipients.join(', '), detail: notes.join('; ') || 'Quota exceeded' };
+            return { status: 'queued', target: sent.join(', '), ...(notes.length ? { detail: notes.join('; ') } : {}) };
           }
           case 'webhook': {
             const payload = submittedPayload();
@@ -187,15 +218,20 @@ export async function processFormSubmission(ctx: WorkerContext, data: JobPayload
             }
             if (!a.url) return { status: 'skipped', detail: 'No webhook or URL configured' };
             // Ad-hoc URL (no stored secret): single unsigned POST, result logged on the timeline.
-            const url = await assertPublicUrl(a.url, ctx.settings.allowPrivateNetwork);
-            const res = await ctx.fetch(url, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'User-Agent': 'Atrium-Webhooks/1.0', 'X-Atrium-Event': 'form.submitted' },
-              body: JSON.stringify({ event: 'form.submitted', createdAt: now(), data: payload }),
-              redirect: 'manual',
-              signal: AbortSignal.timeout(10_000),
-            });
-            if (!res.ok) throw new Error(`HTTP ${res.status}: ${truncate(await res.text().catch(() => ''), 200)}`);
+            const url = assertOutboundUrl(a.url, { allowPrivate: ctx.settings.allowPrivateNetwork });
+            let res: Response;
+            try {
+              res = await fetchTenantUrl(ctx, url.href, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'User-Agent': 'Atrium-Webhooks/1.0', 'X-Atrium-Event': 'form.submitted' },
+                body: JSON.stringify({ event: 'form.submitted', createdAt: now(), data: payload }),
+                signal: AbortSignal.timeout(10_000),
+              });
+            } catch (err) {
+              throw blockedError(err) ?? err;
+            }
+            if (!res.ok) throw new Error(`HTTP ${res.status}: ${await readResponseExcerpt(res, 200)}`);
+            await res.body?.cancel().catch(() => undefined);
             return { status: 'done', target: url.host, detail: `HTTP ${res.status}` };
           }
           case 'tag': {

@@ -75,7 +75,8 @@ ENV NODE_ENV=production \
     HOSTNAME=0.0.0.0 \
     ATRIUM_VERSION=${VERSION}
 WORKDIR /app
-COPY --from=builder --chown=node:node /repo ./
+# App code is owned by root and not writable by the runtime `node` user; only the dirs below are.
+COPY --from=builder /repo ./
 WORKDIR /app/apps/renderer
 # ISR/data cache is written here; mount a volume (or configure a shared cache handler) when scaling out.
 RUN mkdir -p .next/cache && chown -R node:node .next/cache

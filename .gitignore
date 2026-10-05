@@ -25,3 +25,6 @@ Procfile.local
 /tools/tutorial/out/
 /tools/tutorial/.cache/
 .next-*
+
+# scratch files
+.tmp/

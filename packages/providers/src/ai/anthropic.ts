@@ -10,7 +10,9 @@ import type {
   BetaToolChoice,
   MessageCreateParamsNonStreaming,
 } from '@anthropic-ai/sdk/resources/beta/messages/messages';
-import { defineDriver, ProviderError, type TestResult } from '../driver';
+import { defineDriver, ProviderError, TENANT_CONTEXT, type DriverContext, type TestResult } from '../driver';
+import { createGuardedSdkFetch } from '../net/guard';
+import { allowsPrivate } from '../net/policy';
 import {
   addUsage,
   appendSystem,
@@ -344,6 +346,7 @@ export class AnthropicProvider implements AIProvider {
     private readonly config: AnthropicConfig,
     private readonly secrets: { apiKey: string },
     client?: AnthropicClientLike,
+    private readonly ctx: DriverContext = TENANT_CONTEXT,
   ) {
     if (client) this.clientPromise = Promise.resolve(client);
   }
@@ -355,6 +358,8 @@ export class AnthropicProvider implements AIProvider {
       const c: AnthropicSdk = new Anthropic({
         apiKey: this.secrets.apiKey,
         baseURL: this.config.baseUrl,
+        // Tenant base URLs: connections pinned to validated public addresses.
+        ...(this.config.baseUrl && !allowsPrivate(this.ctx.network) ? { fetch: createGuardedSdkFetch({ network: this.ctx.network }) } : {}),
         maxRetries: this.config.maxRetries,
         timeout: this.config.timeoutMs,
       });
@@ -514,5 +519,5 @@ export const anthropicDriver = defineDriver({
     { id: 'sonnet', name: 'Claude Sonnet 5.5 (balanced)', config: { defaultModel: 'claude-sonnet-5-5' } },
     { id: 'haiku', name: 'Claude Haiku 4.5 (fast, low cost)', config: { defaultModel: 'claude-haiku-4-5' } },
   ],
-  create: (config, secrets): AIProvider => new AnthropicProvider(config, secrets),
+  create: (config, secrets, ctx): AIProvider => new AnthropicProvider(config, secrets, undefined, ctx),
 });

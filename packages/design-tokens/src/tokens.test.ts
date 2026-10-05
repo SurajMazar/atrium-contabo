@@ -22,6 +22,8 @@ describe('style compiler', () => {
   });
   it('scopes and sanitizes custom css', () => {
     const css = compileNodeCss({ id: 'y', customCss: '& h2{color:red} @import url(x); </style><script>' });
-    expect(css.trim()).toBe('.a-n-y h2{color:red}');
+    expect(css.trim().startsWith('.a-n-y h2{color:red}')).toBe(true);
+    expect(css).not.toContain('@import');
+    expect(css).not.toContain('<');
   });
 });

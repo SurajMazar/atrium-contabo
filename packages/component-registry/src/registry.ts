@@ -1,4 +1,4 @@
-import { createId, type Node, type NodeInput } from '@atrium/schema';
+import { createId, isSafeNodeId, type Node, type NodeInput } from '@atrium/schema';
 import { z } from 'zod';
 import type { ComponentDefinition, ComponentLevel, StyleKey } from './types';
 
@@ -82,7 +82,8 @@ export class ComponentRegistry {
    */
   normalize(input: NodeInput, path = 'root', seen = new Set<string>()): { node: Node; issues: NodeIssue[] } {
     const issues: NodeIssue[] = [];
-    let id = input.id && !seen.has(input.id) ? input.id : createId();
+    // Ids are used in CSS selectors/class names: anything outside [A-Za-z0-9_-]{1,64} is re-assigned.
+    let id = input.id && isSafeNodeId(input.id) && !seen.has(input.id) ? input.id : createId();
     seen.add(id);
     const def = this.defs.get(input.type);
     if (!def) {

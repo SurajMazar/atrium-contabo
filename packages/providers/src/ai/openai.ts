@@ -20,7 +20,9 @@ import type {
   ResponseUsage,
 } from 'openai/resources/responses/responses';
 import type { ImagesResponse } from 'openai/resources/images';
-import { defineDriver, ProviderError, type TestResult } from '../driver';
+import { defineDriver, ProviderError, TENANT_CONTEXT, type DriverContext, type TestResult } from '../driver';
+import { createGuardedSdkFetch } from '../net/guard';
+import { allowsPrivate } from '../net/policy';
 import {
   addUsage,
   defaultModel,
@@ -430,6 +432,8 @@ export interface OpenAIProviderOptions {
   project?: string;
   api?: 'chat' | 'responses';
   imageModel?: string;
+  /** Where the configuration came from (tenant base URLs are guarded). */
+  ctx?: DriverContext;
 }
 
 interface JsonSchemaFormat {
@@ -460,6 +464,8 @@ export class OpenAIProvider implements AIProvider {
       return new OpenAISDK({
         apiKey: this.opts.apiKey,
         ...(this.opts.baseUrl ? { baseURL: this.opts.baseUrl } : {}),
+        // Tenant base URLs (gateways / Azure OpenAI): connections pinned to validated public addresses.
+        ...(this.opts.baseUrl && !allowsPrivate((this.opts.ctx ?? TENANT_CONTEXT).network) ? { fetch: createGuardedSdkFetch({ network: (this.opts.ctx ?? TENANT_CONTEXT).network }) } : {}),
         ...(this.opts.organization ? { organization: this.opts.organization } : {}),
         ...(this.opts.project ? { project: this.opts.project } : {}),
       });
@@ -626,7 +632,7 @@ export const openaiDriver = defineDriver({
     { id: 'openai', name: 'OpenAI (Chat Completions)', config: { api: 'chat' } },
     { id: 'openai-responses', name: 'OpenAI (Responses API)', config: { api: 'responses' } },
   ],
-  create(config, secrets): AIProvider {
-    return new OpenAIProvider({ ...config, apiKey: secrets.apiKey });
+  create(config, secrets, ctx): AIProvider {
+    return new OpenAIProvider({ ...config, apiKey: secrets.apiKey, ctx });
   },
 });

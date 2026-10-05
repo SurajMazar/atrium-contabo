@@ -2,6 +2,7 @@ import { ArgumentsHost, Catch, ExceptionFilter, HttpException, Logger } from '@n
 import { ThrottlerException } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { ZodError } from 'zod';
+import { safeRequestId, stripQuery } from './logging';
 import { ApiError } from './errors';
 
 const STATUS_CODES: Record<number, string> = { 400: 'BAD_REQUEST', 401: 'UNAUTHORIZED', 403: 'FORBIDDEN', 404: 'NOT_FOUND', 409: 'CONFLICT', 413: 'BAD_REQUEST', 422: 'VALIDATION', 429: 'RATE_LIMITED' };
@@ -15,7 +16,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const ctx = host.switchToHttp();
     const res = ctx.getResponse<Response>();
     const req = ctx.getRequest<Request & { id?: string }>();
-    const requestId = (req.headers['x-request-id'] as string) ?? req.id;
+    const requestId = safeRequestId(req.headers['x-request-id']) ?? (req.id as string | undefined);
     if (res.headersSent) return;
 
     if (exception instanceof ApiError) {
@@ -34,10 +35,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
       return res.status(status).json({ error: { code: STATUS_CODES[status] ?? 'ERROR', message: Array.isArray(message) ? message.join(', ') : message }, requestId });
     }
     const prismaCode = (exception as { code?: string })?.code;
-    if (prismaCode === 'P2002') return res.status(409).json({ error: { code: 'CONFLICT', message: 'A record with these values already exists', details: (exception as { meta?: unknown }).meta }, requestId });
+    if (prismaCode === 'P2002') return res.status(409).json({ error: { code: 'CONFLICT', message: 'A record with these values already exists' }, requestId });
     if (prismaCode === 'P2025') return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Resource not found' }, requestId });
 
-    this.logger.error({ err: exception, requestId, path: req.url }, (exception as Error)?.message ?? 'Unhandled error');
+    this.logger.error({ err: exception, requestId, path: stripQuery(req.url) }, (exception as Error)?.message ?? 'Unhandled error');
     return res.status(500).json({ error: { code: 'INTERNAL', message: 'Something went wrong on our side. Please try again.' }, requestId });
   }
 }

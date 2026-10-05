@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { defineDriver, type TestResult } from '../driver';
-import { basicAuth, httpRequest } from '../http';
+import { defineDriver, TENANT_CONTEXT, type DriverContext, type TestResult } from '../driver';
+import { basicAuth, httpRequest, type HttpRequestOptions } from '../http';
 import { assertSendable, attachmentBase64, defaultFromSchema, formatAddress, resolveFrom, runEmailTest, type OutgoingMessage } from './shared';
 import type { EmailMessage, EmailProvider, SendResult } from './types';
 
@@ -9,7 +9,8 @@ const allRecipients = (m: OutgoingMessage) => [...emails(m.to), ...emails(m.cc),
 
 // ───────────────────────────── Resend ─────────────────────────────
 
-export const resendConfigSchema = z.object({ baseUrl: z.string().url().default('https://api.resend.com'), defaultFrom: defaultFromSchema });
+const RESEND_API = 'https://api.resend.com';
+export const resendConfigSchema = z.object({ baseUrl: z.string().url().default(RESEND_API), defaultFrom: defaultFromSchema });
 export const resendSecretsSchema = z.object({ apiKey: z.string().min(1) });
 
 export class ResendEmailProvider implements EmailProvider {
@@ -17,7 +18,13 @@ export class ResendEmailProvider implements EmailProvider {
   constructor(
     private readonly config: z.output<typeof resendConfigSchema>,
     private readonly secrets: z.output<typeof resendSecretsSchema>,
+    private readonly ctx: DriverContext = TENANT_CONTEXT,
   ) {}
+
+  /** Network policy for every request; error bodies are only revealed for the official API. */
+  private net(): Pick<HttpRequestOptions, 'network' | 'revealErrorBody'> {
+    return { network: this.ctx.network, revealErrorBody: this.config.baseUrl.replace(/\/+$/, '') === RESEND_API };
+  }
 
   private headers() {
     return { Authorization: `Bearer ${this.secrets.apiKey}` };
@@ -40,13 +47,13 @@ export class ResendEmailProvider implements EmailProvider {
     if (message.attachments?.length) body.attachments = message.attachments.map((a) => ({ filename: a.filename, content: attachmentBase64(a.content), content_type: a.contentType }));
     // Resend tag names/values: ASCII letters, numbers, underscores, dashes.
     if (message.tags) body.tags = Object.entries(message.tags).map(([name, value]) => ({ name: name.replace(/[^\w-]/g, '_'), value: value.replace(/[^\w-]/g, '_') }));
-    const res = await httpRequest<{ id?: string }>(this.driver, `${this.config.baseUrl}/emails`, { method: 'POST', headers: this.headers(), body });
+    const res = await httpRequest<{ id?: string }>(this.driver, `${this.config.baseUrl}/emails`, { ...this.net(), method: 'POST', headers: this.headers(), body });
     return { id: res.data?.id, accepted: allRecipients(message), rejected: [], provider: this.driver };
   }
 
   test(to?: string): Promise<TestResult> {
     return runEmailTest(this, to, this.config.defaultFrom, async () => {
-      const res = await httpRequest<{ data?: Array<{ name: string; status: string }> }>(this.driver, `${this.config.baseUrl}/domains`, { headers: this.headers() });
+      const res = await httpRequest<{ data?: Array<{ name: string; status: string }> }>(this.driver, `${this.config.baseUrl}/domains`, { ...this.net(), headers: this.headers() });
       const domains = res.data?.data ?? [];
       return `Resend API key valid (${domains.length} domain${domains.length === 1 ? '' : 's'}: ${domains.map((d) => `${d.name} [${d.status}]`).join(', ') || 'none'})`;
     });
@@ -60,7 +67,7 @@ export const resendDriver = defineDriver({
   description: 'Resend transactional email HTTP API.',
   configSchema: resendConfigSchema,
   secretsSchema: resendSecretsSchema,
-  create: (config, secrets): EmailProvider => new ResendEmailProvider(config, secrets),
+  create: (config, secrets, ctx): EmailProvider => new ResendEmailProvider(config, secrets, ctx),
 });
 
 // ───────────────────────────── Mailgun ─────────────────────────────
@@ -77,7 +84,13 @@ export class MailgunEmailProvider implements EmailProvider {
   constructor(
     private readonly config: z.output<typeof mailgunConfigSchema>,
     private readonly secrets: z.output<typeof mailgunSecretsSchema>,
+    private readonly ctx: DriverContext = TENANT_CONTEXT,
   ) {}
+
+  /** Fixed vendor API: error bodies may be shown. */
+  private net(): Pick<HttpRequestOptions, 'network' | 'revealErrorBody'> {
+    return { network: this.ctx.network, revealErrorBody: true };
+  }
 
   private get base() {
     return this.config.region === 'eu' ? 'https://api.eu.mailgun.net' : 'https://api.mailgun.net';
@@ -108,13 +121,13 @@ export class MailgunEmailProvider implements EmailProvider {
       const buf = Buffer.isBuffer(a.content) ? a.content : Buffer.from(a.content, 'utf8');
       form.append('attachment', new Blob([new Uint8Array(buf)], { type: a.contentType ?? 'application/octet-stream' }), a.filename);
     }
-    const res = await httpRequest<{ id?: string; message?: string }>(this.driver, `${this.base}/v3/${encodeURIComponent(this.config.domain)}/messages`, { method: 'POST', headers: this.auth(), body: form });
+    const res = await httpRequest<{ id?: string; message?: string }>(this.driver, `${this.base}/v3/${encodeURIComponent(this.config.domain)}/messages`, { ...this.net(), method: 'POST', headers: this.auth(), body: form });
     return { id: res.data?.id?.replace(/^<|>$/g, ''), accepted: allRecipients(message), rejected: [], provider: this.driver };
   }
 
   test(to?: string): Promise<TestResult> {
     return runEmailTest(this, to, this.config.defaultFrom, async () => {
-      const res = await httpRequest<{ domain?: { name: string; state: string } }>(this.driver, `${this.base}/v3/domains/${encodeURIComponent(this.config.domain)}`, { headers: this.auth() });
+      const res = await httpRequest<{ domain?: { name: string; state: string } }>(this.driver, `${this.base}/v3/domains/${encodeURIComponent(this.config.domain)}`, { ...this.net(), headers: this.auth() });
       return `Mailgun domain ${res.data?.domain?.name ?? this.config.domain} is ${res.data?.domain?.state ?? 'reachable'}`;
     });
   }
@@ -131,7 +144,7 @@ export const mailgunDriver = defineDriver({
     { id: 'us', name: 'Mailgun US', config: { region: 'us' } },
     { id: 'eu', name: 'Mailgun EU', config: { region: 'eu' } },
   ],
-  create: (config, secrets): EmailProvider => new MailgunEmailProvider(config, secrets),
+  create: (config, secrets, ctx): EmailProvider => new MailgunEmailProvider(config, secrets, ctx),
 });
 
 // ───────────────────────────── SendGrid ─────────────────────────────
@@ -149,7 +162,13 @@ export class SendgridEmailProvider implements EmailProvider {
   constructor(
     private readonly config: z.output<typeof sendgridConfigSchema>,
     private readonly secrets: z.output<typeof sendgridSecretsSchema>,
+    private readonly ctx: DriverContext = TENANT_CONTEXT,
   ) {}
+
+  /** Fixed vendor API: error bodies may be shown. */
+  private net(): Pick<HttpRequestOptions, 'network' | 'revealErrorBody'> {
+    return { network: this.ctx.network, revealErrorBody: true };
+  }
 
   private get base() {
     return this.config.region === 'eu' ? 'https://api.eu.sendgrid.com' : 'https://api.sendgrid.com';
@@ -174,13 +193,13 @@ export class SendgridEmailProvider implements EmailProvider {
     }
     if (this.config.ipPoolName) body.ip_pool_name = this.config.ipPoolName;
     if (message.attachments?.length) body.attachments = message.attachments.map((a) => ({ content: attachmentBase64(a.content), filename: a.filename, type: a.contentType, disposition: 'attachment' }));
-    const res = await httpRequest(this.driver, `${this.base}/v3/mail/send`, { method: 'POST', headers: { Authorization: `Bearer ${this.secrets.apiKey}` }, body, responseType: 'text' });
+    const res = await httpRequest(this.driver, `${this.base}/v3/mail/send`, { ...this.net(), method: 'POST', headers: { Authorization: `Bearer ${this.secrets.apiKey}` }, body, responseType: 'text' });
     return { id: res.headers.get('x-message-id') ?? undefined, accepted: allRecipients(message), rejected: [], provider: this.driver };
   }
 
   test(to?: string): Promise<TestResult> {
     return runEmailTest(this, to, this.config.defaultFrom, async () => {
-      const res = await httpRequest<{ scopes?: string[] }>(this.driver, `${this.base}/v3/scopes`, { headers: { Authorization: `Bearer ${this.secrets.apiKey}` } });
+      const res = await httpRequest<{ scopes?: string[] }>(this.driver, `${this.base}/v3/scopes`, { ...this.net(), headers: { Authorization: `Bearer ${this.secrets.apiKey}` } });
       const scopes = res.data?.scopes ?? [];
       if (scopes.length && !scopes.includes('mail.send')) throw new Error('SendGrid API key is valid but lacks the mail.send scope');
       return 'SendGrid API key valid (mail.send permitted)';
@@ -195,7 +214,7 @@ export const sendgridDriver = defineDriver({
   description: 'Twilio SendGrid v3 Mail Send API.',
   configSchema: sendgridConfigSchema,
   secretsSchema: sendgridSecretsSchema,
-  create: (config, secrets): EmailProvider => new SendgridEmailProvider(config, secrets),
+  create: (config, secrets, ctx): EmailProvider => new SendgridEmailProvider(config, secrets, ctx),
 });
 
 // ───────────────────────────── Postmark ─────────────────────────────
@@ -212,7 +231,13 @@ export class PostmarkEmailProvider implements EmailProvider {
   constructor(
     private readonly config: z.output<typeof postmarkConfigSchema>,
     private readonly secrets: z.output<typeof postmarkSecretsSchema>,
+    private readonly ctx: DriverContext = TENANT_CONTEXT,
   ) {}
+
+  /** Fixed vendor API: error bodies may be shown. */
+  private net(): Pick<HttpRequestOptions, 'network' | 'revealErrorBody'> {
+    return { network: this.ctx.network, revealErrorBody: true };
+  }
 
   private headers() {
     return { 'X-Postmark-Server-Token': this.secrets.serverToken, Accept: 'application/json' };
@@ -239,14 +264,14 @@ export class PostmarkEmailProvider implements EmailProvider {
       Tag: tagEntries[0]?.[1],
       Metadata: message.tags,
     };
-    const res = await httpRequest<{ MessageID?: string; ErrorCode?: number; Message?: string; To?: string }>(this.driver, 'https://api.postmarkapp.com/email', { method: 'POST', headers: this.headers(), body });
+    const res = await httpRequest<{ MessageID?: string; ErrorCode?: number; Message?: string; To?: string }>(this.driver, 'https://api.postmarkapp.com/email', { ...this.net(), method: 'POST', headers: this.headers(), body });
     if (res.data?.ErrorCode) return { id: res.data.MessageID, accepted: [], rejected: allRecipients(message), provider: this.driver };
     return { id: res.data?.MessageID, accepted: allRecipients(message), rejected: [], provider: this.driver };
   }
 
   test(to?: string): Promise<TestResult> {
     return runEmailTest(this, to, this.config.defaultFrom, async () => {
-      const res = await httpRequest<{ Name?: string }>(this.driver, 'https://api.postmarkapp.com/server', { headers: this.headers() });
+      const res = await httpRequest<{ Name?: string }>(this.driver, 'https://api.postmarkapp.com/server', { ...this.net(), headers: this.headers() });
       return `Postmark server token valid (${res.data?.Name ?? 'server'})`;
     });
   }
@@ -259,5 +284,5 @@ export const postmarkDriver = defineDriver({
   description: 'Postmark transactional email API.',
   configSchema: postmarkConfigSchema,
   secretsSchema: postmarkSecretsSchema,
-  create: (config, secrets): EmailProvider => new PostmarkEmailProvider(config, secrets),
+  create: (config, secrets, ctx): EmailProvider => new PostmarkEmailProvider(config, secrets, ctx),
 });

@@ -1,6 +1,6 @@
 'use client';
 
-import { evaluateConditionGroup, validateSubmission, type FormDefinition, type FormField } from '@atrium/schema';
+import { evaluateConditionGroup, sanitizeUrl, validateSubmission, type FormDefinition, type FormField } from '@atrium/schema';
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { mountCaptcha, type CaptchaConfig, type CaptchaHandle } from './captcha';
 
@@ -80,7 +80,7 @@ export function FormIsland({ form, formId, apiBaseUrl, mode, locale, captcha, su
     setValues((prev) => {
       const next = { ...prev, [name]: value };
       if (submitted) {
-        const res = validateSubmission(form, next);
+        const res = validateSubmission(form, next, { mode: 'client' });
         setErrors(Object.fromEntries(res.errors.map((e) => [e.field, e.message])));
       }
       return next;
@@ -99,7 +99,7 @@ export function FormIsland({ form, formId, apiBaseUrl, mode, locale, captcha, su
     e.preventDefault();
     if (status.kind === 'submitting') return;
     setSubmitted(true);
-    const res = validateSubmission(form, values);
+    const res = validateSubmission(form, values, { mode: 'client' });
     const errs = Object.fromEntries(res.errors.map((x) => [x.field, x.message]));
     setErrors(errs);
     if (!res.valid) {
@@ -145,7 +145,8 @@ export function FormIsland({ form, formId, apiBaseUrl, mode, locale, captcha, su
       const response = await fetch(`${apiBaseUrl}/public/forms/${encodeURIComponent(formId)}/submit`, init);
       if (response.ok) {
         setStatus({ kind: 'success', message: settings.successMessage });
-        if (settings.redirectUrl) win.location.assign(settings.redirectUrl);
+        const redirectTo = sanitizeUrl(settings.redirectUrl, 'navigation');
+        if (redirectTo) win.location.assign(redirectTo);
         else win.requestAnimationFrame(() => successRef.current?.focus());
         return;
       }

@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post } from '@nestjs/common';
 import { NodeInputSchema, PageDocumentSchema } from '@atrium/schema';
 import { z } from 'zod';
-import { Access, CurrentUser, type AuthUser } from '../../common/decorators';
+import { Access, CurrentAccess, CurrentUser, type AccessContext, type AuthUser } from '../../common/decorators';
 import { PrismaService } from '../../common/prisma.service';
 import { ZodBody } from '../../common/zod.pipe';
 import { PagesService } from './pages.service';
@@ -21,9 +21,9 @@ export class PagesController {
 
   @Access('page.create', 'website', 'websiteId')
   @Post('websites/:websiteId/pages')
-  async create(@Param('websiteId') websiteId: string, @Body(new ZodBody(CreateBody)) body: z.infer<typeof CreateBody>, @CurrentUser() user: AuthUser) {
-    const orgIds = (await this.prisma.client.organizationMember.findMany({ where: { userId: user.id }, select: { organizationId: true } })).map((m) => m.organizationId);
-    return this.pages.create(websiteId, body, user, orgIds);
+  async create(@Param('websiteId') websiteId: string, @Body(new ZodBody(CreateBody)) body: z.infer<typeof CreateBody>, @CurrentUser() user: AuthUser, @CurrentAccess() access: AccessContext) {
+    // Page templates may come from the platform or from the website's own organization only.
+    return this.pages.create(websiteId, body, user, [access.organizationId], access);
   }
 
   @Access('page.read', 'page', 'pageId')
@@ -34,8 +34,8 @@ export class PagesController {
 
   @Access('page.update', 'page', 'pageId')
   @Patch('pages/:pageId')
-  update(@Param('pageId') pageId: string, @Body(new ZodBody(UpdateBody)) body: z.infer<typeof UpdateBody>, @CurrentUser() user: AuthUser) {
-    return this.pages.update(pageId, body, user);
+  update(@Param('pageId') pageId: string, @Body(new ZodBody(UpdateBody)) body: z.infer<typeof UpdateBody>, @CurrentUser() user: AuthUser, @CurrentAccess() access: AccessContext) {
+    return this.pages.update(pageId, body, user, access);
   }
 
   @Access('page.delete', 'page', 'pageId')
@@ -47,15 +47,15 @@ export class PagesController {
 
   @Access('page.create', 'page', 'pageId')
   @Post('pages/:pageId/duplicate')
-  duplicate(@Param('pageId') pageId: string, @Body(new ZodBody(z.object({ title: z.string().max(200).optional(), slug: z.string().max(200).optional() }))) body: { title?: string; slug?: string }, @CurrentUser() user: AuthUser) {
-    return this.pages.duplicate(pageId, body, user);
+  duplicate(@Param('pageId') pageId: string, @Body(new ZodBody(z.object({ title: z.string().max(200).optional(), slug: z.string().max(200).optional() }))) body: { title?: string; slug?: string }, @CurrentUser() user: AuthUser, @CurrentAccess() access: AccessContext) {
+    return this.pages.duplicate(pageId, body, user, access);
   }
 
   @Access('page.update', 'page', 'pageId')
   @HttpCode(204)
   @Post('pages/:pageId/homepage')
-  homepage(@Param('pageId') pageId: string, @CurrentUser() user: AuthUser) {
-    return this.pages.setHomepage(pageId, user);
+  homepage(@Param('pageId') pageId: string, @CurrentUser() user: AuthUser, @CurrentAccess() access: AccessContext) {
+    return this.pages.setHomepage(pageId, user, access);
   }
 
   @Access('page.read', 'page', 'pageId')
@@ -78,8 +78,8 @@ export class PagesController {
 
   @Access('page.update', 'page', 'pageId')
   @Post('pages/:pageId/versions/:versionId/restore')
-  restore(@Param('pageId') pageId: string, @Param('versionId') versionId: string, @CurrentUser() user: AuthUser) {
-    return this.pages.restoreVersion(pageId, versionId, user);
+  restore(@Param('pageId') pageId: string, @Param('versionId') versionId: string, @CurrentUser() user: AuthUser, @CurrentAccess() access: AccessContext) {
+    return this.pages.restoreVersion(pageId, versionId, user, access);
   }
 
   @Access('page.update', 'page', 'pageId')

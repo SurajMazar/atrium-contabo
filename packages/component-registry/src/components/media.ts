@@ -134,7 +134,8 @@ export const backgroundVideo = defineComponent({
   ai: { useWhen: 'Mid-page mood break or secondary hero with ambient footage.', avoidWhen: 'Do not stack with another video section; prefer parallax-band for still imagery.' },
 });
 
-const galleryItem = media.extend({ caption: z.string().max(300).optional() });
+/** `category` groups images (e.g. for a filter bar); renderers emit it as `data-category`. */
+const galleryItem = media.extend({ caption: z.string().max(300).optional(), category: z.string().max(60).optional() });
 
 export const gallery = defineComponent({
   type: 'gallery',
@@ -176,7 +177,7 @@ export const gallery = defineComponent({
   },
   controls: [
     ...introControls,
-    { name: 'images', label: 'Images', type: 'list', group: 'content', itemLabel: 'alt', item: [{ name: 'src', label: 'Image', type: 'media', mediaKind: 'image' }, { name: 'alt', label: 'Alt text', type: 'text' }, { name: 'caption', label: 'Caption', type: 'text' }], itemDefaults: { src: '', alt: '' } },
+    { name: 'images', label: 'Images', type: 'list', group: 'content', itemLabel: 'alt', item: [{ name: 'src', label: 'Image', type: 'media', mediaKind: 'image' }, { name: 'alt', label: 'Alt text', type: 'text' }, { name: 'caption', label: 'Caption', type: 'text' }, { name: 'category', label: 'Category', type: 'text' }], itemDefaults: { src: '', alt: '' } },
     { ...columnsControl(5, 2), showIf: showForVariants(['grid', 'masonry', 'carousel']) },
     { name: 'gap', label: 'Gap', type: 'segmented', group: 'layout', options: opts(['none', 'sm', 'md', 'lg']) },
     { ...aspectControl(), showIf: showForVariants(['grid', 'carousel']) },
@@ -185,7 +186,7 @@ export const gallery = defineComponent({
     { name: 'fromItemField', label: 'Use collection item field', type: 'text', group: 'advanced', help: 'On a collection template page, render images from this item field (e.g. "gallery").' },
     ...sectionControls,
   ],
-  bindable: { listProp: 'images', itemFields: ['src', 'alt', 'caption'] },
+  bindable: { listProp: 'images', itemFields: ['src', 'alt', 'caption', 'category'] },
   animations: { recommended: ['stagger', 'clip-reveal', 'fade-up'], default: 'stagger' },
   ai: { useWhen: 'Showcasing rooms, venues, food or projects with 4+ photos. Editorial suits hospitality; masonry suits portfolios.', avoidWhen: 'Fewer than 3 images — use image or content-split.' },
 });

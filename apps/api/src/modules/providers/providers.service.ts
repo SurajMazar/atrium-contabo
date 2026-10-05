@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { describeDriver, getDriver, listDrivers, type ProviderKind } from '@atrium/providers';
-import { mergeSecrets, serializeProviderRecord } from '@atrium/server-kit';
+import { resolve as resolvePath, sep } from 'node:path';
+import { describeDriver, getDriver, listDrivers, localStorageRoot, publicTestResult, secretReentryDecision, type ProviderKind } from '@atrium/providers';
+import { decryptJson, mergeSecrets, serializeProviderRecord } from '@atrium/server-kit';
 import { AuditService } from '../../common/audit.service';
 import type { AuthUser } from '../../common/decorators';
 import { badRequest, notFound, validation } from '../../common/errors';
@@ -53,20 +54,56 @@ export class ProvidersService {
     return k as ProviderKind;
   }
 
-  /** Validate config + secrets against the driver's schemas. */
-  private validate(kind: ProviderKind, driverId: string, config: Record<string, unknown>, secrets: Record<string, unknown> | null) {
+  /**
+   * UPL-1: organization storage may use the `local` driver only outside production, and never
+   * with a directory of its choosing (the driver jails it to LOCAL_STORAGE_DIR/orgs/<orgId>).
+   * Returns the config to store (without `directory`).
+   */
+  private validateLocalStorage(config: Record<string, unknown>): Record<string, unknown> {
+    if (process.env.NODE_ENV === 'production') throw badRequest('The local filesystem storage driver is not available for organizations. Use S3-compatible or Azure Blob storage.');
+    const { directory, ...rest } = config;
+    if (directory !== undefined && directory !== null && directory !== '') {
+      const root = localStorageRoot(process.env);
+      const dir = resolvePath(String(directory));
+      if (dir !== root && !dir.startsWith(root + sep)) {
+        throw validation('Invalid configuration', [{ path: 'config.directory', message: 'Organization storage cannot choose a directory; files are stored under the platform storage directory' }]);
+      }
+    }
+    return rest;
+  }
+
+  /**
+   * Validate config + secrets against the driver's schemas. Platform providers (super admin) may use
+   * the local disk driver; its directory is always LOCAL_STORAGE_DIR, so a `directory` is never stored.
+   */
+  validate(kind: ProviderKind, driverId: string, config: Record<string, unknown>, secrets: Record<string, unknown> | null, opts: { platform?: boolean } = {}) {
     const driver = getDriver(kind, driverId);
     if (!driver) {
       if (['analytics', 'git', 'other', 'search'].includes(kind)) return { config, secrets };
       throw badRequest(`Unknown ${kind} driver "${driverId}"`);
     }
+    if (kind === 'storage' && driverId === 'local') config = opts.platform ? (({ directory: _d, ...rest }) => rest)(config) : this.validateLocalStorage(config);
     const c = driver.configSchema.safeParse(config);
     if (!c.success) throw validation('Invalid configuration', c.error.issues.map((i) => ({ path: `config.${i.path.join('.')}`, message: i.message })));
     if (secrets) {
       const s = driver.secretsSchema.safeParse(secrets);
       if (!s.success) throw validation('Invalid credentials', s.error.issues.map((i) => ({ path: `secrets.${i.path.join('.')}`, message: i.message })));
     }
-    return { config: c.data as Record<string, unknown>, secrets };
+    const parsed = c.data as Record<string, unknown>;
+    // The schema default re-adds `directory`; it is ignored for organization providers anyway.
+    if (kind === 'storage' && driverId === 'local') delete parsed.directory;
+    return { config: parsed, secrets };
+  }
+
+  /** Keys of the stored (encrypted) secrets; empty when none or undecryptable. */
+  storedSecretKeys(enc: string | null | undefined): string[] {
+    if (!enc) return [];
+    try {
+      const plain = decryptJson<Record<string, unknown>>(enc);
+      return plain && typeof plain === 'object' ? Object.keys(plain).filter((k) => plain[k] !== undefined && plain[k] !== null && plain[k] !== '') : [];
+    } catch {
+      return [];
+    }
   }
 
   async list(table: ProviderTable, orgId: string, q: { websiteId?: string; kind?: string }) {
@@ -104,9 +141,25 @@ export class ProvidersService {
     if (!existing) throw notFound('Provider');
     const kind = this.kindFor(table, body, existing);
     const driver = body.driver ?? (existing.driver as string);
-    const config = { ...(existing.config as object), ...(body.config ?? {}) } as Record<string, unknown>;
-    this.validate(kind, driver, config, null);
-    const secretsEnc = body.secrets ? mergeSecrets(existing.secretsEnc as string | null, body.secrets) : existing.secretsEnc;
+    const mergedConfig = { ...(existing.config as object), ...(body.config ?? {}) } as Record<string, unknown>;
+    const { config } = this.validate(kind, driver, mergedConfig, null);
+    // INT-1: re-entering credentials is mandatory when the destination they are sent to changes.
+    const reentry = secretReentryDecision({
+      existingDriver: existing.driver as string,
+      nextDriver: driver,
+      existingConfig: existing.config as Record<string, unknown>,
+      nextConfig: mergedConfig,
+      existingSecretKeys: this.storedSecretKeys(existing.secretsEnc as string | null),
+      incomingSecrets: body.secrets,
+    });
+    if (!reentry.ok) {
+      throw validation(
+        `Re-enter the credentials: changing ${reentry.changed.join(', ')} requires the secrets to be provided again`,
+        reentry.missing.map((k) => ({ path: `secrets.${k}`, message: 'Re-enter this value (stored secrets are not reused when the endpoint or driver changes)' })),
+      );
+    }
+    // Driver change: the old secrets belong to another service — start from the incoming ones only.
+    const secretsEnc = reentry.replaceSecrets ? mergeSecrets(null, body.secrets ?? {}) : body.secrets ? mergeSecrets(existing.secretsEnc as string | null, body.secrets) : existing.secretsEnc;
     const data: Record<string, unknown> = { name: body.name, driver, config, secretsEnc, isDefault: body.isDefault };
     if (table === 'email') Object.assign(data, { fromEmail: body.fromEmail, fromName: body.fromName });
     if (table === 'integration' && body.enabled !== undefined) data.enabled = body.enabled;
@@ -143,6 +196,7 @@ export class ProvidersService {
     const r = this.resolver.resolver;
     const scope = { organizationId: row.organizationId as string, websiteId: (row.websiteId as string | null) ?? undefined, providerId: id };
     let result: { ok: boolean; message: string; details?: Record<string, unknown> };
+    let localResult = false;
     try {
       if (table === 'email') result = await (await r.email(scope)).test(body.to);
       else if (table === 'sms') result = await (await r.sms(scope)).test(body.to);
@@ -154,11 +208,14 @@ export class ProvidersService {
         else if (kind === 'captcha') {
           const cfg = row.config as { siteKey?: string };
           result = cfg.siteKey && row.secretsEnc ? { ok: true, message: 'Site key and secret are configured. Submit a form to verify end to end.' } : { ok: false, message: 'Site key or secret key is missing' };
+          localResult = true;
         } else result = { ok: true, message: 'Saved' };
       }
     } catch (err) {
       result = { ok: false, message: (err as Error).message };
     }
+    // SSRF-1: never echo remote response bodies / banners in production (status/code only).
+    if (!localResult) result = publicTestResult(result);
     await this.model(table).update({ where: { id }, data: { lastTestedAt: new Date(), lastTestOk: result.ok } });
     return result;
   }

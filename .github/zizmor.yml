@@ -1,0 +1,9 @@
+# zizmor (https://docs.zizmor.sh) configuration — run: `uvx zizmor .github/workflows`
+rules:
+  cache-poisoning:
+    ignore:
+      # ci.yml publishes images on push/tag, but the pnpm-store (setup-node) and turbo caches only feed
+      # the lint/test/e2e jobs. Images are built from source inside the Containerfiles and only reuse the
+      # BuildKit gha cache that the images job itself writes on push events. No pull_request_target
+      # workflow exists that could write a poisoned main-branch cache.
+      - ci.yml

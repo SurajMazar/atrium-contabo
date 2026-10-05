@@ -12,6 +12,8 @@ User=atrium
 Group=atrium
 WorkingDirectory=/opt/atrium/packages/db
 EnvironmentFile=/etc/atrium/atrium.env
+# Owner-role DATABASE_URL for schema changes (the app role in atrium.env is DML-only). Optional.
+EnvironmentFile=-/etc/atrium/migrate.env
 Environment=CHECKPOINT_DISABLE=1 PRISMA_HIDE_UPDATE_MESSAGE=1
 ExecStart=/opt/atrium/packages/db/node_modules/.bin/prisma migrate deploy
 NoNewPrivileges=true

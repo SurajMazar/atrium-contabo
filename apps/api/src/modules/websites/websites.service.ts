@@ -4,7 +4,7 @@ import { slugify, type Node, type SiteSettings, type ThemeTokens, type WebsiteDe
 import { createWebsiteFromDefinition, loadDraft } from '@atrium/site-store';
 import { env, platformUrl } from '../../config/env';
 import { AuditService } from '../../common/audit.service';
-import type { AuthUser } from '../../common/decorators';
+import type { AccessContext, AuthUser } from '../../common/decorators';
 import { badRequest, conflict, notFound, validation } from '../../common/errors';
 import { PrismaService } from '../../common/prisma.service';
 import { OrganizationsService } from '../organizations/organizations.service';
@@ -95,7 +95,7 @@ export class WebsitesService {
     return this.get(w.id, new Set());
   }
 
-  async update(id: string, body: { name?: string; slug?: string; deploymentMode?: 'PLATFORM' | 'INDEPENDENT'; deploymentIntegrationId?: string | null }, user: AuthUser) {
+  async update(id: string, body: { name?: string; slug?: string; deploymentMode?: 'PLATFORM' | 'INDEPENDENT'; deploymentIntegrationId?: string | null }, user: AuthUser, access: AccessContext) {
     const site = await this.db.website.findUniqueOrThrow({ where: { id } });
     const data: Record<string, unknown> = {};
     if (body.name) data.name = body.name;
@@ -115,7 +115,7 @@ export class WebsitesService {
       data.deploymentIntegrationId = body.deploymentIntegrationId;
     }
     await this.db.website.update({ where: { id }, data: { ...data, updatedById: user.id } });
-    if (body.name) await this.drafts.transform(id, (d) => void (d.settings.name = body.name!), { userId: user.id });
+    if (body.name) await this.drafts.transform(id, (d) => void (d.settings.name = body.name!), { userId: user.id }, { access });
     await this.audit.log({ organizationId: site.organizationId, websiteId: id, actor: user, action: 'website.updated', resourceType: 'website', resourceId: id, summary: `${user.name} updated website settings`, metadata: { fields: Object.keys(data) } });
     return this.get(id, new Set());
   }
@@ -126,24 +126,19 @@ export class WebsitesService {
     await this.audit.log({ organizationId: site.organizationId, websiteId: id, actor: user, action: 'website.deleted', resourceType: 'website', resourceId: id, summary: `${user.name} deleted website ${site.name}` });
   }
 
-  async saveSite(id: string, body: { settings?: SiteSettings; navigation?: WebsiteDefinition['navigation']; header?: Node; footer?: Node; customCss?: string; revision: number }, user: AuthUser, canCode: boolean) {
+  async saveSite(id: string, body: { settings?: SiteSettings; navigation?: WebsiteDefinition['navigation']; header?: Node; footer?: Node; customCss?: string; revision: number }, user: AuthUser, access: AccessContext) {
     await this.assertSiteRevision(id, body.revision);
     const res = await this.drafts.transform(
       id,
-      (d, before) => {
-        if (body.settings) {
-          if (!canCode && JSON.stringify(body.settings.scripts ?? []) !== JSON.stringify(before.settings.scripts ?? [])) throw validation('You need the "code.manage" permission to change scripts');
-          d.settings = body.settings;
-        }
+      (d) => {
+        if (body.settings) d.settings = body.settings;
         if (body.navigation) d.navigation = body.navigation;
         if (body.header) d.header = this.drafts.registry.normalize(body.header).node;
         if (body.footer) d.footer = this.drafts.registry.normalize(body.footer).node;
-        if (body.customCss !== undefined) {
-          if (!canCode && body.customCss !== (before.customCss ?? '')) throw validation('You need the "code.manage" permission to change custom CSS');
-          d.customCss = body.customCss;
-        }
+        if (body.customCss !== undefined) d.customCss = body.customCss;
       },
       { userId: user.id },
+      { access },
     );
     return { revision: res.revisions.site };
   }
@@ -153,10 +148,10 @@ export class WebsitesService {
     DraftService.assertRevision(s.revision, revision, 'Site settings');
   }
 
-  async saveTheme(id: string, body: { tokens: ThemeTokens; presetKey?: string; revision: number }, user: AuthUser) {
+  async saveTheme(id: string, body: { tokens: ThemeTokens; presetKey?: string; revision: number }, user: AuthUser, access: AccessContext) {
     const t = await this.db.theme.findUniqueOrThrow({ where: { websiteId: id }, select: { revision: true } });
     DraftService.assertRevision(t.revision, body.revision, 'Theme');
-    const res = await this.drafts.transform(id, (d) => void (d.theme = body.tokens), { userId: user.id });
+    const res = await this.drafts.transform(id, (d) => void (d.theme = body.tokens), { userId: user.id }, { access });
     if (body.presetKey !== undefined) await this.db.theme.update({ where: { websiteId: id }, data: { presetKey: body.presetKey } });
     return { revision: res.revisions.theme };
   }

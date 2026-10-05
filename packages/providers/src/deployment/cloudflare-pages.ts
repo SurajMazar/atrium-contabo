@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { defineDriver, ProviderError, type TestResult } from '../driver';
+import { defineDriver, ProviderError, type TestResult, TENANT_CONTEXT, type DriverContext } from '../driver';
 import { httpRequest, type HttpRequestOptions } from '../http';
 import { contentTypeFor, digestFiles, fileExtension, mapWithConcurrency, sha256Hex, toIso } from './digest';
 import { isApexDomain, normalizeDomain, subdomainLabel, type DnsRecord } from './dns';
@@ -131,6 +131,7 @@ export class CloudflarePagesDeploymentProvider implements DeploymentProvider {
   constructor(
     private readonly config: CloudflarePagesConfig,
     private readonly secrets: CloudflarePagesSecrets,
+    private readonly ctx: DriverContext = TENANT_CONTEXT,
   ) {}
 
   /**
@@ -142,6 +143,9 @@ export class CloudflarePagesDeploymentProvider implements DeploymentProvider {
     const { token, ...rest } = opts;
     const url = /^https?:\/\//.test(path) ? path : `${API}${path}`;
     const res = await httpRequest<CfEnvelope<T>>(PROVIDER, url, {
+      network: this.ctx.network,
+      revealErrorBody: true,
+      maxResponseBytes: 16 * 1024 * 1024,
       ...rest,
       headers: { Authorization: `Bearer ${token ?? this.secrets.apiToken}`, ...rest.headers },
     });
@@ -423,5 +427,5 @@ export const cloudflarePagesDriver = defineDriver({
   description: 'Deploy static exports to Cloudflare Pages via Direct Upload; custom domains via Pages domains.',
   configSchema: cloudflarePagesConfigSchema,
   secretsSchema: cloudflarePagesSecretsSchema,
-  create: (config, secrets): DeploymentProvider => new CloudflarePagesDeploymentProvider(config, secrets),
+  create: (config, secrets, ctx): DeploymentProvider => new CloudflarePagesDeploymentProvider(config, secrets, ctx),
 });

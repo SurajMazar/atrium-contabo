@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { OptionalSafeMediaUrlSchema, OptionalSafeUrlSchema, safeUrlSchema } from './safe-url';
 
 export const RobotsSchema = z.object({ index: z.boolean().default(true), follow: z.boolean().default(true) });
 
@@ -18,10 +19,10 @@ export const PageSeoSchema = z.object({
   title: z.string().max(200).optional(),
   description: z.string().max(400).optional(),
   keywords: z.array(z.string()).optional(),
-  canonical: z.string().optional(),
+  canonical: OptionalSafeUrlSchema,
   ogTitle: z.string().optional(),
   ogDescription: z.string().optional(),
-  ogImage: z.string().optional(),
+  ogImage: OptionalSafeMediaUrlSchema,
   twitterCard: z.enum(['summary', 'summary_large_image']).optional(),
   robots: RobotsSchema.optional(),
   structuredData: z.array(StructuredDataSchema).optional(),
@@ -33,9 +34,9 @@ export const SiteSeoSchema = z.object({
   siteTitle: z.string(),
   titleTemplate: z.string().default('%s — {site}'),
   description: z.string().default(''),
-  ogImage: z.string().optional(),
+  ogImage: OptionalSafeMediaUrlSchema,
   robots: RobotsSchema.default({ index: true, follow: true }),
-  canonicalBase: z.string().optional(),
+  canonicalBase: safeUrlSchema('navigation').optional(),
   twitterHandle: z.string().optional(),
   structuredData: z.array(StructuredDataSchema).default([]),
   verification: z.object({ google: z.string().optional(), bing: z.string().optional() }).default({}),

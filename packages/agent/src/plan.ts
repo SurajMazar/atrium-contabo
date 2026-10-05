@@ -1,20 +1,28 @@
 import { THEME_PRESETS } from '@atrium/design-tokens';
 import { z } from 'zod';
 
+/** Bounds for owner-supplied brief fields (prompt size / cost control). */
+export const BRIEF_LIMITS = { description: 4000, name: 200, short: 200, url: 2048, items: 20 } as const;
+const short = z.string().max(BRIEF_LIMITS.short);
+const url = z.string().max(BRIEF_LIMITS.url);
+
 export const SiteBriefSchema = z.object({
-  businessName: z.string().min(1),
-  businessType: z.string().default('business'),
-  description: z.string().default(''),
-  location: z.string().optional(),
-  services: z.array(z.string()).optional(),
-  audience: z.string().optional(),
-  style: z.string().optional(),
-  pages: z.array(z.string()).optional(),
-  contact: z.object({ phone: z.string().optional(), email: z.string().optional(), address: z.string().optional(), whatsapp: z.string().optional() }).optional(),
-  social: z.record(z.string(), z.string()).optional(),
-  logoUrl: z.string().optional(),
-  imageUrls: z.array(z.string()).optional(),
-  locale: z.string().optional(),
+  businessName: z.string().trim().min(1).max(BRIEF_LIMITS.name),
+  businessType: z.string().max(BRIEF_LIMITS.name).default('business'),
+  description: z.string().max(BRIEF_LIMITS.description).default(''),
+  location: short.optional(),
+  services: z.array(short).max(BRIEF_LIMITS.items).optional(),
+  audience: z.string().max(1000).optional(),
+  style: z.string().max(1000).optional(),
+  pages: z.array(short).max(BRIEF_LIMITS.items).optional(),
+  contact: z.object({ phone: short.optional(), email: short.optional(), address: z.string().max(500).optional(), whatsapp: short.optional() }).optional(),
+  social: z
+    .record(z.string().max(40), url)
+    .refine((o) => Object.keys(o).length <= BRIEF_LIMITS.items, { message: `At most ${BRIEF_LIMITS.items} social links` })
+    .optional(),
+  logoUrl: url.optional(),
+  imageUrls: z.array(url).max(BRIEF_LIMITS.items).optional(),
+  locale: z.string().max(20).optional(),
 });
 export type SiteBrief = z.input<typeof SiteBriefSchema>;
 

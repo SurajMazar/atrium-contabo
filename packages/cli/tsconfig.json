@@ -1,7 +1,7 @@
 {
   "extends": "@atrium/typescript-config/base.json",
   "compilerOptions": {
-    "rootDir": ".",
+    // no rootDir: src/lib/secrets.ts imports the shared, dependency-free policy from ../server-kit/src
     "outDir": "dist",
     "types": ["node"],
     "declaration": false,

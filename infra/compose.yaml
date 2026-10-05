@@ -4,16 +4,19 @@
 #
 # Host ports default to the 5xxxx range so they never collide with other local
 # stacks (e.g. an existing postgres on 5432 / mailpit on 1025). Override via .env.
+# Every port is published on 127.0.0.1 only: the dev credentials (atrium/atrium, no Redis password,
+# atrium/atrium-secret S3 keys) must never be reachable from the LAN. Images are pinned by digest
+# (Renovate keeps them current).
 name: atrium
 
 services:
   postgres:
-    image: docker.io/library/postgres:17-alpine
+    image: docker.io/library/postgres:17.11-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-atrium}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-atrium}
       POSTGRES_DB: ${POSTGRES_DB:-atrium}
-    ports: ["${ATRIUM_PG_PORT:-55432}:5432"]
+    ports: ["127.0.0.1:${ATRIUM_PG_PORT:-55432}:5432"]
     volumes: [atrium-pg:/var/lib/postgresql/data]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-atrium} -d ${POSTGRES_DB:-atrium}"]
@@ -23,9 +26,9 @@ services:
     restart: unless-stopped
 
   redis:
-    image: docker.io/library/redis:7-alpine
+    image: docker.io/library/redis:7.4.11-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
     command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
-    ports: ["${ATRIUM_REDIS_PORT:-56379}:6379"]
+    ports: ["127.0.0.1:${ATRIUM_REDIS_PORT:-56379}:6379"]
     volumes: [atrium-redis:/data]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -36,9 +39,9 @@ services:
 
   # S3-compatible object storage (SeaweedFS). Swap for AWS S3, R2, Azure Blob… in production.
   s3:
-    image: docker.io/chrislusf/seaweedfs:latest
+    image: docker.io/chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
     command: ["server", "-dir=/data", "-ip.bind=0.0.0.0", "-master.volumeSizeLimitMB=512", "-volume.max=0", "-s3", "-s3.port=8333", "-s3.config=/etc/seaweedfs/s3.json"]
-    ports: ["${ATRIUM_S3_PORT:-59000}:8333"]
+    ports: ["127.0.0.1:${ATRIUM_S3_PORT:-59000}:8333"]
     volumes:
       - atrium-s3:/data
       - ./seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro,Z
@@ -50,7 +53,7 @@ services:
     restart: unless-stopped
 
   s3-init:
-    image: docker.io/chrislusf/seaweedfs:latest
+    image: docker.io/chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
     depends_on:
       s3: { condition: service_healthy }
     entrypoint: ["/bin/sh", "-c"]
@@ -58,10 +61,10 @@ services:
     restart: "no"
 
   mailpit:
-    image: docker.io/axllent/mailpit:latest
+    image: docker.io/axllent/mailpit:v1.31.4@sha256:b68349e3a014b90c5610bfb26b2ae36f3892d7b8cf25ee140c6c71c98d2fcf48
     ports:
-      - "${ATRIUM_SMTP_PORT:-51025}:1025"
-      - "${ATRIUM_MAILPIT_PORT:-58025}:8025"
+      - "127.0.0.1:${ATRIUM_SMTP_PORT:-51025}:1025"
+      - "127.0.0.1:${ATRIUM_MAILPIT_PORT:-58025}:8025"
     restart: unless-stopped
 
   # ── Application containers (profile: app) ──────────────────────────────
@@ -75,7 +78,7 @@ services:
       S3_ENDPOINT: http://s3:8333
       SMTP_HOST: mailpit
       SMTP_PORT: "1025"
-    ports: ["${API_PORT:-4000}:4000"]
+    ports: ["127.0.0.1:${API_PORT:-4000}:4000"]
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -100,7 +103,7 @@ services:
     env_file: [../.env]
     environment:
       ATRIUM_API_INTERNAL_URL: http://api:4000
-    ports: ["${RENDERER_PORT:-3001}:3001"]
+    ports: ["127.0.0.1:${RENDERER_PORT:-3001}:3001"]
     depends_on: [api]
 
   admin:
@@ -109,7 +112,7 @@ services:
     env_file: [../.env]
     environment:
       ATRIUM_API_INTERNAL_URL: http://api:4000
-    ports: ["${ADMIN_PORT:-3000}:3000"]
+    ports: ["127.0.0.1:${ADMIN_PORT:-3000}:3000"]
     depends_on: [api]
 
 volumes:

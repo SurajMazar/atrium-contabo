@@ -1,0 +1,120 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Atrium dependency updates. Policy: docs/security/DEPENDENCY_POLICY.md",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    "group:monorepos",
+    "helpers:pinGitHubActionDigests",
+    "docker:pinDigests"
+  ],
+  "timezone": "UTC",
+  "schedule": ["before 6am on monday"],
+  "labels": ["dependencies"],
+  "rangeStrategy": "bump",
+  "postUpdateOptions": ["pnpmDedupe"],
+  "osvVulnerabilityAlerts": true,
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": ["security"],
+    "schedule": ["at any time"],
+    "minimumReleaseAge": null
+  },
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on monday"]
+  },
+  "kubernetes": {
+    "managerFilePatterns": ["/^infra/k8s/.+\\.ya?ml$/"]
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Podman Quadlet units (infra/quadlet/*.container): Image=<name>:<tag>[@sha256:…]",
+      "managerFilePatterns": ["/^infra/quadlet/.+\\.container$/"],
+      "matchStrings": [
+        "\\bImage=(?<depName>[^:@\\s]+):(?<currentValue>[^@\\s]+)(@(?<currentDigest>sha256:[a-f0-9]+))?"
+      ],
+      "autoReplaceStringTemplate": "Image={{{depName}}}:{{{newValue}}}{{#if newDigest}}@{{{newDigest}}}{{/if}}",
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Vercel CLI pinned in the deploy workflow",
+      "managerFilePatterns": ["/^\\.github/workflows/deploy-vercel\\.yml$/"],
+      "matchStrings": ["VERCEL_CLI_VERSION: (?<currentValue>\\d+\\.\\d+\\.\\d+)"],
+      "depNameTemplate": "vercel",
+      "datasourceTemplate": "npm"
+    },
+    {
+      "customType": "regex",
+      "description": "Trivy binary version passed to aquasecurity/trivy-action",
+      "managerFilePatterns": ["/^\\.github/workflows/.+\\.ya?ml$/"],
+      "matchStrings": ["version: (?<currentValue>v\\d+\\.\\d+\\.\\d+) # Trivy binary version"],
+      "depNameTemplate": "aquasecurity/trivy",
+      "datasourceTemplate": "github-releases"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Majors need explicit approval on the Dependency Dashboard",
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "Let new npm releases age before adopting them (security fixes bypass this via vulnerabilityAlerts)",
+      "matchDatasources": ["npm"],
+      "minimumReleaseAge": "3 days"
+    },
+    {
+      "description": "Pin GitHub Actions and container images by digest",
+      "matchManagers": [
+        "github-actions",
+        "dockerfile",
+        "docker-compose",
+        "kubernetes",
+        "kustomize",
+        "custom.regex"
+      ],
+      "matchDatasources": ["docker", "github-tags"],
+      "pinDigests": true
+    },
+    {
+      "description": "Placeholder image names (ghcr.io/your-org/*) are rewritten at deploy time — not real packages",
+      "matchPackageNames": ["ghcr.io/your-org/**"],
+      "enabled": false
+    },
+    {
+      "groupName": "NestJS",
+      "matchPackageNames": ["@nestjs/**"]
+    },
+    {
+      "groupName": "Prisma",
+      "matchPackageNames": ["prisma", "@prisma/**"]
+    },
+    {
+      "groupName": "Next.js",
+      "matchPackageNames": ["next", "eslint-config-next", "@next/**"]
+    },
+    {
+      "groupName": "React",
+      "matchPackageNames": ["react", "react-dom", "@types/react", "@types/react-dom"]
+    },
+    {
+      "groupName": "Radix UI",
+      "matchPackageNames": ["@radix-ui/**"]
+    },
+    {
+      "groupName": "Vitest",
+      "matchPackageNames": ["vitest", "@vitest/**"]
+    },
+    {
+      "groupName": "Turborepo",
+      "matchPackageNames": ["turbo"]
+    },
+    {
+      "groupName": "typescript-eslint",
+      "matchPackageNames": ["typescript-eslint", "@typescript-eslint/**"]
+    }
+  ]
+}

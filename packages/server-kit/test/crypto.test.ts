@@ -6,6 +6,8 @@ import {
   decryptJson,
   decryptSecret,
   deriveSecret,
+  deriveSecretCandidates,
+  derivationKeyId,
   encryptJson,
   encryptSecret,
   hashToken,
@@ -97,6 +99,19 @@ describe('secret encryption', () => {
   it('derives stable purpose-specific secrets', () => {
     expect(deriveSecret('x')).toBe(deriveSecret('x'));
     expect(deriveSecret('x')).not.toBe(deriveSecret('y'));
+  });
+
+  it('derived secrets survive rotating the active encryption key', () => {
+    const before = deriveSecret('local-storage-urls', { ENCRYPTION_KEY: k1 });
+    // rotation: new key added and made active, old (default) key kept
+    const rotated = { ENCRYPTION_KEY: k1, ENCRYPTION_KEYS: `k2:${k2}`, ENCRYPTION_KEY_ID: 'k2' };
+    expect(deriveSecret('local-storage-urls', rotated)).toBe(before);
+    expect(derivationKeyId(rotated)).toBe('default');
+    // explicit derivation key id; candidates include every key (stable one first)
+    const explicit = { ...rotated, ENCRYPTION_DERIVE_KEY_ID: 'k2' };
+    expect(deriveSecret('local-storage-urls', explicit)).not.toBe(before);
+    expect(deriveSecretCandidates('local-storage-urls', explicit)).toEqual([deriveSecret('local-storage-urls', explicit), before]);
+    expect(() => deriveSecret('x', { ...rotated, ENCRYPTION_DERIVE_KEY_ID: 'nope' })).toThrow(/not present/);
   });
 });
 

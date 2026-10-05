@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { OptionalSafeMediaUrlSchema } from './safe-url';
 import { LinkSchema, type LinkValue } from './link';
 
 export interface NavItem {
@@ -20,7 +21,7 @@ export const NavItemSchema: z.ZodType<NavItem> = z.object({
   link: LinkSchema.optional(),
   description: z.string().max(200).optional(),
   icon: z.string().optional(),
-  image: z.string().optional(),
+  image: OptionalSafeMediaUrlSchema,
   mega: z.boolean().optional(),
   highlight: z.boolean().optional(),
   get children() {

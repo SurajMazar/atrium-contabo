@@ -1,5 +1,6 @@
 'use client';
 
+import { safeHref, sanitizeUrl } from '@atrium/schema';
 import { useState } from 'react';
 
 export interface MapFacadeProps {
@@ -21,7 +22,7 @@ export function MapFacade({ embedUrl, title, height = 'md', rounded = 'sm', faca
   return (
     <div className={`a-map a-map--${height} a-r-${rounded}`}>
       {loaded ? (
-        <iframe className="a-map__frame" src={embedUrl} title={title} loading="lazy" referrerPolicy="no-referrer-when-downgrade" allowFullScreen />
+        <iframe className="a-map__frame" src={sanitizeUrl(embedUrl, 'https')} title={title} loading="lazy" referrerPolicy="no-referrer-when-downgrade" allowFullScreen />
       ) : (
         <div className="a-map__facade">
           {facadeImage?.src ? <img src={facadeImage.src} alt={facadeImage.alt ?? ''} className="a-map__img" loading="lazy" decoding="async" /> : <div className="a-map__pattern" aria-hidden="true" />}
@@ -36,7 +37,7 @@ export function MapFacade({ embedUrl, title, height = 'md', rounded = 'sm', faca
                 Load map
               </button>
               {openUrl ? (
-                <a className="a-btn a-btn--link a-btn--sm" href={openUrl} target="_blank" rel="noopener noreferrer">
+                <a className="a-btn a-btn--link a-btn--sm" href={safeHref(openUrl)} target="_blank" rel="noopener noreferrer">
                   Open in Maps
                 </a>
               ) : null}

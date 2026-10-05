@@ -1,0 +1,5 @@
+# Data network: postgres, redis, s3 + api/worker/migrate. Internal — no egress, and the edge-only
+# containers (caddy, admin, renderer) are not attached, so they cannot reach the databases.
+[Network]
+NetworkName=atrium-data
+Internal=true

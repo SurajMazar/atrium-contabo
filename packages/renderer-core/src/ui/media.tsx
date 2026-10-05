@@ -1,4 +1,4 @@
-import type { MediaRef } from '@atrium/schema';
+import { sanitizeUrl, type MediaRef } from '@atrium/schema';
 import type { CSSProperties, ReactNode } from 'react';
 import type { RenderContext } from '../types';
 import { aspectStyle, cx } from './core';
@@ -6,8 +6,17 @@ import { aspectStyle, cx } from './core';
 /** Accept MediaRef objects or bare URL strings (e.g. from collection data). */
 export function toMedia(v: unknown): MediaRef | undefined {
   if (!v) return undefined;
-  if (typeof v === 'string') return v ? { src: v } : undefined;
-  if (typeof v === 'object' && typeof (v as MediaRef).src === 'string' && (v as MediaRef).src) return v as MediaRef;
+  // Media URLs are re-checked at render time (CMS/template values are interpolated after validation).
+  if (typeof v === 'string') {
+    const src = sanitizeUrl(v, 'media');
+    return src ? { src } : undefined;
+  }
+  if (typeof v === 'object' && typeof (v as MediaRef).src === 'string' && (v as MediaRef).src) {
+    const m = v as MediaRef;
+    const src = sanitizeUrl(m.src, 'media');
+    if (!src) return undefined;
+    return src === m.src ? m : { ...m, src };
+  }
   return undefined;
 }
 
@@ -37,7 +46,8 @@ export function AImage({ ctx, media, sizes = '100vw', priority, className, alt, 
   const width = m.width ?? info?.width;
   const height = m.height ?? info?.height;
   const srcSet = ctx.image.srcSet(m.src, m.mediaId);
-  const blur = m.blurDataUrl ?? info?.blurDataUrl;
+  const blurRaw = sanitizeUrl(m.blurDataUrl ?? info?.blurDataUrl, 'media');
+  const blur = blurRaw ? blurRaw.replace(/["\\\n\r]/g, (c) => encodeURIComponent(c)) : undefined;
   const fp = m.focalPoint;
   const imgStyle: CSSProperties = {
     ...(fp ? { objectPosition: `${Math.round(fp.x * 100)}% ${Math.round(fp.y * 100)}%` } : {}),

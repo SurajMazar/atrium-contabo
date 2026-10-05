@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { defineDriver, ProviderError, type TestResult } from '../driver';
+import { defineDriver, ProviderError, type TestResult, TENANT_CONTEXT, type DriverContext } from '../driver';
 import { httpRequest, type HttpRequestOptions, type HttpResponse } from '../http';
 import { digestFiles, encodePathSegments, mapWithConcurrency, toIso, uniqueByDigest } from './digest';
 import { isApexDomain, normalizeDomain, subdomainLabel, type DnsRecord } from './dns';
@@ -106,10 +106,15 @@ export class NetlifyDeploymentProvider implements DeploymentProvider {
   constructor(
     private readonly config: NetlifyConfig,
     private readonly secrets: NetlifySecrets,
+    private readonly ctx: DriverContext = TENANT_CONTEXT,
   ) {}
 
   private request<T>(path: string, opts: HttpRequestOptions = {}): Promise<HttpResponse<T>> {
     return httpRequest<T>(PROVIDER, `${API}${path}`, {
+      // Fixed vendor API: error bodies may be shown; build logs can be large.
+      network: this.ctx.network,
+      revealErrorBody: true,
+      maxResponseBytes: 16 * 1024 * 1024,
       ...opts,
       headers: { Authorization: `Bearer ${this.secrets.token}`, ...opts.headers },
     });
@@ -329,5 +334,5 @@ export const netlifyDriver = defineDriver({
   description: 'Deploy static exports to Netlify with file-digest uploads; custom domains via site settings.',
   configSchema: netlifyConfigSchema,
   secretsSchema: netlifySecretsSchema,
-  create: (config, secrets): DeploymentProvider => new NetlifyDeploymentProvider(config, secrets),
+  create: (config, secrets, ctx): DeploymentProvider => new NetlifyDeploymentProvider(config, secrets, ctx),
 });

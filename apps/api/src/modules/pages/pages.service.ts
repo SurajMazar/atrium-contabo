@@ -1,9 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { analyzePageSeo, cloneWithNewIds, normalizePage } from '@atrium/builder-core';
+import { analyzePageSeo, cloneWithNewIds, normalizePage, pageChangeRequirements } from '@atrium/builder-core';
 import { PageDocumentSchema, slugify, type NodeInput, type PageDocument, type PageInput } from '@atrium/schema';
 import { pageFromRow, pageToRow } from '@atrium/site-store';
 import { AuditService } from '../../common/audit.service';
-import type { AuthUser } from '../../common/decorators';
+import { assertRequirements } from '../../common/access.service';
+import type { AccessContext, AuthUser } from '../../common/decorators';
 import { badRequest, conflict, notFound, validation } from '../../common/errors';
 import { PrismaService } from '../../common/prisma.service';
 import { sanitizeNodes } from '../../common/sanitize';
@@ -37,7 +38,7 @@ export class PagesService {
     return { ...this.summary(row), document: pageFromRow(row) };
   }
 
-  async create(websiteId: string, body: { title: string; slug: string; kind?: 'page' | 'collection-template' | 'not-found'; templateId?: string; sections?: NodeInput[]; collection?: string }, user: AuthUser, orgIds: string[]) {
+  async create(websiteId: string, body: { title: string; slug: string; kind?: 'page' | 'collection-template' | 'not-found'; templateId?: string; sections?: NodeInput[]; collection?: string }, user: AuthUser, orgIds: string[], access: AccessContext) {
     let sections: NodeInput[] = body.sections ?? [];
     let seo: PageInput['seo'];
     if (body.templateId) {
@@ -59,6 +60,7 @@ export class PagesService {
         created = value.id;
       },
       { userId: user.id },
+      { access },
     );
     const site = await this.db.website.findUniqueOrThrow({ where: { id: websiteId }, select: { organizationId: true } });
     await this.audit.log({ organizationId: site.organizationId, websiteId, actor: user, action: 'page.created', resourceType: 'page', resourceId: created, summary: `${user.name} created page ${body.title}` });
@@ -70,7 +72,7 @@ export class PagesService {
    * Autosave. `revision` must match the stored revision (optimistic locking);
    * meta columns are kept in sync with the document.
    */
-  async update(pageId: string, body: { document?: PageDocument; title?: string; slug?: string; status?: PageDocument['status']; publishAt?: string | null; revision: number }, user: AuthUser) {
+  async update(pageId: string, body: { document?: PageDocument; title?: string; slug?: string; status?: PageDocument['status']; publishAt?: string | null; revision: number }, user: AuthUser, access: AccessContext) {
     const row = await this.db.page.findUniqueOrThrow({ where: { id: pageId } });
     if (row.revision !== body.revision) throw conflict('This page was changed by someone else', { current: row.revision, updatedAt: row.updatedAt.toISOString() });
     if (row.lockedById && row.lockedById !== user.id && row.lockedUntil && row.lockedUntil > new Date()) {
@@ -90,6 +92,8 @@ export class PagesService {
     const parsed = PageDocumentSchema.safeParse(next);
     if (!parsed.success) throw validation('Invalid page document', parsed.error.issues.slice(0, 20).map((i) => ({ path: i.path.join('.'), message: i.message })));
     sanitizeNodes(parsed.data.sections);
+    // Autosave writes the page row directly, so authorize the diff here (scripts, embeds, scheduling).
+    assertRequirements(access, pageChangeRequirements(current, parsed.data));
     const issues = this.drafts.registry.validate(parsed.data.sections).filter((i) => i.severity === 'error');
     if (issues.length) throw validation('Page contains invalid components', issues.slice(0, 20));
     if (next.slug !== row.slug && (await this.db.page.findFirst({ where: { websiteId: row.websiteId, slug: next.slug, id: { not: pageId } } }))) throw conflict(`A page already exists at /${next.slug}`);
@@ -116,7 +120,7 @@ export class PagesService {
     await this.audit.log({ organizationId: row.website.organizationId, websiteId: row.websiteId, actor: user, action: 'page.deleted', resourceType: 'page', resourceId: pageId, summary: `${user.name} deleted page ${row.title}` });
   }
 
-  async duplicate(pageId: string, body: { title?: string; slug?: string }, user: AuthUser) {
+  async duplicate(pageId: string, body: { title?: string; slug?: string }, user: AuthUser, access: AccessContext) {
     const row = await this.db.page.findUniqueOrThrow({ where: { id: pageId } });
     let created = '';
     await this.drafts.transform(
@@ -133,11 +137,12 @@ export class PagesService {
         created = value.id;
       },
       { userId: user.id },
+      { access },
     );
     return this.get(created);
   }
 
-  async setHomepage(pageId: string, user: AuthUser) {
+  async setHomepage(pageId: string, user: AuthUser, access: AccessContext) {
     const row = await this.db.page.findUniqueOrThrow({ where: { id: pageId } });
     await this.drafts.transform(
       row.websiteId,
@@ -154,6 +159,7 @@ export class PagesService {
         page.slug = '';
       },
       { userId: user.id },
+      { access },
     );
   }
 
@@ -177,7 +183,7 @@ export class PagesService {
     return { id: v.id, number: v.number, title: v.title, message: v.message, source: v.source, createdAt: v.createdAt.toISOString(), createdBy: user.name };
   }
 
-  async restoreVersion(pageId: string, versionId: string, user: AuthUser) {
+  async restoreVersion(pageId: string, versionId: string, user: AuthUser, access: AccessContext) {
     const v = await this.db.pageVersion.findFirst({ where: { id: versionId, pageId } });
     if (!v) throw notFound('Version');
     const row = await this.db.page.findUniqueOrThrow({ where: { id: pageId } });
@@ -190,6 +196,7 @@ export class PagesService {
         d.pages[idx] = { ...restored, id: pageId, isHomepage: current.isHomepage, slug: current.isHomepage ? '' : (d.pages.some((p) => p.id !== pageId && p.slug === restored.slug) ? current.slug : restored.slug) };
       },
       { userId: user.id, versionSource: 'RESTORE', versionMessage: `Before restoring v${v.number}` },
+      { access },
     );
     return this.get(pageId);
   }

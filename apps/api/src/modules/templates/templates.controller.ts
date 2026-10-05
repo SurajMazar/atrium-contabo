@@ -1,7 +1,9 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
 import { z } from 'zod';
-import { Access, CurrentUser, type AuthUser } from '../../common/decorators';
+import { AccessService } from '../../common/access.service';
+import { Access, CurrentAccess, CurrentUser, type AccessContext, type AuthUser } from '../../common/decorators';
 import { PrismaService } from '../../common/prisma.service';
+import { forbidden } from '../../common/errors';
 import { ZodBody } from '../../common/zod.pipe';
 import { TemplatesService } from './templates.service';
 
@@ -17,7 +19,7 @@ const CreateBody = z.object({
 
 @Controller()
 export class TemplatesController {
-  constructor(private readonly templates: TemplatesService, private readonly prisma: PrismaService) {}
+  constructor(private readonly templates: TemplatesService, private readonly prisma: PrismaService, private readonly access: AccessService) {}
 
   private async orgIds(userId: string) {
     return (await this.prisma.client.organizationMember.findMany({ where: { userId }, select: { organizationId: true } })).map((m) => m.organizationId);
@@ -35,7 +37,12 @@ export class TemplatesController {
 
   @Access('template.manage', 'organization', 'orgId')
   @Post('organizations/:orgId/templates')
-  create(@Param('orgId') orgId: string, @Body(new ZodBody(CreateBody)) body: z.infer<typeof CreateBody>, @CurrentUser() user: AuthUser) {
+  async create(@Param('orgId') orgId: string, @Body(new ZodBody(CreateBody)) body: z.infer<typeof CreateBody>, @CurrentUser() user: AuthUser, @CurrentAccess() access: AccessContext) {
+    if (body.from) {
+      // Copying a website's content into a template is a read of that website.
+      await this.access.assertWebsiteInScope(access, body.from.websiteId);
+      if (!this.access.can(access, 'page.read')) throw forbidden('Saving a template from a website requires page.read');
+    }
     return this.templates.create(orgId, body, user);
   }
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { initAnimations } from '@atrium/animations';
-import type { ScriptDefinition, SiteSettings, ThemeTokens } from '@atrium/schema';
+import { safeHref, type ScriptDefinition, type SiteSettings, type ThemeTokens } from '@atrium/schema';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 type Category = 'necessary' | 'analytics' | 'marketing' | 'preferences';
@@ -185,7 +185,7 @@ function ConsentBanner({ consent, categories, customize, setCustomize, current, 
       <p id="a-consent-title" className="a-consent__title">{consent.title}</p>
       <p id="a-consent-msg" className="a-consent__msg">
         {consent.message}{' '}
-        {consent.policyUrl ? <a href={consent.policyUrl} className="a-link">Learn more</a> : null}
+        {safeHref(consent.policyUrl) ? <a href={safeHref(consent.policyUrl)} className="a-link">Learn more</a> : null}
       </p>
       {customize ? (
         <ul className="a-consent__cats">

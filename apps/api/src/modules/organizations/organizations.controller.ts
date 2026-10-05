@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
 import { PERMISSIONS } from '@atrium/schema';
 import { z } from 'zod';
-import { Access, CurrentUser, type AuthUser } from '../../common/decorators';
+import { Access, CurrentAccess, CurrentUser, type AccessContext, type AuthUser } from '../../common/decorators';
 import { limitOf } from '../../common/http';
 import { ZodBody } from '../../common/zod.pipe';
 import { OrganizationsService } from './organizations.service';
@@ -55,15 +55,15 @@ export class OrganizationsController {
 
   @Access('role.manage', 'organization', 'orgId')
   @Patch('organizations/:orgId/members/:memberId')
-  updateMember(@Param('orgId') orgId: string, @Param('memberId') memberId: string, @Body(new ZodBody(z.object({ roleId: z.string().optional(), websiteIds: z.array(z.string()).optional() }))) body: { roleId?: string; websiteIds?: string[] }, @CurrentUser() user: AuthUser) {
-    return this.orgs.updateMember(orgId, memberId, body, user);
+  updateMember(@Param('orgId') orgId: string, @Param('memberId') memberId: string, @Body(new ZodBody(z.object({ roleId: z.string().optional(), websiteIds: z.array(z.string()).max(500).optional() }))) body: { roleId?: string; websiteIds?: string[] }, @CurrentUser() user: AuthUser, @CurrentAccess() access: AccessContext) {
+    return this.orgs.updateMember(orgId, memberId, body, user, access);
   }
 
   @Access('user.remove', 'organization', 'orgId')
   @HttpCode(204)
   @Delete('organizations/:orgId/members/:memberId')
-  removeMember(@Param('orgId') orgId: string, @Param('memberId') memberId: string, @CurrentUser() user: AuthUser) {
-    return this.orgs.removeMember(orgId, memberId, user);
+  removeMember(@Param('orgId') orgId: string, @Param('memberId') memberId: string, @CurrentUser() user: AuthUser, @CurrentAccess() access: AccessContext) {
+    return this.orgs.removeMember(orgId, memberId, user, access);
   }
 
   @Access('user.invite', 'organization', 'orgId')
@@ -74,8 +74,8 @@ export class OrganizationsController {
 
   @Access('user.invite', 'organization', 'orgId')
   @Post('organizations/:orgId/invitations')
-  invite(@Param('orgId') orgId: string, @Body(new ZodBody(z.object({ email: z.string().email(), roleId: z.string() }))) body: { email: string; roleId: string }, @CurrentUser() user: AuthUser) {
-    return this.orgs.invite(orgId, body, user);
+  invite(@Param('orgId') orgId: string, @Body(new ZodBody(z.object({ email: z.string().trim().email().max(254), roleId: z.string() }))) body: { email: string; roleId: string }, @CurrentUser() user: AuthUser, @CurrentAccess() access: AccessContext) {
+    return this.orgs.invite(orgId, body, user, access);
   }
 
   @Access('user.invite', 'organization', 'orgId')
@@ -99,26 +99,27 @@ export class OrganizationsController {
 
   @Access('role.manage', 'organization', 'orgId')
   @Post('organizations/:orgId/roles')
-  createRole(@Param('orgId') orgId: string, @Body(new ZodBody(RoleBody)) body: z.infer<typeof RoleBody>, @CurrentUser() user: AuthUser) {
-    return this.orgs.createRole(orgId, body, user);
+  createRole(@Param('orgId') orgId: string, @Body(new ZodBody(RoleBody)) body: z.infer<typeof RoleBody>, @CurrentUser() user: AuthUser, @CurrentAccess() access: AccessContext) {
+    return this.orgs.createRole(orgId, body, user, access);
   }
 
   @Access('role.manage', 'organization', 'orgId')
   @Patch('organizations/:orgId/roles/:roleId')
-  updateRole(@Param('orgId') orgId: string, @Param('roleId') roleId: string, @Body(new ZodBody(RoleBody.partial())) body: Partial<z.infer<typeof RoleBody>>, @CurrentUser() user: AuthUser) {
-    return this.orgs.updateRole(orgId, roleId, body, user);
+  updateRole(@Param('orgId') orgId: string, @Param('roleId') roleId: string, @Body(new ZodBody(RoleBody.partial())) body: Partial<z.infer<typeof RoleBody>>, @CurrentUser() user: AuthUser, @CurrentAccess() access: AccessContext) {
+    return this.orgs.updateRole(orgId, roleId, body, user, access);
   }
 
   @Access('role.manage', 'organization', 'orgId')
   @HttpCode(204)
   @Delete('organizations/:orgId/roles/:roleId')
-  deleteRole(@Param('orgId') orgId: string, @Param('roleId') roleId: string, @CurrentUser() user: AuthUser) {
-    return this.orgs.deleteRole(orgId, roleId, user);
+  deleteRole(@Param('orgId') orgId: string, @Param('roleId') roleId: string, @CurrentUser() user: AuthUser, @CurrentAccess() access: AccessContext) {
+    return this.orgs.deleteRole(orgId, roleId, user, access);
   }
 
   @Access('audit.read', 'organization', 'orgId')
   @Get('organizations/:orgId/audit-logs')
   auditLogs(@Param('orgId') orgId: string, @Query() q: Record<string, string>) {
+    // websiteId is only a filter inside the already-authorized organization.
     return this.orgs.auditLogs(orgId, { websiteId: q.websiteId, action: q.action, cursor: q.cursor, limit: limitOf(q.limit) });
   }
 }

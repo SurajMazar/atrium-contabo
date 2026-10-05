@@ -49,6 +49,7 @@ export const TARGETS: Record<TargetId, TargetSpec> = {
     copies: [
       { from: 'infra/compose.prod.yaml', to: 'compose.yaml' },
       { from: 'infra/caddy/Caddyfile', to: 'caddy/Caddyfile' },
+      { from: 'infra/postgres', to: 'postgres' },
       { from: 'infra/quadlet', to: 'quadlet', rewrite: true },
       { from: 'infra/scripts/backup.sh', to: 'scripts/backup.sh' },
     ],
@@ -61,6 +62,7 @@ export const TARGETS: Record<TargetId, TargetSpec> = {
     copies: [
       { from: 'infra/compose.prod.yaml', to: 'compose.yaml' },
       { from: 'infra/caddy/Caddyfile', to: 'caddy/Caddyfile' },
+      { from: 'infra/postgres', to: 'postgres' },
       { from: 'infra/scripts/backup.sh', to: 'scripts/backup.sh' },
     ],
   },
@@ -203,6 +205,8 @@ export function buildProductionEnv(example: EnvFile, vars: TemplateVars, mode: E
   const env = example.clone();
   const d = String(vars.domain);
   const pgPassword = generateSecret('POSTGRES_PASSWORD');
+  const pgAppPassword = generateSecret('POSTGRES_APP_PASSWORD');
+  const redisPassword = generateSecret('REDIS_PASSWORD');
   const s3Key = generateSecret('S3_ACCESS_KEY_ID');
   const s3Secret = generateSecret('S3_SECRET_ACCESS_KEY');
   const set = (k: string, v: string) => env.set(k, v);
@@ -218,7 +222,11 @@ export function buildProductionEnv(example: EnvFile, vars: TemplateVars, mode: E
   set('COOKIE_DOMAIN', String(vars.adminHost));
   // Secure cookies over https; DNS guidance shown to tenants for custom domains.
   env.set('COOKIE_SECURE', 'true');
-  env.set('TRUST_PROXY', 'true');
+  // Trust X-Forwarded-For only from private-network hops (Caddy/nginx/ALB/ingress and the admin's
+  // /api proxy); a client-supplied header from the internet is never trusted.
+  env.set('TRUST_PROXY', mode === 'host' ? 'loopback' : 'loopback,uniquelocal');
+  env.set('OUTBOUND_ALLOW_PRIVATE', 'false');
+  env.set('SUPER_ADMIN_REQUIRE_MFA', 'true');
   env.set('PLATFORM_CNAME_TARGET', String(vars.sitesDomain));
   for (const k of [
     'JWT_ACCESS_SECRET',
@@ -235,24 +243,32 @@ export function buildProductionEnv(example: EnvFile, vars: TemplateVars, mode: E
   set('S3_FORCE_PATH_STYLE', 'true');
   set('SMTP_SECURE', 'false');
 
+  const pgUser = env.get('POSTGRES_USER') ?? 'atrium';
+  const pgDb = env.get('POSTGRES_DB') ?? 'atrium';
+  const pgAppUser = 'atrium_app';
   if (mode === 'compose') {
+    // Two roles: the owner (POSTGRES_USER) runs migrations, the app role is DML-only
+    // (created by postgres/initdb/10-app-role.sh on first start).
     set('POSTGRES_PASSWORD', pgPassword);
-    set(
-      'DATABASE_URL',
-      `postgresql://${env.get('POSTGRES_USER') ?? 'atrium'}:${pgPassword}@postgres:5432/${env.get('POSTGRES_DB') ?? 'atrium'}`,
-    );
-    set('REDIS_URL', 'redis://redis:6379');
+    set('POSTGRES_APP_USER', pgAppUser);
+    set('POSTGRES_APP_PASSWORD', pgAppPassword);
+    set('DATABASE_URL', `postgresql://${pgAppUser}:${pgAppPassword}@postgres:5432/${pgDb}`);
+    set('MIGRATE_DATABASE_URL', `postgresql://${pgUser}:${pgPassword}@postgres:5432/${pgDb}`);
+    set('REDIS_PASSWORD', redisPassword);
+    set('REDIS_URL', `redis://:${redisPassword}@redis:6379`);
     set('S3_ENDPOINT', 'http://s3:8333');
     set('S3_PUBLIC_URL', `https://${vars.mediaHost}/${env.get('S3_BUCKET') ?? 'atrium-media'}`);
     set('S3_ACCESS_KEY_ID', s3Key);
     set('S3_SECRET_ACCESS_KEY', s3Secret);
   } else if (mode === 'host') {
     set('POSTGRES_PASSWORD', pgPassword);
-    set(
-      'DATABASE_URL',
-      `postgresql://${env.get('POSTGRES_USER') ?? 'atrium'}:${pgPassword}@127.0.0.1:5432/${env.get('POSTGRES_DB') ?? 'atrium'}`,
-    );
-    set('REDIS_URL', 'redis://127.0.0.1:6379');
+    set('POSTGRES_APP_USER', pgAppUser);
+    set('POSTGRES_APP_PASSWORD', pgAppPassword);
+    set('DATABASE_URL', `postgresql://${pgAppUser}:${pgAppPassword}@127.0.0.1:5432/${pgDb}`);
+    set('MIGRATE_DATABASE_URL', `postgresql://${pgUser}:${pgPassword}@127.0.0.1:5432/${pgDb}`);
+    // Configure the same password as `requirepass` in /etc/redis/redis.conf (`atrium setup redis --out`).
+    set('REDIS_PASSWORD', redisPassword);
+    set('REDIS_URL', `redis://:${redisPassword}@127.0.0.1:6379`);
     set('S3_ENDPOINT', `https://s3.${MANAGED_PLACEHOLDER}.example`);
     set('S3_PUBLIC_URL', `https://${vars.mediaHost}`);
     set('S3_ACCESS_KEY_ID', MANAGED_PLACEHOLDER);
@@ -301,7 +317,12 @@ export function buildProductionEnv(example: EnvFile, vars: TemplateVars, mode: E
 
 /** Keys considered secret for k8s Secret vs ConfigMap split. */
 export function isSecretEnvKey(key: string): boolean {
-  return isSecretKey(key) || key === 'DATABASE_URL' || key === 'REDIS_URL';
+  return (
+    isSecretKey(key) ||
+    key === 'DATABASE_URL' ||
+    key === 'MIGRATE_DATABASE_URL' ||
+    key === 'REDIS_URL'
+  );
 }
 
 const VERCEL_KEYS = {
@@ -322,9 +343,63 @@ const VERCEL_KEYS = {
     'PLATFORM_SITES_DOMAIN',
     'PREVIEW_URL',
     'RENDERER_SECRET',
-    'ANALYTICS_SALT',
   ],
 };
+
+/**
+ * Least-privilege env files for the containers/units that must NOT get the full .env
+ * (Quadlet + systemd; compose passes the same subsets through `environment:`).
+ */
+export function serviceEnvFiles(env: EnvFile, mode: EnvMode): Record<string, string[]> {
+  const internalApi = env.get('ATRIUM_API_INTERNAL_URL');
+  const line = (k: string, v = env.get(k)) => (v === undefined ? [] : [`${k}=${formatValue(v)}`]);
+  const files: Record<string, string[]> = {
+    'renderer.env': [
+      'NODE_ENV=production',
+      ...line('API_URL'),
+      ...line('ATRIUM_API_INTERNAL_URL', internalApi),
+      ...line('RENDERER_URL'),
+      ...line('PLATFORM_SITES_DOMAIN'),
+      ...line('RENDERER_SECRET'),
+    ],
+    'admin.env': [
+      'NODE_ENV=production',
+      ...line('API_URL'),
+      ...line('ADMIN_URL'),
+      ...line('ATRIUM_API_INTERNAL_URL', internalApi),
+    ],
+    'migrate.env': [...line('DATABASE_URL', env.get('MIGRATE_DATABASE_URL'))],
+  };
+  if (mode === 'compose') {
+    files['caddy.env'] = [
+      ...['ACME_EMAIL', 'ADMIN_HOST', 'API_HOST', 'SITES_DOMAIN', 'MEDIA_HOST'].flatMap((k) =>
+        line(k),
+      ),
+      ...line('S3_BUCKET', env.get('S3_BUCKET') ?? 'atrium-media'),
+    ];
+    files['postgres.env'] = [
+      ...line('POSTGRES_USER', env.get('POSTGRES_USER') ?? 'atrium'),
+      ...line('POSTGRES_PASSWORD'),
+      ...line('POSTGRES_DB', env.get('POSTGRES_DB') ?? 'atrium'),
+      ...line('POSTGRES_APP_USER'),
+      ...line('POSTGRES_APP_PASSWORD'),
+    ];
+    files['redis.env'] = [...line('REDISCLI_AUTH', env.get('REDIS_PASSWORD'))];
+  }
+  return files;
+}
+
+/** redis.conf for the Quadlet/systemd Redis (BullMQ: noeviction + AOF; requirepass). */
+export function redisConf(password: string): string {
+  return [
+    '# Generated by `atrium setup production`. Contains the Redis password — chmod 644 only inside a 700 directory.',
+    'appendonly yes',
+    'appendfsync everysec',
+    'maxmemory-policy noeviction',
+    `requirepass ${password}`,
+    '',
+  ].join('\n');
+}
 
 function envSubset(env: EnvFile, keys: string[], header: string): string {
   return (
@@ -408,7 +483,24 @@ export function generateProduction(o: ProductionOptions, example: EnvFile): Gene
       );
     }
   }
+  if (spec.envMode === 'compose' || spec.envMode === 'host') {
+    // Per-service env files (Quadlet units / systemd units reference them; see quadlet/README.md).
+    const hasQuadlet = spec.copies.some((c) => c.from === 'infra/quadlet');
+    if (hasQuadlet || spec.envMode === 'host') {
+      mkdirSync(join(o.outDir, 'env'), { recursive: true });
+      for (const [name, lines] of Object.entries(serviceEnvFiles(env, spec.envMode)))
+        writeSecretFile(
+          join('env', name),
+          `# ${name} — generated by \`atrium setup production --target ${o.target}\`; least-privilege subset of .env.\n${lines.join('\n')}\n`,
+        );
+    }
+    if (hasQuadlet && env.get('REDIS_PASSWORD')) {
+      mkdirSync(join(o.outDir, 'redis'), { recursive: true });
+      writeSecretFile(join('redis', 'redis.conf'), redisConf(env.get('REDIS_PASSWORD')!));
+    }
+  }
   if (spec.envMode === 'compose') {
+    const bucket = env.get('S3_BUCKET') ?? 'atrium-media';
     const s3 = {
       identities: [
         {
@@ -418,7 +510,8 @@ export function generateProduction(o: ProductionOptions, example: EnvFile): Gene
           ],
           actions: ['Admin', 'Read', 'List', 'Tagging', 'Write'],
         },
-        { name: 'anonymous', actions: ['Read'] },
+        // Public reads of the media bucket only (Caddy additionally only proxies that bucket).
+        { name: 'anonymous', actions: [`Read:${bucket}`] },
       ],
     };
     // write into the folder layout compose.prod.yaml expects (./seaweedfs/s3.json)

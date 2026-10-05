@@ -1,7 +1,7 @@
-import { Body, Controller, Get, HttpCode, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Patch, Post, Put, Query, Req } from '@nestjs/common';
 import { z } from 'zod';
 import { AuditService } from '../../common/audit.service';
-import { CurrentUser, SuperAdminOnly, type AuthUser } from '../../common/decorators';
+import { CurrentUser, SuperAdminOnly, type AppRequest, type AuthUser } from '../../common/decorators';
 import { badRequest, notFound } from '../../common/errors';
 import { limitOf } from '../../common/http';
 import { PrismaService } from '../../common/prisma.service';
@@ -47,10 +47,10 @@ export class AdminController {
   }
 
   @Patch('organizations/:id')
-  async updateOrganization(@Param('id') id: string, @Body(new ZodBody(z.object({ planKey: z.string().optional(), suspended: z.boolean().optional(), featureFlags: z.record(z.string(), z.boolean()).optional(), limits: z.record(z.string(), z.number()).nullable().optional() }))) b: { planKey?: string; suspended?: boolean; featureFlags?: Record<string, boolean>; limits?: Record<string, number> | null }, @CurrentUser() user: AuthUser) {
+  async updateOrganization(@Req() req: AppRequest, @Param('id') id: string, @Body(new ZodBody(z.object({ planKey: z.string().optional(), suspended: z.boolean().optional(), featureFlags: z.record(z.string(), z.boolean()).optional(), limits: z.record(z.string(), z.number()).nullable().optional() }))) b: { planKey?: string; suspended?: boolean; featureFlags?: Record<string, boolean>; limits?: Record<string, number> | null }, @CurrentUser() user: AuthUser) {
     if (b.planKey && !(await this.db.plan.findUnique({ where: { key: b.planKey } }))) throw badRequest('Unknown plan');
     const o = await this.db.organization.update({ where: { id }, data: { planKey: b.planKey, featureFlags: b.featureFlags, limits: b.limits === null ? undefined : b.limits, suspendedAt: b.suspended === undefined ? undefined : b.suspended ? new Date() : null } });
-    await this.audit.log({ organizationId: id, actor: user, action: 'platform.organization_updated', resourceType: 'organization', resourceId: id, summary: `Super admin ${user.name} updated organization`, metadata: b });
+    await this.audit.log({ organizationId: id, actor: user, action: 'platform.organization_updated', resourceType: 'organization', resourceId: id, summary: `Super admin ${user.name} updated organization`, metadata: b, req });
     return { id: o.id, planKey: o.planKey, suspended: !!o.suspendedAt, featureFlags: o.featureFlags };
   }
 
@@ -66,11 +66,11 @@ export class AdminController {
   }
 
   @Patch('users/:id')
-  async updateUser(@Param('id') id: string, @Body(new ZodBody(z.object({ disabled: z.boolean().optional(), isSuperAdmin: z.boolean().optional() }))) b: { disabled?: boolean; isSuperAdmin?: boolean }, @CurrentUser() user: AuthUser) {
+  async updateUser(@Req() req: AppRequest, @Param('id') id: string, @Body(new ZodBody(z.object({ disabled: z.boolean().optional(), isSuperAdmin: z.boolean().optional() }))) b: { disabled?: boolean; isSuperAdmin?: boolean }, @CurrentUser() user: AuthUser) {
     if (id === user.id && (b.disabled || b.isSuperAdmin === false)) throw badRequest('You cannot remove your own access');
     const u = await this.db.user.update({ where: { id }, data: { disabledAt: b.disabled === undefined ? undefined : b.disabled ? new Date() : null, isSuperAdmin: b.isSuperAdmin } });
     if (b.disabled) await this.db.session.updateMany({ where: { userId: id, revokedAt: null }, data: { revokedAt: new Date() } });
-    await this.audit.log({ actor: user, action: 'platform.user_updated', resourceType: 'user', resourceId: id, summary: `Super admin ${user.name} updated ${u.email}`, metadata: b });
+    await this.audit.log({ actor: user, action: 'platform.user_updated', resourceType: 'user', resourceId: id, summary: `Super admin ${user.name} updated ${u.email}`, metadata: b, req });
     return { id: u.id, disabled: !!u.disabledAt, isSuperAdmin: u.isSuperAdmin };
   }
 
@@ -96,12 +96,13 @@ export class AdminController {
 
   @HttpCode(204)
   @Post('jobs/:queue/:jobId/retry')
-  async retry(@Param('queue') queue: string, @Param('jobId') jobId: string) {
+  async retry(@Param('queue') queue: string, @Param('jobId') jobId: string, @CurrentUser() user: AuthUser, @Req() req: AppRequest) {
     const q = this.queues.all().find((x) => x.name === queue);
     if (!q) throw notFound('Queue');
     const job = await q.getJob(jobId);
     if (!job) throw notFound('Job');
     await job.retry();
+    await this.audit.log({ actor: user, action: 'platform.job_retried', resourceType: 'job', resourceId: `${queue}:${jobId}`, summary: `Super admin ${user.name} retried ${queue} job ${jobId}`, req });
   }
 
   @Get('feature-flags')
@@ -111,9 +112,9 @@ export class AdminController {
 
   @HttpCode(204)
   @Put('feature-flags')
-  async saveFlags(@Body(new ZodBody(z.object({ flags: z.array(z.object({ key: z.string(), enabled: z.boolean(), rules: z.record(z.string(), z.unknown()).optional() })) }))) b: { flags: Array<{ key: string; enabled: boolean; rules?: Record<string, unknown> }> }, @CurrentUser() user: AuthUser) {
+  async saveFlags(@Req() req: AppRequest, @Body(new ZodBody(z.object({ flags: z.array(z.object({ key: z.string(), enabled: z.boolean(), rules: z.record(z.string(), z.unknown()).optional() })) }))) b: { flags: Array<{ key: string; enabled: boolean; rules?: Record<string, unknown> }> }, @CurrentUser() user: AuthUser) {
     await this.db.$transaction(b.flags.map((f) => this.db.featureFlag.update({ where: { key: f.key }, data: { enabled: f.enabled, rules: (f.rules ?? undefined) as object | undefined } })));
-    await this.audit.log({ actor: user, action: 'platform.flags_updated', resourceType: 'feature_flag', summary: `Super admin ${user.name} updated feature flags`, metadata: { flags: b.flags } });
+    await this.audit.log({ actor: user, action: 'platform.flags_updated', resourceType: 'feature_flag', summary: `Super admin ${user.name} updated feature flags`, metadata: { flags: b.flags }, req });
   }
 
   @Get('plans')
@@ -123,8 +124,9 @@ export class AdminController {
 
   @HttpCode(204)
   @Put('plans')
-  async savePlans(@Body(new ZodBody(z.object({ plans: z.array(z.object({ key: z.string(), name: z.string(), limits: z.record(z.string(), z.number()), features: z.array(z.string()), priceMonthly: z.number().int().default(0), active: z.boolean().default(true) })) }))) b: { plans: Array<{ key: string; name: string; limits: Record<string, number>; features: string[]; priceMonthly: number; active: boolean }> }) {
+  async savePlans(@Body(new ZodBody(z.object({ plans: z.array(z.object({ key: z.string().regex(/^[a-z0-9_-]{1,40}$/), name: z.string().max(80), limits: z.record(z.string().max(40), z.number()), features: z.array(z.string().max(60)).max(100), priceMonthly: z.number().int().default(0), active: z.boolean().default(true) })).max(50) }))) b: { plans: Array<{ key: string; name: string; limits: Record<string, number>; features: string[]; priceMonthly: number; active: boolean }> }, @CurrentUser() user: AuthUser, @Req() req: AppRequest) {
     await this.db.$transaction(b.plans.map((p) => this.db.plan.upsert({ where: { key: p.key }, create: p, update: p })));
+    await this.audit.log({ actor: user, action: 'platform.plans_updated', resourceType: 'plan', summary: `Super admin ${user.name} updated plans`, metadata: { plans: b.plans.map((p) => p.key) }, req });
   }
 
   @Get('audit-logs')
@@ -142,8 +144,9 @@ export class AdminController {
 
   @HttpCode(204)
   @Patch('abuse-reports/:id')
-  async updateAbuse(@Param('id') id: string, @Body(new ZodBody(z.object({ status: z.enum(['open', 'investigating', 'resolved', 'dismissed']) }))) b: { status: string }) {
+  async updateAbuse(@Param('id') id: string, @Body(new ZodBody(z.object({ status: z.enum(['open', 'investigating', 'resolved', 'dismissed']) }))) b: { status: string }, @CurrentUser() user: AuthUser, @Req() req: AppRequest) {
     await this.db.abuseReport.update({ where: { id }, data: { status: b.status, resolvedAt: ['resolved', 'dismissed'].includes(b.status) ? new Date() : null } });
+    await this.audit.log({ actor: user, action: 'platform.abuse_report_updated', resourceType: 'abuse_report', resourceId: id, summary: `Super admin ${user.name} marked an abuse report ${b.status}`, req });
   }
 
   @Get('ai-usage')

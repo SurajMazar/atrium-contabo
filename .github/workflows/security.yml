@@ -1,0 +1,170 @@
+# Supply-chain and application security checks. Policy: docs/security/DEPENDENCY_POLICY.md
+#   audit              pnpm audit (prod deps, fails on high/critical; allowlist = package.json pnpm.auditConfig)
+#   secrets            gitleaks over the full git history (.gitleaks.toml)
+#   codeql             CodeQL security-extended for JavaScript/TypeScript
+#   trivy-config       Trivy IaC/misconfiguration scan of infra/ (k8s, compose, Containerfiles)
+#   api-security-tests API test suite (incl. test/security.e2e.test.ts) against real Postgres + Redis
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '23 3 * * 1' # weekly, Monday 03:23 UTC — catches newly published advisories
+  workflow_dispatch:
+
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '24'
+  TURBO_TELEMETRY_DISABLED: '1'
+  NEXT_TELEMETRY_DISABLED: '1'
+
+jobs:
+  audit:
+    name: Dependency audit (pnpm audit --prod)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      # Lifecycle scripts are not needed to audit the resolved tree — don't run them.
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: pnpm audit (high/critical, allowlist in package.json pnpm.auditConfig.ignoreGhsas)
+        run: pnpm audit --prod --audit-level=high
+
+  secrets:
+    name: Secret scan (gitleaks, full history)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      GITLEAKS_VERSION: 8.30.1
+      # sha256 of gitleaks_8.30.1_linux_x64.tar.gz from the release's gitleaks_8.30.1_checksums.txt.
+      # Hard-coded (not fetched at run time) so a tampered release cannot also swap the checksum.
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install gitleaks (pinned release, checksum verified)
+        run: |
+          set -euo pipefail
+          url="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -fsSLo "$RUNNER_TEMP/gitleaks.tar.gz" "$url"
+          echo "${GITLEAKS_SHA256}  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP" gitleaks
+          "$RUNNER_TEMP/gitleaks" version
+      - name: gitleaks git (all commits)
+        run: '"$RUNNER_TEMP/gitleaks" git --redact --no-banner --config .gitleaks.toml --exit-code 1 .'
+
+  codeql:
+    name: CodeQL (javascript-typescript, security-extended)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read # checkout
+      actions: read # CodeQL reads workflow run metadata
+      security-events: write # upload CodeQL results to code scanning
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          languages: javascript-typescript
+          build-mode: none
+          queries: security-extended
+      - uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          category: /language:javascript-typescript
+
+  trivy-config:
+    name: IaC scan (Trivy config, infra/)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read # checkout
+      security-events: write # upload the Trivy SARIF to code scanning
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Trivy config scan (HIGH/CRITICAL fail)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: infra
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          format: sarif
+          output: trivy-config.sarif
+          limit-severities-for-sarif: true # keep SARIF + exit code to HIGH/CRITICAL only
+          version: v0.70.0 # Trivy binary version (pinned)
+      # Fork PRs get a read-only token, so only upload where the token can write security events.
+      - name: Upload SARIF to code scanning
+        if: always() && hashFiles('trivy-config.sarif') != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          sarif_file: trivy-config.sarif
+          category: trivy-config
+
+  api-security-tests:
+    name: API tests (incl. security regression suite)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+        env: { POSTGRES_USER: atrium, POSTGRES_PASSWORD: atrium, POSTGRES_DB: atrium }
+        ports: ['55432:5432']
+        options: --health-cmd "pg_isready -U atrium -d atrium" --health-interval 5s --health-retries 20
+      redis:
+        image: redis:7-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+        ports: ['56379:6379']
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-retries 20
+      # SMTP sink matching .env.example (SMTP_PORT=51025), so mail-sending paths don't error.
+      mailpit:
+        image: axllent/mailpit:v1.31.4@sha256:b68349e3a014b90c5610bfb26b2ae36f3892d7b8cf25ee140c6c71c98d2fcf48
+        ports: ['51025:1025', '58025:8025']
+    env:
+      REQUIRE_DB: '1' # the suite throws instead of skipping when Postgres/Redis are unreachable
+      NODE_ENV: test
+      DATABASE_URL: postgresql://atrium:atrium@localhost:55432/atrium
+      REDIS_URL: redis://localhost:56379
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Configure .env (generated secrets, local storage)
+        run: |
+          pnpm atrium --yes setup env
+          pnpm atrium config set STORAGE_DRIVER local
+      - name: Build the API's workspace dependencies
+        run: pnpm exec turbo run build --filter=@atrium/api^...
+      - run: pnpm db:deploy
+      - name: API test suite (includes test/security.e2e.test.ts)
+        run: pnpm --filter @atrium/api test

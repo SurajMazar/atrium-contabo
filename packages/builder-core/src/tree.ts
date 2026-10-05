@@ -128,16 +128,32 @@ export function countNodes(nodes: Node[]): number {
 
 // ── object path helpers (for inspector controls like `cta.label`) ──
 
+/** Thrown for invalid operations (unknown targets, invalid values, unsafe paths). */
+export class OperationError extends Error {}
+
+/** Keys that would reach an object's prototype chain (prototype pollution). */
+export const UNSAFE_PATH_KEYS: ReadonlySet<string> = new Set(['__proto__', 'prototype', 'constructor']);
+
+/** Dot path of plain keys / array indexes, e.g. `cta.label`, `items.0.title`. */
+export const PROP_PATH_PATTERN = /^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*$/;
+
+function assertSafeKey(key: string): void {
+  if (UNSAFE_PATH_KEYS.has(key)) throw new OperationError(`Unsafe property name "${key}"`);
+}
+
+const own = (obj: object, key: string) => Object.prototype.hasOwnProperty.call(obj, key);
+
 export function getPath(obj: unknown, path: string): unknown {
-  return path.split('.').reduce<unknown>((acc, k) => (acc && typeof acc === 'object' ? (acc as Record<string, unknown>)[k] : undefined), obj);
+  return path.split('.').reduce<unknown>((acc, k) => (acc && typeof acc === 'object' && !UNSAFE_PATH_KEYS.has(k) && own(acc, k) ? (acc as Record<string, unknown>)[k] : undefined), obj);
 }
 
 export function setPath(obj: Record<string, unknown>, path: string, value: unknown): void {
   const keys = path.split('.');
+  keys.forEach(assertSafeKey);
   let cur: Record<string, unknown> = obj;
   for (let i = 0; i < keys.length - 1; i++) {
     const k = keys[i]!;
-    if (!cur[k] || typeof cur[k] !== 'object') cur[k] = {};
+    if (!own(cur, k) || !cur[k] || typeof cur[k] !== 'object') cur[k] = {};
     cur = cur[k] as Record<string, unknown>;
   }
   const last = keys[keys.length - 1]!;
@@ -149,12 +165,27 @@ export function isPlainObject(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v === 'object' && !Array.isArray(v);
 }
 
-/** Deep merge `patch` into `target` in place. Arrays replace; `null` deletes. */
-export function deepMerge(target: Record<string, unknown>, patch: Record<string, unknown>): Record<string, unknown> {
+/** Deep merge `patch` into `target` in place. Arrays replace; `null` deletes. Rejects prototype keys. */
+export function deepMerge(target: Record<string, unknown>, patch: Record<string, unknown>, depth = 0): Record<string, unknown> {
+  if (depth > 32) throw new OperationError('Patch is nested too deeply');
   for (const [k, v] of Object.entries(patch)) {
+    assertSafeKey(k);
     if (v === null) delete target[k];
-    else if (isPlainObject(v) && isPlainObject(target[k])) deepMerge(target[k] as Record<string, unknown>, v);
-    else target[k] = v;
+    else if (isPlainObject(v) && own(target, k) && isPlainObject(target[k])) deepMerge(target[k] as Record<string, unknown>, v, depth + 1);
+    else target[k] = isPlainObject(v) ? stripUnsafeKeys(v) : v;
   }
   return target;
+}
+
+/** Deep copy without prototype-reaching keys (values assigned wholesale by deepMerge). */
+function stripUnsafeKeys<T>(value: T, depth = 0): T {
+  if (depth > 32) throw new OperationError('Patch is nested too deeply');
+  if (Array.isArray(value)) return value.map((v) => stripUnsafeKeys(v, depth + 1)) as T;
+  if (!isPlainObject(value)) return value;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value)) {
+    assertSafeKey(k);
+    out[k] = stripUnsafeKeys(v, depth + 1);
+  }
+  return out as T;
 }

@@ -1,3 +1,4 @@
+import { safeUrlSchema } from '@atrium/schema';
 import { z } from 'zod';
 import { defineComponent } from '../types';
 import { ButtonSchema, buttonItemControls } from '../fields';
@@ -63,7 +64,7 @@ export const siteFooter = defineComponent({
     description: z.string().max(500).optional(),
     statement: z.string().max(200).optional(),
     cta: ButtonSchema.optional(),
-    columns: z.array(z.object({ title: z.string(), menu: z.string().optional(), links: z.array(z.object({ label: z.string(), link: z.string() })).default([]) })).max(5).default([]),
+    columns: z.array(z.object({ title: z.string(), menu: z.string().optional(), links: z.array(z.object({ label: z.string(), link: safeUrlSchema('link', '#') })).default([]) })).max(5).default([]),
     showContact: z.boolean().default(true),
     showSocial: z.boolean().default(true),
     showNewsletter: z.boolean().default(false),

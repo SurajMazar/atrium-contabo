@@ -109,13 +109,17 @@ function compare(a: unknown, b: unknown): number {
   return String(a ?? '').localeCompare(String(b ?? ''), undefined, { numeric: true });
 }
 
+const UNSAFE_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
+
+/** Binding map keys are site data: never walk into prototypes (process-wide pollution). */
 function setPath(target: Dict, path: string, value: unknown) {
   const keys = path.split('.');
+  if (keys.some((k) => UNSAFE_KEYS.has(k))) return;
   let cur = target;
   keys.forEach((k, i) => {
     if (i === keys.length - 1) cur[k] = value;
     else {
-      if (!isObj(cur[k])) cur[k] = {};
+      if (!Object.prototype.hasOwnProperty.call(cur, k) || !isObj(cur[k])) cur[k] = {};
       cur = cur[k] as Dict;
     }
   });

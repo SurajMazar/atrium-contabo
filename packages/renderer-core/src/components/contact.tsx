@@ -1,3 +1,4 @@
+import { safeHref } from '@atrium/schema';
 import { MapFacade } from '../islands/map-facade';
 import { resolveTemplateString } from '../props';
 import type { RenderContext, RenderProps } from '../types';
@@ -28,7 +29,8 @@ export function mapEmbedUrl(ctx: RenderContext, p: { provider?: string; query?: 
 }
 
 export function mapOpenUrl(ctx: RenderContext, query?: string): string {
-  if (ctx.settings.business.mapsUrl) return ctx.settings.business.mapsUrl;
+  const custom = safeHref(ctx.settings.business.mapsUrl);
+  if (custom) return custom;
   const geo = ctx.settings.business.geo;
   const q = query || businessAddress(ctx) || (geo ? `${geo.lat},${geo.lng}` : ctx.settings.business.name);
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
@@ -80,7 +82,7 @@ function contactItems(ctx: RenderContext, props: Record<string, any>): ContactIt
   }
   for (const x of toArray<{ label: string; value: string; link?: string }>(props.extra)) {
     if (!x.label && !x.value) continue;
-    const auto = x.link ?? (/^[^\s@]+@[^\s@]+$/.test(x.value) ? `mailto:${x.value}` : /^\+?[\d\s()-]{6,}$/.test(x.value) ? `tel:${x.value.replace(/[^+\d]/g, '')}` : undefined);
+    const auto = (x.link !== undefined ? safeHref(x.link) : undefined) ?? (/^[^\s@]+@[^\s@]+$/.test(x.value) ? `mailto:${x.value}` : /^\+?[\d\s()-]{6,}$/.test(x.value) ? `tel:${x.value.replace(/[^+\d]/g, '')}` : undefined);
     items.push({ icon: 'arrow-up-right', label: x.label, value: x.value, href: auto });
   }
   return items;

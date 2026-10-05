@@ -3,16 +3,31 @@
 #   kubernetes — kustomize overlay in infra/k8s/overlays/<environment> (migrate Job first, then rollout)
 #   vps        — a server running deploy/podman (compose) via SSH: pull + up -d (migrate service runs first)
 #   ecs        — AWS ECS Fargate: run the atrium-migrate task, then force new deployments
+#
+# Secrets / variables (per GitHub environment):
+#   kubernetes: KUBE_CONFIG (base64 kubeconfig), ATRIUM_SECRETS_ENV (contents of secrets.env)
+#   vps:        DEPLOY_SSH_KEY (private key), DEPLOY_HOST (user@host),
+#               DEPLOY_SSH_KNOWN_HOSTS (REQUIRED — the server's host key line(s) in known_hosts format),
+#               var DEPLOY_DIR (absolute path, default /opt/atrium/deploy/podman)
+#               Produce DEPLOY_SSH_KNOWN_HOSTS with `ssh-keyscan -t ed25519 <host>` and VERIFY the key
+#               fingerprint out-of-band (e.g. `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` on the
+#               server console) before saving it. Host keys are never trusted on first use.
+#   ecs:        AWS_DEPLOY_ROLE_ARN (OIDC role), vars AWS_REGION, ECS_CLUSTER, PRIVATE_SUBNETS, APP_SG
+#
+# Hardening: actions pinned by SHA; inputs/secrets reach scripts only through env (never ${{ }} in run:);
+# the image tag is validated before any job runs; only the ecs job can mint an OIDC token.
 name: Deploy · containers
 
 on:
   workflow_dispatch:
     inputs:
       target:
+        description: Where to deploy
         type: choice
         options: [kubernetes, vps, ecs]
         default: kubernetes
       environment:
+        description: GitHub environment (secrets/vars) and overlay to deploy
         type: choice
         options: [staging, production]
         default: staging
@@ -26,89 +41,166 @@ concurrency:
 
 permissions:
   contents: read
-  id-token: write # OIDC for cloud credentials
 
 env:
   REGISTRY: ghcr.io/${{ github.repository_owner }}
 
 jobs:
+  validate:
+    name: Validate inputs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Validate image tag
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          if [[ "$TAG" =~ ^[A-Za-z0-9._-]{1,128}$ ]]; then
+            echo "tag ok: $TAG"
+          else
+            echo "::error::Invalid image tag. Allowed: 1-128 characters of A-Z a-z 0-9 . _ -"
+            exit 1
+          fi
+
   kubernetes:
+    name: Deploy · Kubernetes
     if: inputs.target == 'kubernetes'
+    needs: [validate]
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ inputs.tag }}
+      DEPLOY_ENV: ${{ inputs.environment }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - name: Kubeconfig
+        env:
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
         run: |
-          mkdir -p ~/.kube && echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config && chmod 600 ~/.kube/config
+          install -d -m 700 ~/.kube
+          install -m 600 /dev/null ~/.kube/config
+          printf '%s' "$KUBE_CONFIG" | base64 -d > ~/.kube/config
           kubectl version
       - name: Render overlay with the release tag
-        working-directory: infra/k8s/overlays/${{ inputs.environment }}
+        env:
+          ATRIUM_SECRETS_ENV: ${{ secrets.ATRIUM_SECRETS_ENV }}
         run: |
+          cd "infra/k8s/overlays/$DEPLOY_ENV"
           # secrets.env is never committed: store it as an environment secret (or use External Secrets).
-          printf '%s\n' "${{ secrets.ATRIUM_SECRETS_ENV }}" > secrets.env
+          install -m 600 /dev/null secrets.env
+          printf '%s\n' "$ATRIUM_SECRETS_ENV" > secrets.env
           for img in api worker renderer admin migrate; do
-            kustomize edit set image "ghcr.io/your-org/atrium-$img=$REGISTRY/atrium-$img:${{ inputs.tag }}"
+            kustomize edit set image "ghcr.io/your-org/atrium-$img=$REGISTRY/atrium-$img:$TAG"
           done
           kubectl kustomize . > "$RUNNER_TEMP/atrium.yaml"
-          rm secrets.env
+          rm -f secrets.env
       - name: Migrate, then roll out
         run: |
-          NS=$(grep -m1 -E '^namespace:' infra/k8s/overlays/${{ inputs.environment }}/kustomization.yaml | awk '{print $2}')
+          NS=$(grep -m1 -E '^namespace:' "infra/k8s/overlays/$DEPLOY_ENV/kustomization.yaml" | awk '{print $2}')
           kubectl -n "$NS" delete job atrium-migrate --ignore-not-found
           kubectl apply -f "$RUNNER_TEMP/atrium.yaml"
           kubectl -n "$NS" wait --for=condition=complete job/atrium-migrate --timeout=10m
-          for d in atrium-api atrium-worker atrium-renderer atrium-admin; do kubectl -n "$NS" rollout status deploy/$d --timeout=10m; done
+          for d in atrium-api atrium-worker atrium-renderer atrium-admin; do kubectl -n "$NS" rollout status "deploy/$d" --timeout=10m; done
+      - name: Remove credentials
+        if: always()
+        run: rm -f ~/.kube/config "$RUNNER_TEMP/atrium.yaml" "infra/k8s/overlays/$DEPLOY_ENV/secrets.env"
 
   vps:
+    name: Deploy · VPS (SSH + compose)
     if: inputs.target == 'vps'
+    needs: [validate]
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     timeout-minutes: 20
+    permissions:
+      contents: read
     steps:
-      - name: Deploy over SSH
+      - name: SSH key + pinned host key
         env:
           SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$KNOWN_HOSTS" ]]; then
+            echo "::error::Secret DEPLOY_SSH_KNOWN_HOSTS is empty. Add the server's host key (ssh-keyscan -t ed25519 <host>, fingerprint verified out-of-band) to this environment."
+            exit 1
+          fi
+          if [[ -z "$SSH_KEY" ]]; then
+            echo "::error::Secret DEPLOY_SSH_KEY is empty."
+            exit 1
+          fi
+          install -d -m 700 ~/.ssh
+          install -m 600 /dev/null ~/.ssh/deploy_key
+          install -m 600 /dev/null ~/.ssh/known_hosts
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Deploy over SSH
+        env:
           HOST: ${{ secrets.DEPLOY_HOST }} # user@host
           DIR: ${{ vars.DEPLOY_DIR || '/opt/atrium/deploy/podman' }}
           TAG: ${{ inputs.tag }}
         run: |
-          install -m 600 /dev/null ~/key && printf '%s\n' "$SSH_KEY" > ~/key
-          ssh -i ~/key -o StrictHostKeyChecking=accept-new "$HOST" bash -se <<SSH
+          set -euo pipefail
+          [[ "$TAG" =~ ^[A-Za-z0-9._-]{1,128}$ ]] || { echo "::error::invalid tag"; exit 1; }
+          # DIR travels as an argument through the remote shell: allow only a plain absolute path.
+          [[ "$DIR" =~ ^/[A-Za-z0-9._/-]+$ ]] || { echo "::error::DEPLOY_DIR must be an absolute path of [A-Za-z0-9._/-]"; exit 1; }
+          # Quoted heredoc: nothing below is expanded locally; TAG and DIR are passed as positional args.
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$HOST" bash -s -- "$TAG" "$DIR" <<'SSH'
             set -euo pipefail
-            cd "$DIR"
+            TAG="$1"; DIR="$2"
+            [[ "$TAG" =~ ^[A-Za-z0-9._-]{1,128}$ ]] || { echo "invalid tag" >&2; exit 1; }
+            cd -- "$DIR"
             sed -i "s/^ATRIUM_IMAGE_TAG=.*/ATRIUM_IMAGE_TAG=$TAG/" .env
-            ENGINE=\$(command -v podman >/dev/null && echo podman || echo docker)
-            \$ENGINE compose pull
-            \$ENGINE compose up -d --remove-orphans   # migrate runs before api/worker (depends_on)
-            \$ENGINE compose ps
+            ENGINE=$(command -v podman >/dev/null && echo podman || echo docker)
+            "$ENGINE" compose pull
+            "$ENGINE" compose up -d --remove-orphans   # migrate runs before api/worker (depends_on)
+            "$ENGINE" compose ps
           SSH
+      - name: Remove SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
 
   ecs:
+    name: Deploy · AWS ECS
     if: inputs.target == 'ecs'
+    needs: [validate]
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write # OIDC for aws-actions/configure-aws-credentials — this job only
     env:
       CLUSTER: ${{ vars.ECS_CLUSTER || 'atrium' }}
+      TAG: ${{ inputs.tag }}
     steps:
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
       - name: Register task definitions with the new tag
         run: |
           for svc in api worker renderer admin migrate; do
-            aws ecs describe-task-definition --task-definition atrium-$svc --query taskDefinition > td.json
-            jq --arg img "$REGISTRY/atrium-$svc:${{ inputs.tag }}" \
+            aws ecs describe-task-definition --task-definition "atrium-$svc" --query taskDefinition > td.json
+            jq --arg img "$REGISTRY/atrium-$svc:$TAG" \
               '.containerDefinitions[0].image=$img | del(.taskDefinitionArn,.revision,.status,.requiresAttributes,.compatibilities,.registeredAt,.registeredBy)' td.json > td-new.json
             aws ecs register-task-definition --cli-input-json file://td-new.json > /dev/null
           done
       - name: Run migrations
+        env:
+          PRIVATE_SUBNETS: ${{ vars.PRIVATE_SUBNETS }}
+          APP_SG: ${{ vars.APP_SG }}
         run: |
           ARN=$(aws ecs run-task --cluster "$CLUSTER" --launch-type FARGATE --task-definition atrium-migrate \
-            --network-configuration "awsvpcConfiguration={subnets=[${{ vars.PRIVATE_SUBNETS }}],securityGroups=[${{ vars.APP_SG }}],assignPublicIp=DISABLED}" \
+            --network-configuration "awsvpcConfiguration={subnets=[$PRIVATE_SUBNETS],securityGroups=[$APP_SG],assignPublicIp=DISABLED}" \
             --query 'tasks[0].taskArn' --output text)
           aws ecs wait tasks-stopped --cluster "$CLUSTER" --tasks "$ARN"
           CODE=$(aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$ARN" --query 'tasks[0].containers[0].exitCode' --output text)
@@ -116,6 +208,6 @@ jobs:
       - name: Roll out services
         run: |
           for svc in api worker renderer admin; do
-            aws ecs update-service --cluster "$CLUSTER" --service atrium-$svc --task-definition atrium-$svc --force-new-deployment > /dev/null
+            aws ecs update-service --cluster "$CLUSTER" --service "atrium-$svc" --task-definition "atrium-$svc" --force-new-deployment > /dev/null
           done
           aws ecs wait services-stable --cluster "$CLUSTER" --services atrium-api atrium-worker atrium-renderer atrium-admin

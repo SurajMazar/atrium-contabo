@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { missingRequirements, type ChangeRequirement } from '@atrium/builder-core';
 import { hasPermission, type Permission } from '@atrium/schema';
 import { forbidden, notFound } from './errors';
 import type { AccessContext, AuthUser, ResourceKind } from './decorators';
@@ -15,6 +16,15 @@ export interface MembershipInfo {
   roleKey: string;
   permissions: Set<string>;
   websiteIds: string[];
+  suspended?: boolean;
+}
+
+/** Throws FORBIDDEN listing every change the actor is not allowed to make. */
+export function assertRequirements(access: Pick<AccessContext, 'permissions'>, reqs: ChangeRequirement[]): void {
+  const missing = missingRequirements(reqs, access.permissions);
+  if (missing.length) {
+    throw forbidden(`You are not allowed to ${missing.map((m) => m.reason).join(', ')} (requires ${[...new Set(missing.map((m) => m.anyOf.join(' or ')))].join('; ')})`, { missing });
+  }
 }
 
 /** Resolves resource ownership from the database and enforces RBAC + website scoping. */
@@ -28,8 +38,14 @@ export class AccessService {
 
   async owner(resource: ResourceKind, id: string): Promise<Owner> {
     const db = this.db;
-    const w = (x: { websiteId: string; website: { organizationId: string } } | null) => (x ? { organizationId: x.website.organizationId, websiteId: x.websiteId } : null);
-    const sel = { websiteId: true, website: { select: { organizationId: true } } } as const;
+    // Children of a soft-deleted website are treated as gone (not readable, editable or deployable by id).
+    const w = (x: { websiteId: string; website: { organizationId: string; deletedAt: Date | null } } | null) => (x && !x.website.deletedAt ? { organizationId: x.website.organizationId, websiteId: x.websiteId } : null);
+    const sel = { websiteId: true, website: { select: { organizationId: true, deletedAt: true } } } as const;
+    const liveSite = async (o: { organizationId: string; websiteId: string | null } | null): Promise<Owner | null> => {
+      if (!o?.websiteId) return o;
+      const site = await db.website.findUnique({ where: { id: o.websiteId }, select: { deletedAt: true } });
+      return site && !site.deletedAt ? o : null;
+    };
     let found: Owner | null = null;
     switch (resource) {
       case 'organization':
@@ -72,35 +88,35 @@ export class AccessService {
         found = w(await db.deployment.findUnique({ where: { id }, select: sel }));
         break;
       case 'media': {
-        const m = await db.media.findFirst({ where: { id, deletedAt: null }, select: { organizationId: true, websiteId: true } });
-        found = m;
+        // Media is an organization asset (websiteId is only a tag), so it stays manageable after a site is deleted.
+        found = await db.media.findFirst({ where: { id, deletedAt: null }, select: { organizationId: true, websiteId: true } });
         break;
       }
       case 'mediaFolder':
         found = await db.mediaFolder.findUnique({ where: { id }, select: { organizationId: true, websiteId: true } });
         break;
       case 'webhook':
-        found = await db.webhook.findUnique({ where: { id }, select: { organizationId: true, websiteId: true } });
+        found = await liveSite(await db.webhook.findUnique({ where: { id }, select: { organizationId: true, websiteId: true } }));
         break;
       case 'webhookDelivery': {
         const d = await db.webhookDelivery.findUnique({ where: { id }, select: { webhook: { select: { organizationId: true, websiteId: true } } } });
-        found = d?.webhook ?? null;
+        found = await liveSite(d?.webhook ?? null);
         break;
       }
       case 'emailProvider':
-        found = await db.emailProvider.findUnique({ where: { id }, select: { organizationId: true, websiteId: true } });
+        found = await liveSite(await db.emailProvider.findUnique({ where: { id }, select: { organizationId: true, websiteId: true } }));
         break;
       case 'smsProvider':
-        found = await db.smsProvider.findUnique({ where: { id }, select: { organizationId: true, websiteId: true } });
+        found = await liveSite(await db.smsProvider.findUnique({ where: { id }, select: { organizationId: true, websiteId: true } }));
         break;
       case 'storageProvider':
         found = await db.storageProvider.findUnique({ where: { id }, select: { organizationId: true } });
         break;
       case 'integration':
-        found = await db.integration.findUnique({ where: { id }, select: { organizationId: true, websiteId: true } });
+        found = await liveSite(await db.integration.findUnique({ where: { id }, select: { organizationId: true, websiteId: true } }));
         break;
       case 'aiGeneration':
-        found = await db.aiGeneration.findUnique({ where: { id }, select: { organizationId: true, websiteId: true } });
+        found = await liveSite(await db.aiGeneration.findUnique({ where: { id }, select: { organizationId: true, websiteId: true } }));
         break;
       case 'template': {
         const t = await db.template.findUnique({ where: { id }, select: { organizationId: true } });
@@ -116,22 +132,39 @@ export class AccessService {
   async membership(userId: string, organizationId: string): Promise<MembershipInfo | null> {
     const m = await this.db.organizationMember.findUnique({
       where: { organizationId_userId: { organizationId, userId } },
-      select: { id: true, roleId: true, websiteIds: true, role: { select: { key: true, permissions: { select: { permissionKey: true } } } } },
+      select: { id: true, roleId: true, websiteIds: true, organization: { select: { suspendedAt: true } }, role: { select: { key: true, permissions: { select: { permissionKey: true } } } } },
     });
     if (!m) return null;
-    return { memberId: m.id, roleId: m.roleId, roleKey: m.role.key, permissions: new Set(m.role.permissions.map((p) => p.permissionKey)), websiteIds: m.websiteIds };
+    return { memberId: m.id, roleId: m.roleId, roleKey: m.role.key, permissions: new Set(m.role.permissions.map((p) => p.permissionKey)), websiteIds: m.websiteIds, suspended: !!m.organization?.suspendedAt };
   }
 
   /** Throws unless the user may perform `permission` within the owner tenant. */
   async authorize(user: AuthUser, owner: Owner, permission?: Permission | Permission[]): Promise<AccessContext> {
     const m = await this.membership(user.id, owner.organizationId);
     if (!m) {
-      if (user.isSuperAdmin) return { organizationId: owner.organizationId, websiteId: owner.websiteId ?? undefined, permissions: new Set(['*']), superAdminOverride: true };
+      if (user.isSuperAdmin) return { organizationId: owner.organizationId, websiteId: owner.websiteId ?? undefined, permissions: new Set(['*']), websiteIds: [], superAdminOverride: true };
       throw notFound('Resource'); // don't reveal existence across tenants
     }
+    if (m.suspended) throw forbidden('This organization is suspended. Contact support.');
     if (owner.websiteId && m.websiteIds.length > 0 && !m.websiteIds.includes(owner.websiteId)) throw forbidden('You do not have access to this website');
     if (permission && !hasPermission(m.permissions, permission)) throw forbidden(`Missing permission: ${[permission].flat().join(', ')}`);
-    return { organizationId: owner.organizationId, websiteId: owner.websiteId ?? undefined, permissions: m.permissions };
+    return { organizationId: owner.organizationId, websiteId: owner.websiteId ?? undefined, permissions: m.permissions, roleKey: m.roleKey, websiteIds: m.websiteIds };
+  }
+
+  /**
+   * Org-level routes that take a websiteId in the query/body must still honour
+   * per-member website restrictions, and the website must belong to the tenant.
+   */
+  async assertWebsiteInScope(access: AccessContext, websiteId: string | null | undefined): Promise<void> {
+    if (!websiteId) return;
+    if (access.websiteIds.length > 0 && !access.websiteIds.includes(websiteId)) throw forbidden('You do not have access to this website');
+    const site = await this.db.website.findFirst({ where: { id: websiteId, organizationId: access.organizationId, deletedAt: null }, select: { id: true } });
+    if (!site) throw notFound('Website');
+  }
+
+  /** Throws FORBIDDEN listing every change the actor is not allowed to make. */
+  assertChanges(access: AccessContext, reqs: ChangeRequirement[]): void {
+    assertRequirements(access, reqs);
   }
 
   async check(user: AuthUser, resource: ResourceKind, id: string, permission?: Permission | Permission[]): Promise<AccessContext> {
@@ -140,5 +173,12 @@ export class AccessService {
 
   can(access: AccessContext, permission: Permission): boolean {
     return access.permissions.has('*') || access.permissions.has(permission);
+  }
+
+  /** Every permission in `perms` is held by the actor (`*` = all). */
+  holdsAll(access: AccessContext, perms: Iterable<string>): boolean {
+    if (access.permissions.has('*')) return true;
+    for (const p of perms) if (!access.permissions.has(p)) return false;
+    return true;
   }
 }

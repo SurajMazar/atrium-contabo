@@ -30,14 +30,15 @@ configMapGenerator:
 secretGenerator:
   - name: atrium-secrets
     envs: [secrets.example.env]
+# Overlays MUST pin the release tag (or digest); the base never deploys a floating `latest`.
 images:
   - name: ghcr.io/your-org/atrium-api
-    newTag: latest
+    newTag: set-by-overlay
   - name: ghcr.io/your-org/atrium-worker
-    newTag: latest
+    newTag: set-by-overlay
   - name: ghcr.io/your-org/atrium-renderer
-    newTag: latest
+    newTag: set-by-overlay
   - name: ghcr.io/your-org/atrium-admin
-    newTag: latest
+    newTag: set-by-overlay
   - name: ghcr.io/your-org/atrium-migrate
-    newTag: latest
+    newTag: set-by-overlay

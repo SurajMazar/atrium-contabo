@@ -1,8 +1,11 @@
+import { IFRAME_SANDBOX_TRUSTED, isAllowedIframeHost, sanitizeUrl } from '@atrium/schema';
+
 /**
  * Dependency-free allowlist HTML sanitizer for rich text and embeds. Runs identically on the
  * server and in the browser (no DOM). Unknown tags are unwrapped (text kept); dangerous
  * containers (script/style/iframe/object…) are removed with their content; event handlers,
- * `style` and non-http(s)/mailto/tel URLs are dropped.
+ * `style` and non-http(s)/mailto/tel URLs are dropped. Iframes (embeds only) are kept only for
+ * hosts on the shared `EMBED_IFRAME_HOSTS` allowlist; everything else is removed.
  */
 const GLOBAL_ATTRS = new Set(['class', 'id', 'title', 'lang', 'dir', 'aria-label', 'aria-hidden', 'role']);
 const TAGS: Record<string, Set<string>> = {
@@ -19,11 +22,25 @@ const DROP_WITH_CONTENT = new Set(['script', 'style', 'iframe', 'object', 'embed
 const VOID = new Set(['br', 'hr', 'img']);
 const URL_ATTRS = new Set(['href', 'src', 'cite', 'srcset']);
 
-function safeUrl(value: string): boolean {
-  const v = value.trim().replace(/[\u0000-\u001F\u007F\s]+/g, '').toLowerCase();
-  if (!v) return false;
-  if (v.startsWith('#') || v.startsWith('/') || v.startsWith('./') || v.startsWith('../')) return true;
-  return /^(https?:|mailto:|tel:)/.test(v);
+function safeUrl(value: string, policy: 'link' | 'media' = 'link'): boolean {
+  if (!value.trim()) return false;
+  return sanitizeUrl(value, policy) !== undefined;
+}
+
+/** Permissions-policy features an allowlisted embed may request. */
+const IFRAME_ALLOW = new Set(['autoplay', 'fullscreen', 'encrypted-media', 'picture-in-picture', 'clipboard-write', 'web-share', 'accelerometer', 'gyroscope']);
+
+/** Iframe src as the browser will see it; values with character references other than &amp; are rejected. */
+function allowedIframe(src: string | undefined): boolean {
+  if (!src || /&#|&(?!amp;)[a-z][a-z0-9]*;/i.test(src)) return false;
+  return isAllowedIframeHost(src.replace(/&amp;/gi, '&'));
+}
+
+function iframeSrc(raw: string): string | undefined {
+  ATTR_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = ATTR_RE.exec(raw))) if (m[1]!.toLowerCase() === 'src') return m[2] ?? m[3] ?? m[4] ?? '';
+  return undefined;
 }
 
 function escapeAttr(v: string): string {
@@ -45,16 +62,23 @@ function cleanAttrs(tag: string, raw: string, allowIframes: boolean): string {
     if (name.startsWith('on') || name === 'style') continue;
     if (!allowed.has(name) && !GLOBAL_ATTRS.has(name) && !name.startsWith('data-')) continue;
     if (URL_ATTRS.has(name)) {
+      const policy = tag === 'img' ? 'media' : 'link';
       if (name === 'srcset') {
-        if (value.split(',').some((part) => !safeUrl(part.trim().split(/\s+/)[0] ?? ''))) continue;
-      } else if (!safeUrl(value)) continue;
-      if (tag === 'iframe' && name === 'src' && !/^https:\/\//i.test(value.trim())) continue;
+        if (value.split(',').some((part) => !safeUrl(part.trim().split(/\s+/)[0] ?? '', 'media'))) continue;
+      } else if (!safeUrl(value, policy)) continue;
+      if (tag === 'iframe' && name === 'src' && !allowedIframe(value)) continue;
+    }
+    if (tag === 'iframe' && name === 'allow') {
+      const features = value.split(';').map((f) => f.trim().split(/\s+/)[0]!.toLowerCase()).filter((f) => IFRAME_ALLOW.has(f));
+      if (features.length) out.push(`allow="${features.join('; ')}"`);
+      continue;
     }
     if (name === 'target' && value === '_blank') hasTargetBlank = true;
     out.push(m[2] === undefined && m[3] === undefined && m[4] === undefined ? name : `${name}="${escapeAttr(value)}"`);
   }
   if (tag === 'a' && hasTargetBlank && !out.some((a) => a.startsWith('rel='))) out.push('rel="noopener noreferrer"');
-  if (tag === 'iframe') out.push('sandbox="allow-scripts allow-same-origin allow-popups allow-presentation"');
+  // Only allowlisted hosts reach this point (see sanitizeHtml); they get their own origin.
+  if (tag === 'iframe') out.push(`sandbox="${IFRAME_SANDBOX_TRUSTED}"`);
   return out.length ? ` ${out.join(' ')}` : '';
 }
 
@@ -79,7 +103,8 @@ export function sanitizeHtml(html: string, opts: { allowIframes?: boolean } = {}
       if (tag === dropTag) dropDepth += closing ? -1 : m[0].endsWith('/>') ? 0 : 1;
       continue;
     }
-    const isIframe = tag === 'iframe' && allowIframes;
+    // Iframes survive only with an allowlisted https src; anything else is dropped with its content.
+    const isIframe = tag === 'iframe' && allowIframes && (closing || allowedIframe(iframeSrc(m[2] ?? '')));
     if (DROP_WITH_CONTENT.has(tag) && !isIframe) {
       if (!closing && !m[0].endsWith('/>')) {
         dropDepth = 1;

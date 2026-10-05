@@ -8,8 +8,9 @@ describe('sanitizeHtml', () => {
     const out = sanitizeHtml('<p onclick="x()">Hi <strong>there</strong><script>alert(1)</script><a href="javascript:alert(1)">bad</a><a href="/ok" target="_blank">ok</a><iframe src="https://e.com"></iframe></p>');
     expect(out).toBe('<p>Hi <strong>there</strong><a>bad</a><a href="/ok" target="_blank" rel="noopener noreferrer">ok</a></p>');
   });
-  it('optionally allows https iframes (sandboxed)', () => {
-    expect(sanitizeHtml('<iframe src="https://e.com/x" onload="x"></iframe>', { allowIframes: true })).toContain('sandbox=');
+  it('optionally allows allowlisted https iframes (sandboxed)', () => {
+    expect(sanitizeHtml('<iframe src="https://www.youtube-nocookie.com/embed/x" onload="x"></iframe>', { allowIframes: true })).toContain('sandbox=');
+    expect(sanitizeHtml('<iframe src="https://e.com/x" onload="x"></iframe>', { allowIframes: true })).toBe('');
     expect(sanitizeHtml('<iframe src="http://e.com/x"></iframe>', { allowIframes: true })).not.toContain('src=');
   });
 });

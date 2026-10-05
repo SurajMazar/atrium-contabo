@@ -1,4 +1,4 @@
-import { LinkSchema } from '@atrium/schema';
+import { LinkSchema, safeUrlSchema } from '@atrium/schema';
 import { z } from 'zod';
 import { defineComponent } from '../types';
 import { ButtonSchema, buttonItemControls, buttonsControl, headingLevel, introControls, media, mediaControl, sectionBase, sectionControls } from '../fields';
@@ -328,12 +328,17 @@ export const embed = defineComponent({
   description: 'Third-party widget via iframe URL, sanitized HTML, or a sandboxed HTML snippet. Requires the code.manage permission to edit.',
   props: z.object({
     mode: z.enum(['iframe', 'html', 'sandbox']).default('iframe'),
-    url: z.string().max(1000).optional(),
+    /** https only; non-allowlisted hosts are rendered without allow-same-origin (see EMBED_IFRAME_HOSTS). */
+    url: safeUrlSchema('https', undefined, 1000).optional(),
     html: z.string().max(50_000).optional(),
     title: z.string().max(120).default('Embedded content'),
     aspect: aspect.default('16:9'),
     height: z.number().int().min(80).max(2000).optional(),
-    allow: z.string().max(200).optional(),
+    allow: z
+      .string()
+      .max(200)
+      .transform((v) => v.replace(/[^a-z0-9;\- ]/gi, ''))
+      .optional(),
   }),
   defaultProps: { mode: 'iframe', title: 'Embedded content' },
   controls: [

@@ -7,8 +7,21 @@ export function isPublicPath(pathname: string): boolean {
   return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
-/** Safe in-app return URL (no protocol-relative or external redirects). */
+/**
+ * Safe in-app return URL. Rejects anything that is not a same-origin path once a URL parser
+ * has seen it: protocol-relative (`//x`), backslash tricks (`/\\x`), and control characters
+ * that parsers strip (`/%09/example.com` → `//example.com`).
+ */
 export function safeNext(next: string | null | undefined, fallback = '/'): string {
-  if (!next || !next.startsWith('/') || next.startsWith('//') || next.startsWith('/\\')) return fallback;
-  return next;
+  if (!next || next.length > 2000 || !next.startsWith('/')) return fallback;
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f\\]/.test(next) || next.startsWith('//')) return fallback;
+  try {
+    const base = 'https://atrium.invalid';
+    const u = new URL(next, base);
+    if (u.origin !== base) return fallback;
+    return `${u.pathname}${u.search}${u.hash}`;
+  } catch {
+    return fallback;
+  }
 }

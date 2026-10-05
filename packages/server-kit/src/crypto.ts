@@ -211,8 +211,38 @@ export function webhookHeaders(secret: string, input: { event: string; deliveryI
   };
 }
 
-/** Derive a purpose-specific secret from the encryption key (e.g. local storage URL signing). */
+/**
+ * Key id used for derived secrets. Deliberately NOT the active encryption key: rotating
+ * ENCRYPTION_KEY_ID must not change derived secrets (that would invalidate every outstanding
+ * local-storage signed URL). Order: ENCRYPTION_DERIVE_KEY_ID → `default` (ENCRYPTION_KEY) →
+ * the active key.
+ */
+export function derivationKeyId(env: Record<string, string | undefined> = process.env, ring: Keyring = keyringFromEnv(env)): string {
+  const explicit = env.ENCRYPTION_DERIVE_KEY_ID?.trim();
+  if (explicit) {
+    if (!ring.keys.has(explicit)) throw new CryptoConfigError(`ENCRYPTION_DERIVE_KEY_ID "${explicit}" is not present in the keyring`);
+    return explicit;
+  }
+  return ring.keys.has('default') ? 'default' : ring.activeKeyId;
+}
+
+function deriveWith(key: Buffer, purpose: string): string {
+  return createHmac('sha256', key).update(`atrium:${purpose}`).digest('base64url');
+}
+
+/** Derive a purpose-specific secret from a stable encryption key (e.g. local storage URL signing). */
 export function deriveSecret(purpose: string, env: Record<string, string | undefined> = process.env): string {
   const ring = keyringFromEnv(env);
-  return createHmac('sha256', ring.keys.get(ring.activeKeyId)!).update(`atrium:${purpose}`).digest('base64url');
+  return deriveWith(ring.keys.get(derivationKeyId(env, ring))!, purpose);
+}
+
+/**
+ * Every secret `purpose` could have been derived with (the stable derivation key first, then all
+ * other keys in the ring) — verifiers should accept any of them so signatures survive a change
+ * of the derivation key while the old key is still configured.
+ */
+export function deriveSecretCandidates(purpose: string, env: Record<string, string | undefined> = process.env): string[] {
+  const ring = keyringFromEnv(env);
+  const first = derivationKeyId(env, ring);
+  return [first, ...[...ring.keys.keys()].filter((id) => id !== first)].map((id) => deriveWith(ring.keys.get(id)!, purpose));
 }

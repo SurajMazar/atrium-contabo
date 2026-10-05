@@ -2,7 +2,8 @@ import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, Upl
 import { FileInterceptor } from '@nestjs/platform-express';
 import { z } from 'zod';
 import { env } from '../../config/env';
-import { Access, CurrentUser, type AuthUser } from '../../common/decorators';
+import { AccessService } from '../../common/access.service';
+import { Access, CurrentAccess, CurrentUser, type AccessContext, type AuthUser } from '../../common/decorators';
 import { badRequest } from '../../common/errors';
 import { limitOf } from '../../common/http';
 import { ZodBody } from '../../common/zod.pipe';
@@ -13,16 +14,18 @@ const upload = () => FileInterceptor('file', { limits: { fileSize: env().UPLOAD_
 
 @Controller()
 export class MediaController {
-  constructor(private readonly media: MediaService) {}
+  constructor(private readonly media: MediaService, private readonly access: AccessService) {}
 
   @Access('media.read', 'organization', 'orgId') @Get('organizations/:orgId/media')
-  list(@Param('orgId') orgId: string, @Query() q: Record<string, string>) {
+  async list(@Param('orgId') orgId: string, @Query() q: Record<string, string>, @CurrentAccess() access: AccessContext) {
+    await this.access.assertWebsiteInScope(access, q.websiteId);
     return this.media.list(orgId, { websiteId: q.websiteId, folderId: q.folderId, search: q.search, type: q.type, tag: q.tag, cursor: q.cursor, limit: limitOf(q.limit, 60) });
   }
 
   @Access('media.upload', 'organization', 'orgId') @Post('organizations/:orgId/media/upload') @UseInterceptors(upload())
-  upload(@Param('orgId') orgId: string, @UploadedFile() file: UploadFile | undefined, @Body() body: Record<string, string>, @CurrentUser() user: AuthUser) {
+  async upload(@Param('orgId') orgId: string, @UploadedFile() file: UploadFile | undefined, @Body() body: Record<string, string>, @CurrentUser() user: AuthUser, @CurrentAccess() access: AccessContext) {
     if (!file) throw badRequest('Attach a file in the "file" field');
+    await this.access.assertWebsiteInScope(access, body.websiteId || undefined);
     return this.media.upload(orgId, file, { folderId: body.folderId || undefined, websiteId: body.websiteId || undefined, alt: body.alt, allowDuplicate: body.allowDuplicate === 'true' }, user);
   }
 
@@ -39,10 +42,16 @@ export class MediaController {
   remove(@Param('id') id: string, @CurrentUser() user: AuthUser) { return this.media.remove(id, user); }
 
   @Access('media.read', 'organization', 'orgId') @Get('organizations/:orgId/media-folders')
-  folders(@Param('orgId') orgId: string, @Query('websiteId') websiteId?: string) { return this.media.folders(orgId, websiteId); }
+  async folders(@Param('orgId') orgId: string, @CurrentAccess() access: AccessContext, @Query('websiteId') websiteId?: string) {
+    await this.access.assertWebsiteInScope(access, websiteId);
+    return this.media.folders(orgId, websiteId);
+  }
 
   @Access('media.upload', 'organization', 'orgId') @Post('organizations/:orgId/media-folders')
-  createFolder(@Param('orgId') orgId: string, @Body(new ZodBody(z.object({ name: z.string().trim().min(1).max(80), parentId: z.string().optional(), websiteId: z.string().optional() }))) body: { name: string; parentId?: string; websiteId?: string }) { return this.media.createFolder(orgId, body); }
+  async createFolder(@Param('orgId') orgId: string, @Body(new ZodBody(z.object({ name: z.string().trim().min(1).max(80), parentId: z.string().optional(), websiteId: z.string().optional() }))) body: { name: string; parentId?: string; websiteId?: string }, @CurrentAccess() access: AccessContext) {
+    await this.access.assertWebsiteInScope(access, body.websiteId);
+    return this.media.createFolder(orgId, body);
+  }
 
   @Access('media.upload', 'mediaFolder', 'id') @Patch('media-folders/:id')
   updateFolder(@Param('id') id: string, @Body(new ZodBody(z.object({ name: z.string().trim().min(1).max(80).optional(), parentId: z.string().nullable().optional() }))) body: { name?: string; parentId?: string | null }) { return this.media.updateFolder(id, body); }

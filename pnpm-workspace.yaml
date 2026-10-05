@@ -3,6 +3,8 @@ packages:
   - packages/*
   - tests/*
   - tools/*
+# Only these packages may run install scripts (pnpm 10 skips all others). @nestjs/core has no
+# install script and protobufjs's only prints a version-scheme warning, so neither is listed.
 onlyBuiltDependencies:
   - "@prisma/client"
   - "@prisma/engines"
@@ -10,6 +12,8 @@ onlyBuiltDependencies:
   - argon2
   - sharp
   - esbuild
-  - "@nestjs/core"
   - "@swc/core"
-  - protobufjs
+# Security overrides (docs/security/DEPENDENCY_POLICY.md). mysql2 is only pulled in by the Prisma CLI
+# (we use PostgreSQL); force a patched release instead of the exact version Prisma pins.
+overrides:
+  mysql2: ^3.23.1

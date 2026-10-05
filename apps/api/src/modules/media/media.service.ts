@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { createHash, randomBytes } from 'node:crypto';
 import { env } from '../../config/env';
+import { resolveUploadType, safeFilenameStem, sanitizeSvg } from '../../common/file-safety';
 import { AuditService } from '../../common/audit.service';
 import type { AuthUser } from '../../common/decorators';
 import { badRequest, conflict, notFound } from '../../common/errors';
@@ -16,7 +17,6 @@ export interface UploadFile {
   buffer: Buffer;
 }
 
-const ALLOWED = /^(image\/(jpeg|png|webp|avif|gif|svg\+xml)|video\/(mp4|webm|quicktime)|application\/pdf|font\/(woff2?|ttf|otf)|application\/(font-woff2?|x-font-ttf|vnd\.ms-fontobject)|text\/(plain|csv)|application\/(msword|vnd\.openxmlformats-officedocument\.[\w.]+|vnd\.ms-excel|zip))$/;
 
 /** Minimal dimension sniffing so ALT/aspect ratio data is available before async processing. */
 function imageSize(buf: Buffer, mime: string): { width: number; height: number } | null {
@@ -40,14 +40,7 @@ function imageSize(buf: Buffer, mime: string): { width: number; height: number }
   return null;
 }
 
-/** Strip scriptable content from uploaded SVGs. */
-export function sanitizeSvg(svg: string): string {
-  return svg
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<foreignObject[\s\S]*?<\/foreignObject>/gi, '')
-    .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
-    .replace(/(href|xlink:href)\s*=\s*("|')\s*javascript:[^"']*\2/gi, '');
-}
+export { sanitizeSvg } from '../../common/file-safety';
 
 @Injectable()
 export class MediaService {
@@ -87,21 +80,22 @@ export class MediaService {
     return { items, nextCursor: hasMore ? items[items.length - 1]!.id : null, total: await this.db.media.count({ where: where as never }) };
   }
 
-  private key(orgId: string, filename: string) {
+  /** Object key: tenant prefix + random component + slugged name + the DETECTED extension (never the client's). */
+  private key(orgId: string, filename: string, ext: string) {
     const d = new Date();
-    const safe = filename.toLowerCase().replace(/[^\w.-]+/g, '-').replace(/-+/g, '-').slice(-80);
-    return `media/${orgId}/${d.getUTCFullYear()}/${String(d.getUTCMonth() + 1).padStart(2, '0')}/${randomBytes(6).toString('hex')}-${safe}`;
+    return `media/${orgId}/${d.getUTCFullYear()}/${String(d.getUTCMonth() + 1).padStart(2, '0')}/${randomBytes(8).toString('hex')}-${safeFilenameStem(filename)}.${ext}`;
   }
 
+  /** Uploads are hostile: size-check, detect the real type from the bytes, sanitize SVG. */
   private prepare(file: UploadFile) {
-    if (!ALLOWED.test(file.mimetype)) throw badRequest(`Files of type ${file.mimetype || 'unknown'} are not supported`);
     if (file.size > env().UPLOAD_MAX_MB * 1_048_576) throw badRequest(`Files must be smaller than ${env().UPLOAD_MAX_MB} MB`);
-    const buffer = file.mimetype === 'image/svg+xml' ? Buffer.from(sanitizeSvg(file.buffer.toString('utf8'))) : file.buffer;
-    return { buffer, checksum: createHash('sha256').update(buffer).digest('hex'), dims: file.mimetype.startsWith('image/') ? imageSize(buffer, file.mimetype) : null };
+    const type = resolveUploadType(file.buffer, file.originalname);
+    const buffer = type.mime === 'image/svg+xml' ? Buffer.from(sanitizeSvg(file.buffer.toString('utf8'))) : file.buffer;
+    return { buffer, type, checksum: createHash('sha256').update(buffer).digest('hex'), dims: type.mime.startsWith('image/') ? imageSize(buffer, type.mime) : null };
   }
 
   async upload(orgId: string, file: UploadFile, meta: { folderId?: string; websiteId?: string; alt?: string; allowDuplicate?: boolean }, user: AuthUser) {
-    const { buffer, checksum, dims } = this.prepare(file);
+    const { buffer, type, checksum, dims } = this.prepare(file);
     if (!meta.allowDuplicate) {
       const dup = await this.db.media.findFirst({ where: { organizationId: orgId, checksum, deletedAt: null } });
       if (dup) throw conflict('This file is already in your media library', { duplicateOf: await this.dto(dup) });
@@ -112,12 +106,12 @@ export class MediaService {
     if (meta.websiteId && !(await this.db.website.findFirst({ where: { id: meta.websiteId, organizationId: orgId } }))) throw badRequest('Unknown website');
     if (meta.folderId && !(await this.db.mediaFolder.findFirst({ where: { id: meta.folderId, organizationId: orgId } }))) throw badRequest('Unknown folder');
     const storage = await this.resolver.resolver.storage({ organizationId: orgId });
-    const key = this.key(orgId, file.originalname);
-    await storage.upload({ key, body: buffer, contentType: file.mimetype, contentLength: buffer.length, cacheControl: 'public, max-age=31536000, immutable', visibility: 'public' });
-    const isRaster = /^image\/(jpeg|png|webp|avif)$/.test(file.mimetype);
+    const key = this.key(orgId, file.originalname, type.ext);
+    await storage.upload({ key, body: buffer, contentType: type.mime, contentLength: buffer.length, cacheControl: 'public, max-age=31536000, immutable', visibility: 'public' });
+    const isRaster = /^image\/(jpeg|png|webp|avif)$/.test(type.mime);
     const m = await this.db.media.create({
       data: {
-        organizationId: orgId, websiteId: meta.websiteId ?? null, folderId: meta.folderId ?? null, storageProviderId: storage.id, key, filename: file.originalname, mimeType: file.mimetype, size: buffer.length,
+        organizationId: orgId, websiteId: meta.websiteId ?? null, folderId: meta.folderId ?? null, storageProviderId: storage.id, key, filename: file.originalname.slice(0, 200), mimeType: type.mime, size: buffer.length,
         width: dims?.width, height: dims?.height, alt: meta.alt, checksum, status: isRaster ? 'PROCESSING' : 'READY', uploadedById: user.id,
       },
     });
@@ -135,13 +129,16 @@ export class MediaService {
   /** Replace the file but keep id + key, so every reference keeps working. */
   async replace(id: string, file: UploadFile) {
     const m = await this.db.media.findUniqueOrThrow({ where: { id } });
-    const { buffer, checksum, dims } = this.prepare(file);
+    const { buffer, type, checksum, dims } = this.prepare(file);
+    const limits = await this.orgs.limits(m.organizationId);
+    const usage = await this.orgs.usage(m.organizationId);
+    if (limits.storageMb !== undefined && usage.usage.storageMb + (buffer.length - m.size) / 1_048_576 > limits.storageMb) throw badRequest('Storage limit reached for your plan');
     const storage = await this.resolver.resolver.storage({ organizationId: m.organizationId, providerId: m.storageProviderId });
-    const key = this.key(m.organizationId, file.originalname);
-    await storage.upload({ key, body: buffer, contentType: file.mimetype, contentLength: buffer.length, cacheControl: 'public, max-age=31536000, immutable', visibility: 'public' });
+    const key = this.key(m.organizationId, file.originalname, type.ext);
+    await storage.upload({ key, body: buffer, contentType: type.mime, contentLength: buffer.length, cacheControl: 'public, max-age=31536000, immutable', visibility: 'public' });
     await storage.delete(m.key).catch(() => undefined);
-    const isRaster = /^image\/(jpeg|png|webp|avif)$/.test(file.mimetype);
-    const updated = await this.db.media.update({ where: { id }, data: { key, mimeType: file.mimetype, size: buffer.length, checksum, width: dims?.width ?? null, height: dims?.height ?? null, variants: [], blurDataUrl: null, status: isRaster ? 'PROCESSING' : 'READY', filename: file.originalname } });
+    const isRaster = /^image\/(jpeg|png|webp|avif)$/.test(type.mime);
+    const updated = await this.db.media.update({ where: { id }, data: { key, mimeType: type.mime, size: buffer.length, checksum, width: dims?.width ?? null, height: dims?.height ?? null, variants: [], blurDataUrl: null, status: isRaster ? 'PROCESSING' : 'READY', filename: file.originalname.slice(0, 200) } });
     if (isRaster) await this.queues.add('media', 'media.process', { mediaId: id }, { attempts: 3 });
     return this.dto(updated);
   }
@@ -162,13 +159,23 @@ export class MediaService {
 
   async createFolder(orgId: string, body: { name: string; parentId?: string; websiteId?: string }) {
     if (body.parentId && !(await this.db.mediaFolder.findFirst({ where: { id: body.parentId, organizationId: orgId } }))) throw notFound('Parent folder');
+    if (body.websiteId && !(await this.db.website.findFirst({ where: { id: body.websiteId, organizationId: orgId } }))) throw notFound('Website');
     const f = await this.db.mediaFolder.create({ data: { organizationId: orgId, name: body.name, parentId: body.parentId ?? null, websiteId: body.websiteId ?? null } });
     return { id: f.id, name: f.name, parentId: f.parentId, websiteId: f.websiteId };
   }
 
   async updateFolder(id: string, body: { name?: string; parentId?: string | null }) {
-    if (body.parentId === id) throw badRequest('A folder cannot contain itself');
-    const f = await this.db.mediaFolder.update({ where: { id }, data: body });
+    const folder = await this.db.mediaFolder.findUniqueOrThrow({ where: { id } });
+    if (body.parentId) {
+      // The new parent must be in the same organization and must not be a descendant (no cycles).
+      const all = await this.db.mediaFolder.findMany({ where: { organizationId: folder.organizationId }, select: { id: true, parentId: true } });
+      const byId = new Map(all.map((f) => [f.id, f.parentId]));
+      if (!byId.has(body.parentId)) throw notFound('Parent folder');
+      for (let cur: string | null | undefined = body.parentId, hops = 0; cur; cur = byId.get(cur), hops++) {
+        if (cur === id || hops > 1000) throw badRequest('A folder cannot be moved into itself');
+      }
+    }
+    const f = await this.db.mediaFolder.update({ where: { id }, data: { name: body.name, parentId: body.parentId } });
     return { id: f.id, name: f.name, parentId: f.parentId, websiteId: f.websiteId };
   }
 

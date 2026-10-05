@@ -9,7 +9,7 @@ import { dayRange, referrerSource } from '../src/processors/analytics';
 import { processAiGenerateSite, setAgentLoader } from '../src/processors/ai';
 import { processDeploymentRun, projectNameFor, toDbStatus } from '../src/processors/deployments';
 import { routeJob } from '../src/router';
-import { assertPublicUrl, isPrivateAddress } from '../src/lib/net';
+import { assertPublicUrl, isPublicIp } from '@atrium/providers';
 import { job, makeCtx } from './helpers';
 import { ProviderError } from '@atrium/providers';
 
@@ -162,18 +162,19 @@ describe('analytics + deployments + net helpers', () => {
     expect(referrerSource(null)).toBe('(direct)');
     expect(toDbStatus('building')).toBe('BUILDING');
     expect(projectNameFor('My_Site')).toBe('atrium-my-site');
-    expect(isPrivateAddress('10.1.2.3')).toBe(true);
-    expect(isPrivateAddress('172.20.0.1')).toBe(true);
-    expect(isPrivateAddress('::1')).toBe(true);
-    expect(isPrivateAddress('8.8.8.8')).toBe(false);
+    expect(isPublicIp('10.1.2.3')).toBe(false);
+    expect(isPublicIp('172.20.0.1')).toBe(false);
+    expect(isPublicIp('::1')).toBe(false);
+    expect(isPublicIp('::ffff:7f00:1')).toBe(false);
+    expect(isPublicIp('8.8.8.8')).toBe(true);
   });
 
   it('SSRF guard blocks private targets unless allowed', async () => {
-    await expect(assertPublicUrl('http://127.0.0.1:8080/x', false)).rejects.toThrow(/private/);
-    await expect(assertPublicUrl('http://localhost/x', false)).rejects.toThrow(/private/);
-    await expect(assertPublicUrl('ftp://example.com', true)).rejects.toThrow(/scheme/);
-    await expect(assertPublicUrl('https://user:pw@example.com', true)).rejects.toThrow(/credentials/);
-    await expect(assertPublicUrl('http://127.0.0.1:8080/x', true)).resolves.toBeInstanceOf(URL);
+    await expect(assertPublicUrl('http://127.0.0.1:8080/x', { allowPrivate: false })).rejects.toThrow(/loopback/);
+    await expect(assertPublicUrl('http://localhost/x', { allowPrivate: false })).rejects.toThrow(/local/);
+    await expect(assertPublicUrl('ftp://example.com', { allowPrivate: true })).rejects.toThrow(/scheme/);
+    await expect(assertPublicUrl('https://user:pw@example.com', { allowPrivate: true })).rejects.toThrow(/credentials/);
+    await expect(assertPublicUrl('http://127.0.0.1:8080/x', { allowPrivate: true })).resolves.toBeInstanceOf(URL);
   });
 
   it('platform-mode deployment marks the version live and emits deployment.completed', async () => {

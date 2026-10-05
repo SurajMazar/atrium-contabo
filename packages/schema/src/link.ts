@@ -1,8 +1,10 @@
 import { z } from 'zod';
+import { SafeUrlSchema } from './safe-url';
+import { sanitizeUrl } from './security';
 
 export const LinkObjectSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('page'), pageId: z.string(), anchor: z.string().optional(), newTab: z.boolean().optional() }),
-  z.object({ type: z.literal('url'), href: z.string(), newTab: z.boolean().optional(), rel: z.string().optional() }),
+  z.object({ type: z.literal('url'), href: SafeUrlSchema, newTab: z.boolean().optional(), rel: z.string().optional() }),
   z.object({ type: z.literal('anchor'), anchor: z.string() }),
   z.object({ type: z.literal('email'), email: z.string(), subject: z.string().optional() }),
   z.object({ type: z.literal('tel'), phone: z.string() }),
@@ -11,7 +13,7 @@ export const LinkObjectSchema = z.discriminatedUnion('type', [
 ]);
 
 /** Plain strings are treated as hrefs (`/rooms`, `#contact`, `https://…`). */
-export const LinkSchema = z.union([z.string(), LinkObjectSchema]);
+export const LinkSchema = z.union([SafeUrlSchema, LinkObjectSchema]);
 export type LinkObject = z.infer<typeof LinkObjectSchema>;
 export type LinkValue = z.infer<typeof LinkSchema>;
 
@@ -27,7 +29,19 @@ export interface ResolvedLink {
   rel?: string;
 }
 
+/**
+ * Resolve a link value to an href. The result is always re-checked with the `link` URL policy
+ * (values may come from templates/CMS data interpolated after schema validation): unsafe hrefs
+ * such as `javascript:` become '#'.
+ */
 export function resolveLink(link: LinkValue | undefined | null, ctx: LinkResolveContext): ResolvedLink | null {
+  const res = resolveLinkUnchecked(link, ctx);
+  if (!res) return null;
+  const href = sanitizeUrl(res.href, 'link');
+  return href === undefined ? { href: '#', external: false, newTab: false } : { ...res, href };
+}
+
+function resolveLinkUnchecked(link: LinkValue | undefined | null, ctx: LinkResolveContext): ResolvedLink | null {
   if (!link) return null;
   if (typeof link === 'string') {
     const external = /^(https?:)?\/\//.test(link);

@@ -3,16 +3,20 @@ Description=Atrium PostgreSQL 17
 
 [Container]
 ContainerName=atrium-postgres
-Image=docker.io/library/postgres:17-alpine
-Network=atrium.network
+Image=docker.io/library/postgres:17.11-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+Network=atrium-data.network
 NetworkAlias=postgres
 Volume=atrium-pg.volume:/var/lib/postgresql/data
-EnvironmentFile=%h/.config/atrium/atrium.env
+# First start only: creates the DML-only application role (POSTGRES_APP_USER/POSTGRES_APP_PASSWORD).
+Volume=%h/.config/atrium/postgres/initdb:/docker-entrypoint-initdb.d:ro,Z
+# POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_DB/POSTGRES_APP_USER/POSTGRES_APP_PASSWORD only
+EnvironmentFile=%h/.config/atrium/postgres.env
 ShmSize=256m
-HealthCmd=pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}
+HealthCmd=pg_isready -q -h 127.0.0.1
 HealthInterval=5s
 HealthRetries=30
 Notify=healthy
+NoNewPrivileges=true
 
 [Service]
 Restart=always

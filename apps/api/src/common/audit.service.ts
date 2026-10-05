@@ -13,6 +13,8 @@ export interface AuditEntry {
   summary?: string;
   metadata?: Record<string, unknown>;
   req?: AppRequest;
+  ip?: string | null;
+  userAgent?: string | null;
 }
 
 /** Append-only audit log + activity timeline. Never throws into the caller. */
@@ -34,8 +36,8 @@ export class AuditService {
           resourceType: e.resourceType,
           resourceId: e.resourceId ?? null,
           summary: e.summary,
-          ip: e.req ? (e.req.ip ?? null) : null,
-          userAgent: e.req ? ((e.req.headers['user-agent'] as string) ?? null) : null,
+          ip: e.ip ?? (e.req ? (e.req.ip ?? null) : null),
+          userAgent: (e.userAgent ?? (e.req ? ((e.req.headers['user-agent'] as string) ?? null) : null))?.slice(0, 400) ?? null,
           metadata: (e.metadata ?? {}) as object,
         },
       });

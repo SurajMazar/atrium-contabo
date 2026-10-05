@@ -1,5 +1,6 @@
 'use client';
 
+import { sanitizeUrl } from '@atrium/schema';
 import { useEffect, useId, useState, type FormEvent } from 'react';
 
 export interface BookingWidgetProps {
@@ -25,10 +26,12 @@ const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), 
 /** Builds `${bookingUrl}?checkin=…&checkout=…&adults=…` from the visitor's selection. */
 export function buildBookingUrl(p: Pick<BookingWidgetProps, 'bookingUrl' | 'arrivalParam' | 'departureParam' | 'guestsParam' | 'childrenParam' | 'promoParam' | 'extraParams'>, v: { arrival: string; departure: string; guests: number; children?: number; promo?: string }): string {
   let url: URL;
+  // Only http(s) or relative booking engines (never javascript:/data: navigations).
+  const base = sanitizeUrl(p.bookingUrl, 'navigation') || '/';
   try {
-    url = new URL(p.bookingUrl);
+    url = new URL(base);
   } catch {
-    url = new URL(p.bookingUrl, 'https://invalid.local');
+    url = new URL(base, 'https://invalid.local');
   }
   url.searchParams.set(p.arrivalParam, v.arrival);
   url.searchParams.set(p.departureParam, v.departure);

@@ -2,6 +2,9 @@ import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { config as loadDotenv } from 'dotenv';
 import { z } from 'zod';
+import { APP_SECRETS, assertProductionSecrets, WORKER_PRODUCTION_SPEC, type ProductionCheckSpec } from './production-secrets';
+
+export * from './production-secrets';
 
 /** "true"/"1"/"yes"/"on" → true; "false"/"0"/"no"/"off"/"" → false. (z.coerce.boolean treats "false" as true.) */
 export const boolish = (def: boolean) =>
@@ -70,6 +73,11 @@ export const EnvSchema = z.object({
   GEMINI_API_KEY: optionalString,
   GEMINI_MODEL: optionalString,
 
+  /** Allow outbound HTTP (webhooks, HTTP actions, provider calls) to private/loopback addresses. Default: false in production, true otherwise. */
+  OUTBOUND_ALLOW_PRIVATE: z.union([z.boolean(), z.string()]).optional().transform((v) => (v === undefined || v === '' ? undefined : typeof v === 'boolean' ? v : ['true', '1', 'yes', 'on'].includes(v.toLowerCase()))),
+  /** Separate cookieless origin user uploads are served from (e.g. https://media.example.com). */
+  MEDIA_ORIGIN: optionalString,
+
   VERCEL_TOKEN: optionalString,
   VERCEL_TEAM_ID: optionalString,
 
@@ -77,7 +85,7 @@ export const EnvSchema = z.object({
   OTEL_EXPORTER_OTLP_ENDPOINT: optionalString,
 });
 
-export type AtriumEnv = z.output<typeof EnvSchema>;
+export type AtriumEnv = Omit<z.output<typeof EnvSchema>, 'OUTBOUND_ALLOW_PRIVATE'> & { OUTBOUND_ALLOW_PRIVATE: boolean };
 
 /** Walk up from `start` to find the workspace root `.env` (stops at pnpm-workspace.yaml or filesystem root). */
 export function findEnvFile(start = process.cwd()): string | undefined {
@@ -114,8 +122,21 @@ export class EnvValidationError extends Error {
 /**
  * Validate the environment shared by API/worker/CLI. `required` lists keys that must be
  * present for the calling process (e.g. ['ENCRYPTION_KEY'] for the worker).
+ *
+ * With NODE_ENV=production the production policy (`assertProductionSecrets`) runs too: required
+ * secrets must be strong and not .env.example placeholders, public URLs must be https and not
+ * localhost — otherwise this throws ProductionConfigError and the process refuses to start.
+ * Pass `production: false` to skip (tests), or a custom spec. Outside production it only warns.
  */
-export function loadEnv(opts: { dotenv?: boolean; source?: Record<string, string | undefined>; required?: Array<keyof AtriumEnv> } = {}): AtriumEnv {
+export function loadEnv(
+  opts: {
+    dotenv?: boolean;
+    source?: Record<string, string | undefined>;
+    required?: Array<keyof AtriumEnv>;
+    production?: ProductionCheckSpec | false;
+    warn?: (message: string) => void;
+  } = {},
+): AtriumEnv {
   if (opts.dotenv !== false && !opts.source) loadDotenvOnce();
   const source = opts.source ?? process.env;
   const parsed = EnvSchema.safeParse(source);
@@ -126,5 +147,15 @@ export function loadEnv(opts: { dotenv?: boolean; source?: Record<string, string
     return parsed.data[k] === undefined || parsed.data[k] === '';
   });
   if (missing.length) throw new EnvValidationError(missing.map((k) => `${String(k)} is required`));
-  return parsed.data;
+  if (opts.production !== false) {
+    const required = (opts.required ?? []).map(String).filter((k) => k in APP_SECRETS);
+    const spec = opts.production ?? {
+      ...WORKER_PRODUCTION_SPEC,
+      // Secrets the caller requires are enforced; every other known app secret is validated when set.
+      required,
+      optional: Object.keys(APP_SECRETS).filter((k) => !required.includes(k)),
+    };
+    assertProductionSecrets({ ...source, ...parsed.data }, spec, { nodeEnv: parsed.data.NODE_ENV, warn: opts.warn });
+  }
+  return { ...parsed.data, OUTBOUND_ALLOW_PRIVATE: parsed.data.OUTBOUND_ALLOW_PRIVATE ?? parsed.data.NODE_ENV !== 'production' };
 }

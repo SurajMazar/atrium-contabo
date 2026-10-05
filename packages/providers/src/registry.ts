@@ -1,5 +1,5 @@
 import type { z } from 'zod';
-import { describeDriver, ProviderError, type ProviderDriver, type ProviderKind } from './driver';
+import { describeDriver, ProviderError, TENANT_CONTEXT, type DriverContext, type ProviderDriver, type ProviderKind } from './driver';
 import { aiDrivers } from './ai';
 import type { AIProvider } from './ai/types';
 import { captchaDrivers } from './captcha';
@@ -78,8 +78,11 @@ export function parseDriverInput<K extends ProviderKind>(kind: K, id: string, co
   return { driver, config: c.data, secrets: s.data };
 }
 
-/** Parse + instantiate a provider in one step. */
-export function instantiateProvider<K extends ProviderKind>(kind: K, id: string, config: unknown, secrets: unknown): ProviderInstanceMap[K] {
+/**
+ * Parse + instantiate a provider in one step. `ctx` says where the configuration came from;
+ * it defaults to tenant (`public-only`) — pass `TRUSTED_CONTEXT` only for env/platform config.
+ */
+export function instantiateProvider<K extends ProviderKind>(kind: K, id: string, config: unknown, secrets: unknown, ctx: DriverContext = TENANT_CONTEXT): ProviderInstanceMap[K] {
   const parsed = parseDriverInput(kind, id, config, secrets);
-  return parsed.driver.create(parsed.config, parsed.secrets);
+  return parsed.driver.create(parsed.config, parsed.secrets, ctx);
 }

@@ -1,0 +1,45 @@
+# gitleaks configuration (gitleaks >= 8.25; CI pins v8.30.1 — see .github/workflows/security.yml).
+#
+#   Local:  pnpm scan:secrets        (= gitleaks git --no-banner --redact --config .gitleaks.toml)
+#   Tree:   gitleaks dir --no-banner --redact --config .gitleaks.toml .
+#
+# Start from the upstream default ruleset and only carve out things that are KNOWN to be fake.
+# Every allowlist entry below must point at a placeholder / fixture — never at a real credential.
+# A leaked real secret must be ROTATED first; history rewriting is a separate, deliberate decision.
+# See docs/security/DEPENDENCY_POLICY.md ("Secret scanning").
+
+title = "Atrium gitleaks config"
+
+[extend]
+useDefault = true
+
+# 1) Files that exist to hold placeholder values or test fixtures.
+[[allowlists]]
+description = "Example env files, dev-only local service config, lockfile and test fixtures"
+paths = [
+  # .env.example at the root and any *.env.example / secrets*.example.env elsewhere
+  '''(^|/)\.env\.example$''',
+  '''(^|/)[^/]*\.env\.example$''',
+  '''(^|/)secrets[^/]*\.example\.env$''',
+  # SeaweedFS S3 identities for the LOCAL compose stack (atrium / atrium-secret)
+  '''^infra/seaweedfs/s3\.json$''',
+  # integrity hashes trip the generic-api-key rule
+  '''(^|/)pnpm-lock\.yaml$''',
+  # unit / integration test fixtures with fake keys
+  '''^packages/cli/src/__tests__/''',
+  '''^packages/[^/]+/test/''',
+  '''^apps/[^/]+/test/''',
+  '''^tests/''',
+]
+
+# 2) Well-known placeholder values, wherever they appear (docs, source that detects placeholders, …).
+#    Matched against the extracted secret (regexTarget = "secret", the default).
+[[allowlists]]
+description = "Documented placeholder secrets (rejected at runtime by packages/server-kit production-secrets)"
+regexes = [
+  '''(?i)change[-_]?me''',
+  '''^MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=$''', # base64("0123456789abcdef" x2), .env.example ENCRYPTION_KEY
+  '''^0123456789abcdef0123456789abcdef$''',
+  '''^atrium-secret$''',
+  '''(?i)^replace[-_]?me''',
+]

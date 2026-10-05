@@ -8,12 +8,18 @@ export interface AuthUser {
   name: string;
   isSuperAdmin: boolean;
   sessionId: string;
+  /** The session passed a second factor. */
+  mfaVerified?: boolean;
 }
 
 export interface AccessContext {
   organizationId: string;
   websiteId?: string;
   permissions: Set<string>;
+  /** Role key of the member ('owner', 'admin', custom…); undefined for super-admin overrides. */
+  roleKey?: string;
+  /** Websites the member is restricted to; empty = every website in the organization. */
+  websiteIds: string[];
   /** Accessed via super-admin override (audited). */
   superAdminOverride?: boolean;
 }
@@ -25,6 +31,13 @@ export const Public = () => SetMetadata(IS_PUBLIC, true);
 
 export const SUPER_ADMIN = 'atrium:super-admin';
 export const SuperAdminOnly = () => SetMetadata(SUPER_ADMIN, true);
+
+/**
+ * Allow `?access_token=` for this route only (EventSource cannot send headers).
+ * Everywhere else tokens in URLs are rejected: they leak into logs, history and referrers.
+ */
+export const ALLOW_QUERY_TOKEN = 'atrium:allow-query-token';
+export const AllowQueryToken = () => SetMetadata(ALLOW_QUERY_TOKEN, true);
 
 export type ResourceKind =
   | 'organization' | 'website' | 'page' | 'pageVersion' | 'form' | 'submission' | 'collection' | 'collectionItem'

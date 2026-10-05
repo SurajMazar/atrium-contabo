@@ -6,6 +6,7 @@ import {
   applyBinding, buildJsonLd, buildMetadata, createRenderContext, getSiteCss, isRedirect, listRoutes, NodeView, PageView, RENDERER_CSS, resolveNode, resolvePageForPath,
 } from '../src/index';
 import { registry } from '@atrium/component-registry';
+import { createRegistry as createSourceRegistry } from '../../component-registry/src/index';
 import { aranya, blueprints, demos } from './fixtures';
 
 const render = (el: Parameters<typeof renderToString>[0]) => renderToString(el);
@@ -44,6 +45,13 @@ describe('NodeView', () => {
     expect(html).toContain('a-n-n1');
     expect(html).toContain('data-a-anim');
     expect(html).toMatch(/^<h3/);
+  });
+  it('emits gallery image categories as data-category', () => {
+    // Use the registry source so the test does not depend on a rebuilt @atrium/component-registry dist.
+    const gctx = createRenderContext({ definition: aranya, mode: 'live', registry: createSourceRegistry() as never }, aranya.pages[0]);
+    const html = render(createElement(NodeView, { ctx: gctx, node: { id: 'g1', type: 'gallery', variant: 'masonry', props: { images: [{ src: 'https://img.test/a.jpg', alt: 'A', category: 'Weddings' }, { src: 'https://img.test/b.jpg', alt: 'B' }] } } as Node }));
+    expect(html).toContain('data-category="Weddings"');
+    expect(html.match(/data-category=/g)).toHaveLength(1);
   });
   it('renders *emphasis* as <em>', () => {
     expect(render(createElement(NodeView, { ctx, node: node({ props: { text: 'A *quiet* place' } }) }))).toContain('<em>quiet</em>');

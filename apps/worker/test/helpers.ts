@@ -1,5 +1,6 @@
 import { vi } from 'vitest';
 import type { JobInfo, WorkerContext } from '../src/context';
+import { memoryQuotaStore } from '../src/lib/quota';
 
 export function silentLogger(): WorkerContext['logger'] {
   const l = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), trace: vi.fn(), fatal: vi.fn(), child: () => l };
@@ -27,6 +28,7 @@ export function makeCtx(overrides: { prisma?: Record<string, unknown>; resolver?
       return { id: String(enqueued.length) };
     }) as unknown as WorkerContext['enqueue'],
     fetch: overrides.fetch ?? (vi.fn() as unknown as typeof fetch),
+    quota: memoryQuotaStore(),
     now: () => new Date('2026-10-05T12:00:00.000Z'),
   };
   return { ctx, enqueued };

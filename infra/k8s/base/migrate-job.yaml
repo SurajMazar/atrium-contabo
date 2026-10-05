@@ -34,6 +34,11 @@ spec:
           env:
             - { name: CHECKPOINT_DISABLE, value: '1' }
             - { name: HOME, value: /tmp }
+            # Least-privilege DB roles: when secrets.env has MIGRATE_DATABASE_URL (owner role), migrations
+            # use it and DATABASE_URL can be the DML-only app role (docs/deployment/kubernetes.md).
+            # Without the key the Job falls back to DATABASE_URL from envFrom.
+            - name: DATABASE_URL
+              valueFrom: { secretKeyRef: { name: atrium-secrets, key: MIGRATE_DATABASE_URL, optional: true } }
           resources:
             requests: { cpu: 100m, memory: 256Mi }
             limits: { memory: 512Mi }

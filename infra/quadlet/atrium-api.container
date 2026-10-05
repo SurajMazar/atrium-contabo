@@ -8,12 +8,20 @@ ContainerName=atrium-api
 Image=ghcr.io/your-org/atrium-api:latest
 AutoUpdate=registry
 Network=atrium.network
+Network=atrium-data.network
 NetworkAlias=api
 EnvironmentFile=%h/.config/atrium/atrium.env
+# Only used with STORAGE_DRIVER=local.
+Volume=atrium-api-storage.volume:/app/apps/api/storage
 HealthCmd=node -e "fetch('http://127.0.0.1:4000/v1/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
 HealthInterval=15s
 HealthStartPeriod=40s
 Notify=healthy
+# Immutable root filesystem (tmpfs /tmp, /var/tmp, /run), no capabilities, no privilege escalation.
+ReadOnly=true
+ReadOnlyTmpfs=true
+DropCapability=all
+NoNewPrivileges=true
 
 [Service]
 Restart=always

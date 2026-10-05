@@ -1,3 +1,4 @@
+import { safeHref } from '@atrium/schema';
 import type { NavItem } from '@atrium/schema';
 import type { CSSProperties, ReactNode } from 'react';
 import { FormIsland } from '../islands/form';
@@ -32,7 +33,7 @@ export function Brand({ ctx, text, className }: { ctx: RenderContext; text?: str
 }
 
 export function SocialList({ ctx, className, size = 18, networks, style = 'icons' }: { ctx: RenderContext; className?: string; size?: number; networks?: string[]; style?: string }) {
-  const links = ctx.settings.social.filter((s) => s.visible !== false && s.url && (!networks?.length || networks.includes(s.network)));
+  const links = ctx.settings.social.filter((s) => s.visible !== false && safeHref(s.url) && (!networks?.length || networks.includes(s.network)));
   if (!links.length) return null;
   return (
     <ul className={cx('a-social', `a-social--${style}`, className)}>
@@ -40,7 +41,7 @@ export function SocialList({ ctx, className, size = 18, networks, style = 'icons
         const label = s.label ?? SOCIAL_LABELS[s.network] ?? s.network;
         return (
           <li key={s.id}>
-            <a href={s.url} target={s.newTab === false ? undefined : '_blank'} rel="noopener noreferrer" aria-label={style === 'icons' ? label : undefined}>
+            <a href={safeHref(s.url)} target={s.newTab === false ? undefined : '_blank'} rel="noopener noreferrer" aria-label={style === 'icons' ? label : undefined}>
               {style !== 'labels' ? <Icon name={s.icon ?? s.network} size={size} strokeWidth={1.5} /> : null}
               {style !== 'icons' ? <span>{label}</span> : null}
             </a>
@@ -252,7 +253,7 @@ export function ContactDetails({ ctx, className, hours = true }: { ctx: RenderCo
   const address = b.address?.formatted ?? [b.address?.street, b.address?.locality, b.address?.region, b.address?.postalCode, b.address?.country].filter(Boolean).join(', ');
   return (
     <address className={cx('a-contact-details', className)}>
-      {address ? <p>{b.mapsUrl ? <a href={b.mapsUrl} target="_blank" rel="noopener noreferrer" className="a-link">{address}</a> : address}</p> : null}
+      {address ? <p>{safeHref(b.mapsUrl) ? <a href={safeHref(b.mapsUrl)} target="_blank" rel="noopener noreferrer" className="a-link">{address}</a> : address}</p> : null}
       {b.phone ? <p><a href={`tel:${b.phone.replace(/[^+\d]/g, '')}`} className="a-link">{b.phone}</a></p> : null}
       {b.email ? <p><a href={`mailto:${b.email}`} className="a-link">{b.email}</a></p> : null}
       {hours && b.openingHours?.length ? (

@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { createHmac } from 'node:crypto';
 import { resolve4, resolveCname, resolveTxt } from 'node:dns/promises';
 import { env } from '../../config/env';
 import { AuditService } from '../../common/audit.service';
@@ -11,6 +12,19 @@ import { OrganizationsService } from '../organizations/organizations.service';
 import { ResolverService } from '../providers/resolver.service';
 
 const HOSTNAME = /^(?=.{4,253}$)(?!-)([a-z0-9-]{1,63}(?<!-)\.)+[a-z]{2,63}$/;
+
+/** Hostnames of the platform's own apps (admin, API, renderer, preview) — never claimable by tenants. */
+function platformHostnames(): Set<string> {
+  const out = new Set<string>();
+  for (const u of [env().ADMIN_URL, env().API_URL, env().RENDERER_URL, env().PREVIEW_URL]) {
+    try {
+      out.add(new URL(u).hostname.toLowerCase());
+    } catch {
+      /* ignore malformed */
+    }
+  }
+  return out;
+}
 
 interface DnsRecord {
   type: 'A' | 'AAAA' | 'CNAME' | 'TXT';
@@ -61,12 +75,35 @@ export class DomainsService {
     return { site, provider };
   }
 
+  /**
+   * Organization-specific proof token for claiming a hostname that another account has already
+   * added. Deterministic (HMAC), so the claimant can publish it before retrying.
+   */
+  claimToken(organizationId: string, hostname: string) {
+    return `atrium-claim=${createHmac('sha256', env().ENCRYPTION_KEY).update(`domain-claim|${organizationId}|${hostname}`).digest('base64url').slice(0, 32)}`;
+  }
+
   async add(websiteId: string, raw: string, user: AuthUser) {
     const hostname = raw.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/\.$/, '');
     if (!HOSTNAME.test(hostname)) throw badRequest('Enter a valid domain like example.com or www.example.com');
-    if (hostname.endsWith(env().PLATFORM_SITES_DOMAIN.split(':')[0]!)) throw badRequest('Platform subdomains are assigned automatically');
-    if (await this.db.domain.findUnique({ where: { hostname } })) throw conflict('This domain is already connected to a website');
+    const platformHost = env().PLATFORM_SITES_DOMAIN.split(':')[0]!;
+    if (hostname === platformHost || hostname.endsWith(`.${platformHost}`)) throw badRequest('Platform subdomains are assigned automatically');
+    if (platformHostnames().has(hostname)) throw badRequest('This domain is used by the platform');
     const { site, provider } = await this.providerFor(websiteId);
+    const existing = await this.db.domain.findUnique({ where: { hostname }, include: { website: { select: { organizationId: true } } } });
+    if (existing) {
+      if (existing.websiteId === websiteId) throw conflict('This domain is already connected to this website');
+      // Someone else holds the hostname. Ownership proof wins: if the requester has published their claim
+      // TXT record, the other (stale or squatted) connection is released. Otherwise explain how to prove it.
+      const claim = this.claimToken(site.organizationId, hostname);
+      const txt = await resolveTxt(`_atrium-verify.${hostname}`).catch(() => [] as string[][]);
+      if (!txt.some((parts) => parts.join('') === claim)) {
+        throw conflict(`This domain is connected to another website. If you own it, add a TXT record at _atrium-verify.${hostname} with the value ${claim} and try again.`, { claimRecord: { type: 'TXT', name: `_atrium-verify.${hostname}`, value: claim } });
+      }
+      await this.db.domain.delete({ where: { id: existing.id } });
+      await this.audit.log({ organizationId: existing.website.organizationId, websiteId: existing.websiteId, actor: null, action: 'domain.released', resourceType: 'domain', resourceId: existing.id, summary: `${hostname} was claimed by its verified owner and disconnected from this website` });
+      await this.audit.log({ organizationId: site.organizationId, websiteId, actor: user, action: 'domain.claimed', resourceType: 'domain', summary: `${user.name} proved ownership of ${hostname} and took it over from another website` });
+    }
     await this.orgs.assertLimit(site.organizationId, 'customDomains');
     const token = `atrium-verify=${randomToken(16)}`;
     let records = this.platformRecords(hostname, token);
@@ -81,7 +118,13 @@ export class DomainsService {
       }
     }
     const isFirst = (await this.db.domain.count({ where: { websiteId } })) === 0;
-    const d = await this.db.domain.create({ data: { websiteId, hostname, isPrimary: isFirst, provider: providerName, verificationToken: token, dnsRecords: records as object[], status: 'pending' } });
+    let d;
+    try {
+      d = await this.db.domain.create({ data: { websiteId, hostname, isPrimary: isFirst, provider: providerName, verificationToken: token, dnsRecords: records as object[], status: 'pending' } });
+    } catch (err) {
+      if ((err as { code?: string }).code === 'P2002') throw conflict('This domain was just connected to another website');
+      throw err;
+    }
     await this.audit.log({ organizationId: site.organizationId, websiteId, actor: user, action: 'domain.added', resourceType: 'domain', resourceId: d.id, summary: `${user.name} added domain ${hostname}` });
     return this.dto(d);
   }

@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { json } from 'express';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { Logger } from 'nestjs-pino';
@@ -13,10 +14,20 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true });
   app.useLogger(app.get(Logger));
   app.setGlobalPrefix('v1');
-  if (config.TRUST_PROXY) app.set('trust proxy', 1);
+  // Client IPs feed rate limits and audit logs: only trust X-Forwarded-For from known proxies.
+  // TRUST_PROXY: false (default) | true | hop count | address/subnet list — see config/env.ts.
+  app.set('trust proxy', config.TRUST_PROXY);
   app.disable('x-powered-by');
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' }, contentSecurityPolicy: false }));
+  // JSON API: nothing it returns should ever render as a document (Swagger UI in dev is the exception).
+  app.use((req: { path: string }, res: { setHeader(k: string, v: string): void }, next: () => void) => {
+    if (!req.path.startsWith('/docs')) res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
+    next();
+  });
   app.use(cookieParser());
+  // Small bodies for unauthenticated endpoints; large ones only where site imports need them.
+  app.use(['/v1/auth', '/v1/invitations'], json({ limit: '64kb' }));
+  app.use('/v1/public', json({ limit: '512kb' }));
   app.useBodyParser('json', { limit: '25mb' });
 
   const allow = new Set(config.CORS_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean));

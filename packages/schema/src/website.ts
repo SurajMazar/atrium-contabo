@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { safeUrlSchema } from './safe-url';
 import { CollectionDefinitionSchema } from './collections';
 import { FormDefinitionSchema } from './forms';
 import { NavigationSchema } from './navigation';
@@ -12,7 +13,8 @@ export const SCHEMA_VERSION = 1;
 export const RedirectSchema = z.object({
   id: z.string(),
   source: z.string().startsWith('/'),
-  destination: z.string(),
+  /** Only http(s) or relative destinations; anything else falls back to '/'. */
+  destination: safeUrlSchema('navigation', '/'),
   statusCode: z.union([z.literal(301), z.literal(302), z.literal(307), z.literal(308)]).default(301),
   enabled: z.boolean().default(true),
 });

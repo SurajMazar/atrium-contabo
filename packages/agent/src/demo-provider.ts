@@ -3,6 +3,7 @@ import { THEME_PRESETS } from '@atrium/design-tokens';
 import type { AIProvider, AiChatRequest, AiContentPart, StructuredRequest } from '@atrium/providers';
 import type { NodeInput, WebsiteInput } from '@atrium/schema';
 import { BLUEPRINTS } from '@atrium/templates';
+import { readBlock } from './untrusted';
 
 /**
  * Offline demo provider. It never calls a model: it answers the agent's
@@ -144,10 +145,15 @@ export function createDemoProvider(): AIProvider {
 
   const editOps = (req: AiChatRequest): { ops: SiteOperation[]; summary: string } => {
     const text = textOf(req);
-    const request = (/Request:\s*([\s\S]+)$/.exec(text)?.[1] ?? text).toLowerCase();
-    const pageId = /\(id (pg_[a-z0-9]+)/.exec(text)?.[1];
-    const selected = /selected this node:\n(\{.*\})/.exec(text)?.[1];
-    const sel = selected ? (JSON.parse(selected) as { id: string; type: string; props?: Record<string, unknown> }) : undefined;
+    const request = (readBlock(text, 'user_request') ?? '').toLowerCase();
+    let selection: { pageId?: string; selectedNode?: { id: string; type: string; props?: Record<string, unknown> } } = {};
+    try {
+      selection = JSON.parse(readBlock(text, 'site_data', 'selection') ?? '{}') as typeof selection;
+    } catch {
+      selection = {};
+    }
+    const pageId = typeof selection.pageId === 'string' ? selection.pageId : undefined;
+    const sel = selection.selectedNode;
     const ops: SiteOperation[] = [];
     const notes: string[] = [];
     if (/dark/.test(request)) {
@@ -204,7 +210,7 @@ export function createDemoProvider(): AIProvider {
     },
     async *stream() {},
     async generateText(req) {
-      const src = /Text:\n([\s\S]+)$/.exec(req.prompt)?.[1]?.trim() ?? req.prompt;
+      const src = readBlock(req.prompt, 'site_data', 'text')?.trim() ?? req.prompt;
       const instr = req.prompt.toLowerCase();
       let text = src;
       if (instr.includes('half as long')) text = src.split(/(?<=[.!?])\s+/)[0] ?? src;

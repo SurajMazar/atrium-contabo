@@ -23,10 +23,6 @@
           "value": "production"
         },
         {
-          "name": "ADMIN_URL",
-          "value": "https://{{adminHost}}"
-        },
-        {
           "name": "API_URL",
           "value": "https://{{apiHost}}"
         },
@@ -43,50 +39,6 @@
           "value": "https://{{sitesDomain}}"
         },
         {
-          "name": "CORS_ORIGINS",
-          "value": "https://{{adminHost}}"
-        },
-        {
-          "name": "COOKIE_DOMAIN",
-          "value": "{{adminHost}}"
-        },
-        {
-          "name": "STORAGE_DRIVER",
-          "value": "s3"
-        },
-        {
-          "name": "S3_REGION",
-          "value": "REPLACE_ME_REGION"
-        },
-        {
-          "name": "S3_BUCKET",
-          "value": "atrium-media-REPLACE_ME"
-        },
-        {
-          "name": "S3_PUBLIC_URL",
-          "value": "https://{{mediaHost}}"
-        },
-        {
-          "name": "S3_FORCE_PATH_STYLE",
-          "value": "false"
-        },
-        {
-          "name": "SMTP_HOST",
-          "value": "email-smtp.REPLACE_ME_REGION.amazonaws.com"
-        },
-        {
-          "name": "SMTP_PORT",
-          "value": "587"
-        },
-        {
-          "name": "SMTP_SECURE",
-          "value": "false"
-        },
-        {
-          "name": "MAIL_FROM",
-          "value": "Atrium <no-reply@{{domain}}>"
-        },
-        {
           "name": "ATRIUM_API_INTERNAL_URL",
           "value": "http://api:4000"
         },
@@ -101,64 +53,8 @@
       ],
       "secrets": [
         {
-          "name": "DATABASE_URL",
-          "valueFrom": "arn:aws:secretsmanager:REPLACE_ME_REGION:REPLACE_ME_ACCOUNT:secret:atrium/production:DATABASE_URL::"
-        },
-        {
-          "name": "REDIS_URL",
-          "valueFrom": "arn:aws:secretsmanager:REPLACE_ME_REGION:REPLACE_ME_ACCOUNT:secret:atrium/production:REDIS_URL::"
-        },
-        {
-          "name": "JWT_ACCESS_SECRET",
-          "valueFrom": "arn:aws:secretsmanager:REPLACE_ME_REGION:REPLACE_ME_ACCOUNT:secret:atrium/production:JWT_ACCESS_SECRET::"
-        },
-        {
-          "name": "JWT_REFRESH_SECRET",
-          "valueFrom": "arn:aws:secretsmanager:REPLACE_ME_REGION:REPLACE_ME_ACCOUNT:secret:atrium/production:JWT_REFRESH_SECRET::"
-        },
-        {
-          "name": "ENCRYPTION_KEY",
-          "valueFrom": "arn:aws:secretsmanager:REPLACE_ME_REGION:REPLACE_ME_ACCOUNT:secret:atrium/production:ENCRYPTION_KEY::"
-        },
-        {
           "name": "RENDERER_SECRET",
           "valueFrom": "arn:aws:secretsmanager:REPLACE_ME_REGION:REPLACE_ME_ACCOUNT:secret:atrium/production:RENDERER_SECRET::"
-        },
-        {
-          "name": "ANALYTICS_SALT",
-          "valueFrom": "arn:aws:secretsmanager:REPLACE_ME_REGION:REPLACE_ME_ACCOUNT:secret:atrium/production:ANALYTICS_SALT::"
-        },
-        {
-          "name": "S3_ACCESS_KEY_ID",
-          "valueFrom": "arn:aws:secretsmanager:REPLACE_ME_REGION:REPLACE_ME_ACCOUNT:secret:atrium/production:S3_ACCESS_KEY_ID::"
-        },
-        {
-          "name": "S3_SECRET_ACCESS_KEY",
-          "valueFrom": "arn:aws:secretsmanager:REPLACE_ME_REGION:REPLACE_ME_ACCOUNT:secret:atrium/production:S3_SECRET_ACCESS_KEY::"
-        },
-        {
-          "name": "SMTP_USER",
-          "valueFrom": "arn:aws:secretsmanager:REPLACE_ME_REGION:REPLACE_ME_ACCOUNT:secret:atrium/production:SMTP_USER::"
-        },
-        {
-          "name": "SMTP_PASSWORD",
-          "valueFrom": "arn:aws:secretsmanager:REPLACE_ME_REGION:REPLACE_ME_ACCOUNT:secret:atrium/production:SMTP_PASSWORD::"
-        },
-        {
-          "name": "ANTHROPIC_API_KEY",
-          "valueFrom": "arn:aws:secretsmanager:REPLACE_ME_REGION:REPLACE_ME_ACCOUNT:secret:atrium/production:ANTHROPIC_API_KEY::"
-        },
-        {
-          "name": "OPENAI_API_KEY",
-          "valueFrom": "arn:aws:secretsmanager:REPLACE_ME_REGION:REPLACE_ME_ACCOUNT:secret:atrium/production:OPENAI_API_KEY::"
-        },
-        {
-          "name": "GEMINI_API_KEY",
-          "valueFrom": "arn:aws:secretsmanager:REPLACE_ME_REGION:REPLACE_ME_ACCOUNT:secret:atrium/production:GEMINI_API_KEY::"
-        },
-        {
-          "name": "VERCEL_TOKEN",
-          "valueFrom": "arn:aws:secretsmanager:REPLACE_ME_REGION:REPLACE_ME_ACCOUNT:secret:atrium/production:VERCEL_TOKEN::"
         }
       ],
       "logConfiguration": {

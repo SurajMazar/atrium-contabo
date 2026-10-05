@@ -1,7 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { FormDefinitionSchema, validateSubmission, type FormDefinition, type SiteSnapshot } from '@atrium/schema';
 import { formFromRow } from '@atrium/site-store';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
+import { MEDIA_TYPES, resolveUploadType, safeFilenameStem } from '../../common/file-safety';
 import { env } from '../../config/env';
 import { ApiError, notFound, validation } from '../../common/errors';
 import { PrismaService } from '../../common/prisma.service';
@@ -20,6 +21,8 @@ export interface UploadedPart {
 }
 
 const dayStamp = () => new Date().toISOString().slice(0, 10);
+/** What visitors may attach to form submissions (no SVG/fonts: nothing that can carry active content). */
+const SUBMISSION_TYPES = new Set([...MEDIA_TYPES].filter((t) => t !== 'image/svg+xml' && !t.startsWith('font/')));
 const sha = (s: string) => createHash('sha256').update(s).digest('hex');
 
 @Injectable()
@@ -49,7 +52,9 @@ export class PublicService {
     else if (!host.includes('.') && !host.includes(':')) slug = host;
     if (slug) return this.db.website.findFirst({ where: { slug, deletedAt: null, status: { not: 'SUSPENDED' } } });
     const domain = await this.db.domain.findUnique({ where: { hostname: hostNoPort }, include: { website: true } });
-    if (!domain || domain.website.deletedAt || domain.website.status === 'SUSPENDED') return null;
+    // Only domains whose ownership was proven (TXT) and that point at us are served — an unverified claim
+    // must never be able to take over a hostname (e.g. a dangling CNAME left by a former customer).
+    if (!domain || !domain.verifiedAt || domain.status !== 'active' || domain.website.deletedAt || domain.website.status === 'SUSPENDED') return null;
     return domain.website;
   }
 
@@ -62,7 +67,7 @@ export class PublicService {
 
   /** Caddy/edge on-demand TLS: allow certificates only for hosts we serve. */
   async domainAllowed(domain: string) {
-    // Any connected domain (or platform subdomain) may obtain a certificate; unknown hosts never do.
+    // Platform subdomains of live sites and verified custom domains only; unknown or pending hosts never do.
     return !!(await this.websiteForHost(domain));
   }
 
@@ -99,22 +104,29 @@ export class PublicService {
       captchaScore = res.score;
     }
 
-    // attach uploaded files (stored privately)
+    // Files: checked up front (size, detected type), stored only after validation and spam checks pass.
+    // Values for file fields can only come from these server-side uploads, never from the visitor's JSON.
     const fileFields = new Set(form.fields.filter((f) => f.type === 'file').map((f) => f.name));
-    const uploads: Record<string, Array<{ key: string; filename: string; size: number; mimeType: string }>> = {};
-    if (files.length) {
-      const storage = await this.resolver.resolver.storage({ organizationId: row.website.organizationId });
-      for (const f of files) {
-        if (!fileFields.has(f.fieldname)) continue;
-        const def = form.fields.find((x) => x.name === f.fieldname)!;
-        const maxMb = def.validation?.maxFileSizeMb ?? 10;
-        if (f.size > maxMb * 1_048_576) throw validation(`${def.label}: file is larger than ${maxMb} MB`, [{ field: f.fieldname, message: `Max ${maxMb} MB` }]);
-        if (def.validation?.accept?.length && !def.validation.accept.some((a) => (a.endsWith('/*') ? f.mimetype.startsWith(a.slice(0, -1)) : a.startsWith('.') ? f.originalname.toLowerCase().endsWith(a) : f.mimetype === a))) throw validation(`${def.label}: file type not allowed`, [{ field: f.fieldname, message: 'File type not allowed' }]);
-        const key = `private/submissions/${row.websiteId}/${dayStamp()}/${sha(`${f.originalname}${Date.now()}${Math.random()}`).slice(0, 16)}-${f.originalname.replace(/[^\w.-]+/g, '_').slice(-80)}`;
-        await storage.upload({ key, body: f.buffer, contentType: f.mimetype, visibility: 'private' });
-        (uploads[f.fieldname] ??= []).push({ key, filename: f.originalname, size: f.size, mimeType: f.mimetype });
+    for (const name of fileFields) delete values[name];
+    const pending: Array<{ field: string; key: string; part: UploadedPart; mime: string; filename: string }> = [];
+    for (const f of files) {
+      if (!fileFields.has(f.fieldname)) continue; // parts for unknown fields are ignored
+      const def = form.fields.find((x) => x.name === f.fieldname)!;
+      const maxMb = Math.min(def.validation?.maxFileSizeMb ?? 10, 25);
+      if (f.size > maxMb * 1_048_576) throw validation(`${def.label}: file is larger than ${maxMb} MB`, [{ field: f.fieldname, message: `Max ${maxMb} MB` }]);
+      let type;
+      try {
+        type = resolveUploadType(f.buffer, f.originalname, SUBMISSION_TYPES);
+      } catch {
+        throw validation(`${def.label}: file type not allowed`, [{ field: f.fieldname, message: 'File type not allowed' }]);
       }
-      Object.assign(values, uploads);
+      if (def.validation?.accept?.length && !def.validation.accept.some((a) => (a.endsWith('/*') ? type.mime.startsWith(a.slice(0, -1)) : a.startsWith('.') ? `.${type.ext}` === a.toLowerCase() || (a.toLowerCase() === '.jpeg' && type.ext === 'jpg') : type.mime === a))) throw validation(`${def.label}: file type not allowed`, [{ field: f.fieldname, message: 'File type not allowed' }]);
+      const filename = f.originalname.replace(/[\r\n\0]/g, '').slice(-120) || 'file';
+      const key = `private/submissions/${row.websiteId}/${dayStamp()}/${randomBytes(12).toString('hex')}-${safeFilenameStem(filename)}.${type.ext}`;
+      pending.push({ field: f.fieldname, key, part: f, mime: type.mime, filename });
+      const list = (values[f.fieldname] as Array<{ key: string; filename: string; size: number; mimeType: string }> | undefined) ?? [];
+      list.push({ key, filename, size: f.size, mimeType: type.mime });
+      values[f.fieldname] = list;
     }
 
     const result = validateSubmission(form, values);
@@ -124,12 +136,17 @@ export class PublicService {
     const score = spamScore(result.values, { honeypot, captchaScore, elapsedMs });
     const isSpam = honeypot || score >= 0.8;
 
+    if (pending.length && !isSpam) {
+      const storage = await this.resolver.resolver.storage({ organizationId: row.website.organizationId });
+      for (const p of pending) await storage.upload({ key: p.key, body: p.part.buffer, contentType: p.mime, visibility: 'private' });
+    }
+
     const labels = new Map(form.fields.map((f) => [f.name, f]));
     const summary = Object.fromEntries(Object.entries(result.values).slice(0, 6).map(([k, v]) => [k, typeof v === 'string' ? v.slice(0, 200) : v]));
     const submission = await this.db.formSubmission.create({
       data: {
         formId, websiteId: row.websiteId, status: isSpam ? 'SPAM' : 'NEW', spamScore: score, captchaScore, ipHash, userAgent: meta.userAgent?.slice(0, 400), referrer: meta.referrer?.slice(0, 500),
-        pageUrl: body.pageUrl?.slice(0, 500), locale: body.locale, summary: summary as object,
+        pageUrl: safePageUrl(body.pageUrl), locale: typeof body.locale === 'string' ? body.locale.slice(0, 10) : undefined, summary: summary as object,
         values: {
           create: Object.entries(result.values).map(([name, value]) => {
             const f = labels.get(name);
@@ -165,6 +182,17 @@ export class PublicService {
     await this.db.analyticsEvent.create({
       data: { websiteId: body.websiteId, type: ['pageview', 'event', 'conversion'].includes(body.type) ? body.type : 'event', path: safePath(body.path), referrer, country: meta.country, device, browser, visitorHash, sessionHash: sha(`${visitorHash}|${Math.floor(Date.now() / 1_800_000)}`), name: body.name?.slice(0, 100), props: body.props as object | undefined },
     });
+  }
+}
+
+/** Submitted page URLs are shown as links in the admin: http(s) only. */
+function safePageUrl(raw: unknown): string | undefined {
+  if (typeof raw !== 'string' || !raw) return undefined;
+  try {
+    const u = new URL(raw);
+    return u.protocol === 'https:' || u.protocol === 'http:' ? u.toString().slice(0, 500) : undefined;
+  } catch {
+    return undefined;
   }
 }
 

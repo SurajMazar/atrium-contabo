@@ -1,4 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
+import { assertPublicUrl, outboundAllowPrivate } from '@atrium/providers';
 import { WEBHOOK_EVENTS } from '@atrium/schema';
 import { z } from 'zod';
 import { AuditService } from '../../common/audit.service';
@@ -14,10 +15,20 @@ import { ZodBody } from '../../common/zod.pipe';
 const Events = z.array(z.enum([...WEBHOOK_EVENTS, '*'] as [string, ...string[]])).min(1);
 const Create = z.object({ name: z.string().trim().min(1).max(120), url: z.string().url().max(2000), events: Events, websiteId: z.string().optional() });
 
-function assertSafeUrl(url: string) {
-  const u = new URL(url);
-  if (u.protocol !== 'https:' && !(process.env.NODE_ENV !== 'production' && u.protocol === 'http:')) throw badRequest('Webhook URLs must use HTTPS');
-  if (process.env.NODE_ENV === 'production' && /^(localhost|127\.|10\.|192\.168\.|169\.254\.|0\.|\[::1\])/.test(u.hostname)) throw badRequest('Webhook URL must be publicly reachable');
+/**
+ * Create/update-time check with the shared outbound guard (syntax + DNS: every resolved address
+ * must be public unless OUTBOUND_ALLOW_PRIVATE). HTTPS only in production. The worker re-checks
+ * at delivery time with connect-time validation — that check is authoritative (DNS can change).
+ */
+async function assertSafeUrl(url: string) {
+  const production = process.env.NODE_ENV === 'production';
+  try {
+    await assertPublicUrl(url, { allowPrivate: outboundAllowPrivate(), protocols: production ? ['https:'] : ['https:', 'http:'] });
+  } catch (err) {
+    const message = (err as Error).message;
+    if (/scheme/i.test(message)) throw badRequest('Webhook URLs must use HTTPS');
+    throw badRequest(`Webhook URL must be publicly reachable: ${message}`);
+  }
 }
 
 @Controller()
@@ -35,7 +46,7 @@ export class WebhooksController {
 
   @Access('webhook.manage', 'organization', 'orgId') @Post('organizations/:orgId/webhooks')
   async create(@Param('orgId') orgId: string, @Body(new ZodBody(Create)) b: z.infer<typeof Create>, @CurrentUser() user: AuthUser) {
-    assertSafeUrl(b.url);
+    await assertSafeUrl(b.url);
     if (b.websiteId && !(await this.prisma.client.website.findFirst({ where: { id: b.websiteId, organizationId: orgId } }))) throw badRequest('Unknown website');
     const secret = `whsec_${randomToken(24)}`;
     const w = await this.prisma.client.webhook.create({ data: { organizationId: orgId, websiteId: b.websiteId ?? null, name: b.name, url: b.url, events: b.events, secretEnc: this.secrets.encrypt(secret) } });
@@ -45,7 +56,7 @@ export class WebhooksController {
 
   @Access('webhook.manage', 'webhook', 'id') @Patch('webhooks/:id')
   async update(@Param('id') id: string, @Body(new ZodBody(Create.partial().extend({ enabled: z.boolean().optional() }))) b: Partial<z.infer<typeof Create>> & { enabled?: boolean }) {
-    if (b.url) assertSafeUrl(b.url);
+    if (b.url) await assertSafeUrl(b.url);
     return this.dto(await this.prisma.client.webhook.update({ where: { id }, data: { name: b.name, url: b.url, events: b.events, enabled: b.enabled } }));
   }
 

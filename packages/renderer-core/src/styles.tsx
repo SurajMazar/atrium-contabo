@@ -1,6 +1,6 @@
 import { ANIMATION_BASE_CSS } from '@atrium/animations';
 import { compileTreeCss, customFontFaces, googleFontsUrl, sanitizeCss, themeToCss } from '@atrium/design-tokens';
-import { walkNodes, type Node, type PageDocument } from '@atrium/schema';
+import { escapeCssForHtml, walkNodes, type Node, type PageDocument } from '@atrium/schema';
 import type { ReactNode } from 'react';
 import { CSS_CHUNKS, TYPE_CSS, registerBuiltinRenderers } from './builtin';
 import type { RenderContext } from './types';
@@ -75,7 +75,8 @@ function usedChunks(trees: Node[]): string[] {
 export function getSiteCss(ctx: RenderContext, page: PageDocument, opts: SiteCssOptions = {}): string {
   const trees = pageTrees(ctx, page);
   const components = opts.components === false ? usedChunks(trees).filter((id) => !CHUNK_ORDER.includes(id)).map(chunk).join('') : ctx.mode === 'editor' ? RENDERER_CSS + usedChunks(trees).filter((id) => !CHUNK_ORDER.includes(id)).map(chunk).join('') : usedChunks(trees).map(chunk).join('');
-  return [
+  // Everything below ends up inside <style>: escape `<` so no value can close the element.
+  return escapeCssForHtml([
     customFontFaces(ctx.theme),
     themeToCss(ctx.theme, '.atrium-site'),
     components,
@@ -83,7 +84,7 @@ export function getSiteCss(ctx: RenderContext, page: PageDocument, opts: SiteCss
     compileTreeCss(trees, { scope: '.atrium-site' }),
     ctx.definition.customCss ? sanitizeCss(ctx.definition.customCss) : '',
     page.customCss ? sanitizeCss(page.customCss) : '',
-  ].join('\n');
+  ].join('\n'));
 }
 
 /** <style> with the page CSS plus the Google Fonts stylesheet (with preconnect). */

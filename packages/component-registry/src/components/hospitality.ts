@@ -1,4 +1,4 @@
-import { LinkSchema } from '@atrium/schema';
+import { LinkSchema, safeUrlSchema } from '@atrium/schema';
 import { z } from 'zod';
 import { defineComponent } from '../types';
 import { ButtonSchema, buttonsControl, headingLevel, introControls, media, mediaControl, sectionBase, sectionControls } from '../fields';
@@ -545,7 +545,7 @@ export const bookingCta = defineComponent({
     eyebrow: z.string().max(80).optional(),
     heading: z.string().max(200).optional(),
     text: z.string().max(500).optional(),
-    bookingUrl: z.string().max(500).default('https://booking.example.com/reserve'),
+    bookingUrl: safeUrlSchema('navigation', '/', 500).default('https://booking.example.com/reserve'),
     arrivalParam: z.string().max(40).default('checkin'),
     departureParam: z.string().max(40).default('checkout'),
     guestsParam: z.string().max(40).default('adults'),

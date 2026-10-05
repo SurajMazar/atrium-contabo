@@ -1,6 +1,9 @@
 # Default-deny ingress; only the ingress controller reaches the public services, and only
-# Atrium components reach the API/renderer. Egress stays open for managed PostgreSQL/Redis/S3,
-# SMTP, AI and deployment providers (tighten with your provider CIDRs if required).
+# Atrium components reach the API/renderer. Egress of the api and worker (the pods that make
+# user-influenced outbound requests: webhooks, HTTP form actions, imports, AI/deploy providers) is
+# restricted at the bottom of this file: DNS, in-namespace data services, managed Postgres/Redis
+# ports on private ranges, and the public internet — never cloud metadata (169.254.0.0/16) or other
+# private/CGNAT ranges (SSRF defence in depth on top of the app's OUTBOUND_ALLOW_PRIVATE=false).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -61,3 +64,62 @@ spec:
             matchExpressions:
               - { key: app.kubernetes.io/name, operator: In, values: [atrium-api, atrium-worker] }
       ports: [{ port: 3001 }]
+---
+# Egress allow-list for api + worker. Adjust for your cluster (docs/deployment/kubernetes.md#egress):
+#  - DNS: kube-dns/CoreDNS in kube-system (label k8s-app=kube-dns on most distributions; node-local DNS
+#    caches listen on 169.254.20.10 — add an ipBlock for it if you use one).
+#  - Managed PostgreSQL/Redis with private IPs: allowed on 5432/6379 to private ranges below; replace
+#    those ranges with your database/cache subnets to tighten further.
+#  - S3 VPC interface endpoints / private object storage on 443: add their CIDR explicitly.
+#  - GKE Workload Identity (metadata server 169.254.169.254:80) or EKS Pod Identity (169.254.170.23:80):
+#    add a narrow ipBlock /32 rule for the agent you rely on; everything else in 169.254.0.0/16 stays blocked.
+#  - Pod/service CIDRs inside 100.64.0.0/10 (some CNIs): in-namespace traffic is matched by podSelector
+#    rules, not ipBlocks, so it keeps working.
+# On EC2/ECS, also require IMDSv2 with a hop limit of 1 (docs/deployment/aws.md) so containers cannot
+# reach instance credentials even without NetworkPolicy support.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-worker-egress
+spec:
+  podSelector:
+    matchExpressions:
+      - { key: app.kubernetes.io/name, operator: In, values: [atrium-api, atrium-worker] }
+  policyTypes: [Egress]
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: kube-system }
+          podSelector:
+            matchLabels: { k8s-app: kube-dns }
+      ports:
+        - { port: 53, protocol: UDP }
+        - { port: 53, protocol: TCP }
+    # Atrium pods in this namespace: API (worker → api), renderer revalidation, in-cluster
+    # PostgreSQL/Redis (components/in-cluster-data) and an optional in-cluster S3.
+    - to:
+        - podSelector:
+            matchExpressions:
+              - {
+                  key: app.kubernetes.io/name,
+                  operator: In,
+                  values: [atrium-api, atrium-renderer, atrium-postgres, atrium-redis, atrium-s3],
+                }
+    # Managed PostgreSQL / Redis reached over private networking (RDS, Cloud SQL, ElastiCache, Memorystore…).
+    - to:
+        - ipBlock: { cidr: 10.0.0.0/8 }
+        - ipBlock: { cidr: 172.16.0.0/12 }
+        - ipBlock: { cidr: 192.168.0.0/16 }
+      ports:
+        - { port: 5432, protocol: TCP }
+        - { port: 6379, protocol: TCP }
+        - { port: 6380, protocol: TCP }
+    # Public internet (SMTP relays, AI and deployment providers, webhooks, public S3 endpoints).
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 169.254.0.0/16, 127.0.0.0/8]
+        - ipBlock:
+            cidr: ::/0
+            except: ['fc00::/7', 'fe80::/10', '::1/128', 'fd00:ec2::/32']

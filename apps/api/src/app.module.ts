@@ -6,6 +6,7 @@ import { LoggerModule } from 'nestjs-pino';
 import { randomUUID } from 'node:crypto';
 import { env } from './config/env';
 import { AuthGuard } from './common/auth.guard';
+import { safeRequestId, stripQuery } from './common/logging';
 import { CommonModule } from './common/common.module';
 import { AllExceptionsFilter } from './common/exception.filter';
 import { RedisThrottlerStorage } from './common/throttler.storage';
@@ -39,8 +40,18 @@ import { WebsitesModule } from './modules/websites/websites.module';
     LoggerModule.forRoot({
       pinoHttp: {
         level: env().NODE_ENV === 'production' ? 'info' : 'debug',
-        genReqId: (req) => (req.headers['x-request-id'] as string) ?? randomUUID(),
-        redact: { paths: ['req.headers.authorization', 'req.headers.cookie', 'req.headers["x-renderer-secret"]', 'res.headers["set-cookie"]', '*.password', '*.secrets', '*.token'], censor: '[redacted]' },
+        // Only well-formed client request ids are echoed (no log injection / unbounded values).
+        genReqId: (req) => safeRequestId(req.headers['x-request-id']) ?? randomUUID(),
+        redact: {
+          paths: [
+            'req.headers.authorization', 'req.headers.cookie', 'req.headers["x-renderer-secret"]', 'res.headers["set-cookie"]',
+            'req.query.access_token', 'req.query.token', 'req.query.ticket', 'req.query.password',
+            '*.password', '*.currentPassword', '*.newPassword', '*.secrets', '*.token', '*.passwordHash', '*.refreshToken', '*.accessToken',
+          ],
+          censor: '[redacted]',
+        },
+        // Log paths without query strings: tokens and preview passwords must never reach log storage.
+        serializers: { req: (req: { id?: unknown; method?: string; url?: string; remoteAddress?: string }) => ({ id: req.id, method: req.method, url: stripQuery(req.url), remoteAddress: req.remoteAddress }) },
         autoLogging: { ignore: (req) => req.url?.startsWith('/v1/health') ?? false },
         transport: env().NODE_ENV === 'development' ? { target: 'pino/file', options: { destination: 1 } } : undefined,
         customProps: () => ({ service: 'api' }),

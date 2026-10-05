@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { OptionalSafeMediaUrlSchema, OptionalSafeUrlSchema, safeUrlSchema } from './safe-url';
 import { SiteSeoSchema } from './seo';
 
 export const SOCIAL_NETWORKS = [
@@ -9,7 +10,7 @@ export const SOCIAL_NETWORKS = [
 export const SocialLinkSchema = z.object({
   id: z.string(),
   network: z.enum(SOCIAL_NETWORKS),
-  url: z.string(),
+  url: safeUrlSchema('link', '#'),
   label: z.string().optional(),
   icon: z.string().optional(),
   visible: z.boolean().default(true),
@@ -45,7 +46,7 @@ export const BusinessInfoSchema = z.object({
     })
     .default({}),
   geo: z.object({ lat: z.number(), lng: z.number() }).optional(),
-  mapsUrl: z.string().optional(),
+  mapsUrl: OptionalSafeUrlSchema,
   openingHours: z.array(OpeningHoursSchema).default([]),
   contactPerson: z.string().optional(),
   priceRange: z.string().optional(),
@@ -58,7 +59,7 @@ export const ScriptSchema = z.object({
   name: z.string(),
   placement: z.enum(['head', 'body-start', 'body-end']),
   /** Inline code or external src; never both. */
-  src: z.string().optional(),
+  src: safeUrlSchema('https').optional(),
   code: z.string().max(50_000).optional(),
   consentCategory: z.enum(['necessary', 'analytics', 'marketing', 'preferences']).default('necessary'),
   enabled: z.boolean().default(true),
@@ -71,7 +72,7 @@ export const CookieConsentSchema = z.object({
   enabled: z.boolean().default(false),
   title: z.string().default('We value your privacy'),
   message: z.string().default('We use cookies to improve your experience and measure site performance.'),
-  policyUrl: z.string().optional(),
+  policyUrl: OptionalSafeUrlSchema,
   categories: z
     .array(z.enum(['necessary', 'analytics', 'marketing', 'preferences']))
     .default(['necessary', 'analytics', 'marketing']),
@@ -97,10 +98,10 @@ export const SiteSettingsSchema = z.object({
   social: z.array(SocialLinkSchema).default([]),
   branding: z
     .object({
-      logo: z.string().optional(),
-      logoInverse: z.string().optional(),
+      logo: OptionalSafeMediaUrlSchema,
+      logoInverse: OptionalSafeMediaUrlSchema,
       logoWidth: z.number().optional(),
-      favicon: z.string().optional(),
+      favicon: OptionalSafeMediaUrlSchema,
       wordmark: z.string().optional(),
     })
     .default({}),

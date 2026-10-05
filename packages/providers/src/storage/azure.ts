@@ -1,12 +1,14 @@
 import { Readable } from 'node:stream';
 import { z } from 'zod';
 import type { ContainerClient, StorageSharedKeyCredential } from '@azure/storage-blob';
-import { defineDriver, ProviderError, type TestResult } from '../driver';
+import { defineDriver, ProviderError, TENANT_CONTEXT, type DriverContext, type TestResult } from '../driver';
+import { assertOutboundUrl, resolvePublicAddresses } from '../net/guard';
+import { allowsPrivate, remoteExcerpt } from '../net/policy';
 import { encodeKeyPath, joinPrefix, normalizeKey, probeStorage, toBuffer, trimSlash } from './shared';
 import type { PutObjectInput, StorageProvider, StoredObject } from './types';
 
 export const azureConfigSchema = z.object({
-  accountName: z.string().min(1),
+  accountName: z.string().regex(/^[a-z0-9]{3,24}$/, 'Storage account names are 3–24 lowercase letters/digits'),
   container: z.string().min(3),
   /** Blob service endpoint override (Azurite, sovereign clouds). Default https://{account}.blob.core.windows.net */
   endpoint: z.string().url().optional(),
@@ -23,13 +25,45 @@ export const azureSecretsSchema = z.object({
 });
 
 const PROVIDER = 'azure-blob';
+
+/** Blob service DNS suffixes of the public and sovereign Azure clouds. */
+export const AZURE_BLOB_SUFFIXES = ['.blob.core.windows.net', '.blob.core.chinacloudapi.cn', '.blob.core.usgovcloudapi.net', '.blob.core.cloudapi.de'] as const;
+
+/** Effective blob endpoint of a connection string (`BlobEndpoint`, or protocol + account + suffix). */
+export function azureConnectionStringEndpoint(connectionString: string): string | undefined {
+  const parts = new Map<string, string>();
+  for (const seg of connectionString.split(';')) {
+    const i = seg.indexOf('=');
+    if (i > 0) parts.set(seg.slice(0, i).trim().toLowerCase(), seg.slice(i + 1).trim());
+  }
+  if ((parts.get('usedevelopmentstorage') ?? '').toLowerCase() === 'true') return 'http://127.0.0.1:10000/devstoreaccount1';
+  if (parts.get('blobendpoint')) return parts.get('blobendpoint');
+  const account = parts.get('accountname');
+  if (!account) return undefined;
+  return `${parts.get('defaultendpointsprotocol') ?? 'https'}://${account}.blob.${parts.get('endpointsuffix') ?? 'core.windows.net'}`;
+}
+
+/**
+ * Tenant Azure endpoints must be the real Azure blob service (https, an Azure blob DNS suffix):
+ * arbitrary endpoints would let a tenant point our signed requests at internal services.
+ */
+export function assertAzureEndpoint(endpoint: string): URL {
+  const url = assertOutboundUrl(endpoint);
+  if (url.protocol !== 'https:') throw new ProviderError('azure-blob: endpoint must use https', PROVIDER, false);
+  const host = url.hostname.toLowerCase();
+  if (!AZURE_BLOB_SUFFIXES.some((suffix) => host.endsWith(suffix) && host.length > suffix.length)) {
+    throw new ProviderError(`azure-blob: endpoint host must end with ${AZURE_BLOB_SUFFIXES.join(', ')}`, PROVIDER, false);
+  }
+  return url;
+}
 type AzureModule = typeof import('@azure/storage-blob');
 
-function toProviderError(err: unknown, action: string): ProviderError {
+function toProviderError(err: unknown, action: string, trusted = true): ProviderError {
   if (err instanceof ProviderError) return err;
   const e = err as { statusCode?: number; code?: string; message?: string };
   const status = e.statusCode ?? 0;
-  return new ProviderError(`azure-blob: ${action} failed — ${e.code ?? status}: ${e.message ?? String(err)}`, PROVIDER, status >= 500 || status === 429 || status === 0, err);
+  const detail = trusted ? (e.message ?? String(err)) : (remoteExcerpt(e.message ?? String(err), 300) ?? 'request failed');
+  return new ProviderError(`azure-blob: ${action} failed — ${e.code ?? status}: ${detail}`, PROVIDER, status >= 500 || status === 429 || status === 0, err);
 }
 
 export class AzureBlobStorageProvider implements StorageProvider {
@@ -39,14 +73,39 @@ export class AzureBlobStorageProvider implements StorageProvider {
   constructor(
     private readonly config: z.output<typeof azureConfigSchema>,
     private readonly secrets: z.output<typeof azureSecretsSchema>,
+    private readonly ctx: DriverContext = TENANT_CONTEXT,
   ) {}
+
+  private get trusted(): boolean {
+    return this.ctx.network === 'trusted';
+  }
+
+  /** Tenant configuration: only real Azure blob endpoints, resolving to public addresses. */
+  private async assertEndpoints(): Promise<void> {
+    if (allowsPrivate(this.ctx.network)) return;
+    const endpoints = [this.endpoint];
+    if (!this.secrets.accountKey && this.secrets.connectionString) {
+      const ep = azureConnectionStringEndpoint(this.secrets.connectionString);
+      if (!ep) throw new ProviderError('azure-blob: connection string has no AccountName/BlobEndpoint', PROVIDER, false);
+      endpoints.push(ep);
+    }
+    for (const ep of endpoints) {
+      try {
+        const url = assertAzureEndpoint(ep);
+        await resolvePublicAddresses(url.hostname);
+      } catch (err) {
+        if (err instanceof ProviderError) throw err;
+        throw new ProviderError(`azure-blob: endpoint rejected — ${(err as Error).message}`, PROVIDER, false, err);
+      }
+    }
+  }
 
   private get endpoint() {
     return trimSlash(this.config.endpoint ?? `https://${this.config.accountName}.blob.core.windows.net`);
   }
 
   private load() {
-    this.loaded ??= import('@azure/storage-blob').then((az) => {
+    this.loaded ??= this.assertEndpoints().then(() => import('@azure/storage-blob')).then((az) => {
       let service;
       let credential: StorageSharedKeyCredential | undefined;
       if (this.secrets.accountKey) {
@@ -60,6 +119,9 @@ export class AzureBlobStorageProvider implements StorageProvider {
         throw new ProviderError('azure-blob: configure an account key or connection string', PROVIDER, false);
       }
       return { az, container: service.getContainerClient(this.config.container), credential };
+    }).catch((err: unknown) => {
+      this.loaded = undefined;
+      throw err;
     });
     return this.loaded;
   }
@@ -87,7 +149,7 @@ export class AzureBlobStorageProvider implements StorageProvider {
       }
       return { key: input.key, size, etag: etag?.replace(/"/g, ''), contentType: input.contentType };
     } catch (err) {
-      throw toProviderError(err, 'upload');
+      throw toProviderError(err, 'upload', this.trusted);
     }
   }
 
@@ -97,7 +159,7 @@ export class AzureBlobStorageProvider implements StorageProvider {
       return await container.getBlobClient(this.k(key)).downloadToBuffer();
     } catch (err) {
       if ((err as { statusCode?: number }).statusCode === 404) throw new ProviderError(`azure-blob: object not found: ${key}`, PROVIDER, false, err);
-      throw toProviderError(err, 'download');
+      throw toProviderError(err, 'download', this.trusted);
     }
   }
 
@@ -106,7 +168,7 @@ export class AzureBlobStorageProvider implements StorageProvider {
     try {
       await container.getBlobClient(this.k(key)).deleteIfExists();
     } catch (err) {
-      throw toProviderError(err, 'delete');
+      throw toProviderError(err, 'delete', this.trusted);
     }
   }
 
@@ -117,7 +179,7 @@ export class AzureBlobStorageProvider implements StorageProvider {
       const poller = await container.getBlobClient(this.k(toKey)).beginCopyFromURL(source);
       await poller.pollUntilDone();
     } catch (err) {
-      throw toProviderError(err, 'copy');
+      throw toProviderError(err, 'copy', this.trusted);
     }
   }
 
@@ -131,7 +193,7 @@ export class AzureBlobStorageProvider implements StorageProvider {
     try {
       return await container.getBlobClient(this.k(key)).exists();
     } catch (err) {
-      throw toProviderError(err, 'exists');
+      throw toProviderError(err, 'exists', this.trusted);
     }
   }
 
@@ -177,5 +239,5 @@ export const azureBlobDriver = defineDriver({
   configSchema: azureConfigSchema,
   secretsSchema: azureSecretsSchema,
   presets: [{ id: 'azurite', name: 'Azurite (local emulator)', config: { accountName: 'devstoreaccount1', endpoint: 'http://127.0.0.1:10000/devstoreaccount1' } }],
-  create: (config, secrets): StorageProvider => new AzureBlobStorageProvider(config, secrets),
+  create: (config, secrets, ctx): StorageProvider => new AzureBlobStorageProvider(config, secrets, ctx),
 });

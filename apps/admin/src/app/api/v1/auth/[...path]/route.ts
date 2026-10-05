@@ -16,8 +16,12 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
   req.headers.forEach((v, k) => {
     if (!HOP_BY_HOP.has(k.toLowerCase())) headers.set(k, v);
   });
-  const fwdFor = req.headers.get('x-forwarded-for');
+  // Forward only the address our own front proxy (or Next, from the socket) recorded — the last hop.
+  // Earlier entries are client-controlled and would let anyone pick the IP used for rate limits.
+  headers.delete('x-forwarded-for');
+  const fwdFor = req.headers.get('x-forwarded-for')?.split(',').map((s) => s.trim()).filter(Boolean).pop();
   if (fwdFor) headers.set('x-forwarded-for', fwdFor);
+  headers.delete('x-real-ip');
   headers.set('x-forwarded-host', req.headers.get('host') ?? '');
   headers.set('x-forwarded-proto', req.nextUrl.protocol.replace(':', ''));
 
@@ -50,7 +54,7 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
   }
   // If the API scopes the refresh cookie elsewhere (e.g. Path=/), expire any stale copy
   // previously stored under /api/v1/auth so the browser doesn't send two `atrium_rt` values.
-  const touchesSession = cookies.some((c) => /^atrium_rt=/i.test(c)) || (path[0] === 'refresh' && upstream.status === 401) || path[0] === 'logout';
+  const touchesSession = cookies.some((c) => /^(__Host-)?atrium_rt=/i.test(c)) || (path[0] === 'refresh' && upstream.status === 401) || path[0] === 'logout';
   if (touchesSession && !scopedToApiPath) {
     out.append('set-cookie', 'atrium_rt=; Path=/api/v1/auth; Max-Age=0; HttpOnly; SameSite=Lax');
   }

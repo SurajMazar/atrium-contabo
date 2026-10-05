@@ -1,4 +1,5 @@
 import { listAnimationPresets } from '@atrium/animations';
+import { CODE_COMPONENT_TYPES } from '@atrium/builder-core';
 import type { ComponentRegistry } from '@atrium/component-registry';
 import { THEME_PRESETS } from '@atrium/design-tokens';
 
@@ -21,7 +22,8 @@ function typeOf(s: JsonSchema | undefined, depth = 0): string {
 
 /** Compact, prompt-friendly reference for a set of components (props from the registry's JSON Schemas). */
 export function componentGuide(registry: ComponentRegistry, types?: string[]): string {
-  const defs = registry.list().filter((d) => !d.hidden && (!types || types.includes(d.type)));
+  // Code-bearing components (embeds / custom HTML) are never offered to the model.
+  const defs = registry.list().filter((d) => !d.hidden && !CODE_COMPONENT_TYPES.has(d.type) && (!types || types.includes(d.type)));
   return defs
     .map((d) => {
       const schema = registry.jsonSchema(d.type) as JsonSchema | undefined;
@@ -39,7 +41,7 @@ export function componentGuide(registry: ComponentRegistry, types?: string[]): s
 export function componentIndex(registry: ComponentRegistry): string {
   return registry
     .catalog()
-    .filter((c) => c.level === 'section' || c.level === 'site')
+    .filter((c) => (c.level === 'section' || c.level === 'site') && !CODE_COMPONENT_TYPES.has(c.type))
     .map((c) => `- ${c.type}${c.variants?.length ? ` (variants: ${c.variants.map((v) => v.id).join(', ')})` : ''}: ${c.description}${c.useWhen ? ` Use when: ${c.useWhen}` : ''}`)
     .join('\n');
 }

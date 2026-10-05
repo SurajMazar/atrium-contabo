@@ -2,7 +2,7 @@ import { Body, Controller, Get, Param, Put } from '@nestjs/common';
 import { analyzePageSeo, findRedirectLoops, scanBrokenLinks } from '@atrium/builder-core';
 import { RedirectSchema, createId } from '@atrium/schema';
 import { z } from 'zod';
-import { Access, CurrentUser, type AuthUser } from '../../common/decorators';
+import { Access, CurrentAccess, CurrentUser, type AccessContext, type AuthUser } from '../../common/decorators';
 import { validation } from '../../common/errors';
 import { PrismaService } from '../../common/prisma.service';
 import { ZodBody } from '../../common/zod.pipe';
@@ -26,14 +26,14 @@ export class SeoController {
   }
 
   @Access('redirect.manage', 'website', 'id') @Put('redirects')
-  async saveRedirects(@Param('id') id: string, @Body(new ZodBody(Redirects)) b: z.infer<typeof Redirects>, @CurrentUser() user: AuthUser) {
+  async saveRedirects(@Param('id') id: string, @Body(new ZodBody(Redirects)) b: z.infer<typeof Redirects>, @CurrentUser() user: AuthUser, @CurrentAccess() access: AccessContext) {
     const redirects = b.redirects.map((r) => ({ ...r, id: r.id ?? createId(), source: r.source.replace(/\/+$/, '') || '/' }));
     const sources = redirects.map((r) => r.source);
     const dup = sources.find((s, i) => sources.indexOf(s) !== i);
     if (dup) throw validation(`Duplicate source ${dup}`);
     const loops = findRedirectLoops(redirects);
     if (loops.length) throw validation(`Redirect loop detected: ${loops.map((l) => l.join(' → ')).join('; ')}`, { loops, sources: [...new Set(loops.flat())] });
-    const res = await this.drafts.transform(id, (d) => void (d.redirects = redirects), { userId: user.id });
+    const res = await this.drafts.transform(id, (d) => void (d.redirects = redirects), { userId: user.id }, { access });
     return res.after.redirects;
   }
 

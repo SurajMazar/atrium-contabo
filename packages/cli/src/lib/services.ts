@@ -32,6 +32,13 @@ const next = (dir: string, mode: 'dev' | 'start', port: number): ServiceCommand 
   args: ['--dir', dir, 'exec', 'next', mode, '--port', String(port)],
 });
 
+/**
+ * `atrium start --prod` runs production builds on this machine: allow loopback (http://localhost…)
+ * URLs and non-Secure cookies, but ONLY while every public URL is loopback — secrets are still
+ * enforced (see @atrium/server-kit production-secrets). Real deployments never set this.
+ */
+const LOCAL_PRODUCTION = { ATRIUM_ALLOW_LOCALHOST_PRODUCTION: '1' };
+
 export const SERVICES: Record<AppService, ServiceSpec> = {
   api: {
     name: 'api',
@@ -53,6 +60,7 @@ export const SERVICES: Record<AppService, ServiceSpec> = {
         PORT: String(p.API_PORT ?? 4000),
         API_PORT: String(p.API_PORT ?? 4000),
         NODE_ENV: 'production',
+        ...LOCAL_PRODUCTION,
       },
     }),
     buildOutput: 'apps/api/dist/main.js',
@@ -67,7 +75,7 @@ export const SERVICES: Record<AppService, ServiceSpec> = {
       cmd: process.execPath,
       args: ['dist/main.js'],
       cwd: 'apps/worker',
-      env: { NODE_ENV: 'production' },
+      env: { NODE_ENV: 'production', ...LOCAL_PRODUCTION },
     }),
     buildOutput: 'apps/worker/dist/main.js',
     procfile: { dev: 'pnpm --filter @atrium/worker dev', prod: 'node apps/worker/dist/main.js' },
@@ -82,7 +90,7 @@ export const SERVICES: Record<AppService, ServiceSpec> = {
     dev: (p) => next('apps/renderer', 'dev', p.RENDERER_PORT ?? 3001),
     prod: (p) => ({
       ...next('apps/renderer', 'start', p.RENDERER_PORT ?? 3001),
-      env: { NODE_ENV: 'production' },
+      env: { NODE_ENV: 'production', ...LOCAL_PRODUCTION },
     }),
     buildOutput: 'apps/renderer/.next/BUILD_ID',
     procfile: {

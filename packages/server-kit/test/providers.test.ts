@@ -101,7 +101,29 @@ describe('ProviderResolver', () => {
     expect(local.driver).toBe('local');
     expect(await local.provider.getSignedUrl('x.png')).toMatch(/^http:\/\/api\/v1\/storage\/x\.png\?expires=\d+&sig=/);
     const org = new ProviderResolver(prisma({ storageProvider: [row({ id: 'st', driver: 'local', isDefault: true, config: { directory: '/tmp/x', publicBaseUrl: 'https://cdn' } })] }), { env: platformEnv });
-    expect((await org.storage({ organizationId: 'org1' })).id).toBe('st');
+    const orgStorage = await org.storage({ organizationId: 'org1' });
+    expect(orgStorage.id).toBe('st');
+    // UPL-1: tenant local storage ignores its directory and is jailed to orgs/<organizationId>
+    expect(orgStorage.getPublicUrl('a.png')).toBe('https://cdn/orgs/org1/a.png');
+    const prodOrg = new ProviderResolver(prisma({ storageProvider: [row({ id: 'st', driver: 'local', isDefault: true, config: { publicBaseUrl: 'https://cdn' } })] }), { env: { ...platformEnv, NODE_ENV: 'production' } });
+    await expect(prodOrg.storage({ organizationId: 'org1' })).rejects.toThrow(/not available for organization storage in production/);
+  });
+
+  it('tenant rows are public-only; platform (env) providers are trusted', async () => {
+    const prev = process.env.OUTBOUND_ALLOW_PRIVATE;
+    process.env.OUTBOUND_ALLOW_PRIVATE = 'false';
+    try {
+      const db = prisma({ emailProvider: [row({ id: 'smtp1', driver: 'smtp', isDefault: true, fromEmail: 'a@x.com', fromName: null, config: { host: '127.0.0.1', port: 51025, pool: false } })] });
+      const tenant = await new ProviderResolver(db, { env: platformEnv }).email({ organizationId: 'org1' });
+      expect(await tenant.test()).toMatchObject({ ok: false, message: expect.stringMatching(/not allowed|loopback/) });
+      // the platform SMTP (mailpit on localhost) is not subject to the guard
+      const platform = new ProviderResolver(prisma({}), { env: platformEnv }).platformEmail();
+      const res = await platform.test();
+      expect(res.message).not.toMatch(/Refusing to connect|not allowed/);
+    } finally {
+      if (prev === undefined) delete process.env.OUTBOUND_ALLOW_PRIVATE;
+      else process.env.OUTBOUND_ALLOW_PRIVATE = prev;
+    }
   });
 
   it('ai: integration first, then platform keys honouring AI_DEFAULT_PROVIDER with fallback to available keys', async () => {
@@ -128,15 +150,16 @@ describe('ProviderResolver', () => {
     expect(await r.findCaptcha({ organizationId: 'org1', websiteId: 'w1', kind: 'none' })).toBeNull();
   });
 
-  it('deployment: website integration, platform vercel token, self-hosted', async () => {
+  it('deployment: website integration, no platform vercel token fallback for tenants, self-hosted', async () => {
     const db = prisma(
       { integration: [row({ id: 'd1', kind: 'DEPLOYMENT', enabled: true, driver: 'vercel', secretsEnc: encryptJson({ token: 'vt' }) })] },
       { id: 'w1', organizationId: 'org1', deploymentIntegrationId: 'd1', deploymentProvider: 'vercel' },
     );
     const r = new ProviderResolver(db, { env: platformEnv });
     expect(await r.deployment({ organizationId: 'org1', websiteId: 'w1' })).toMatchObject({ id: 'd1', source: 'explicit', driver: 'vercel' });
+    // INT-7: the platform VERCEL_TOKEN must never be used for tenant-scoped deployments
     const platformVercel = new ProviderResolver(prisma({}), { env: { VERCEL_TOKEN: 'tok' } });
-    expect(await platformVercel.deployment({ organizationId: 'org1' })).toMatchObject({ source: 'platform', driver: 'vercel' });
+    await expect(platformVercel.deployment({ organizationId: 'org1' })).rejects.toThrow(/No deployment integration/);
     await expect(new ProviderResolver(prisma({}), { env: {} }).deployment({ organizationId: 'org1' })).rejects.toThrow(/No deployment integration/);
     const self = r.platformDeployment();
     const info = await self.deploy({ projectName: 'my-site', target: 'production', files: [], framework: 'nextjs' });
@@ -154,7 +177,8 @@ describe('serializeProviderRecord + mergeSecrets', () => {
     const out = serializeProviderRecord({ id: 'x', driver: 'smtp', secretsEnc: encryptJson({ password: 'supersecret', headers: { Authorization: 'Bearer abcdef' } }) });
     expect(out).not.toHaveProperty('secretsEnc');
     expect(out.hasSecrets).toBe(true);
-    expect(out.secrets).toEqual({ password: '••••••••cret', headers: { Authorization: '••••••••cdef' } });
+    // short secrets (< 12 chars) reveal nothing; longer ones only their last 4 characters
+    expect(out.secrets).toEqual({ password: '••••••••', headers: { Authorization: '••••••••cdef' } });
     expect(JSON.stringify(out)).not.toContain('supersecret');
     expect(serializeProviderRecord({ id: 'y', secretsEnc: 'broken' })).toMatchObject({ secrets: {}, hasSecrets: true, secretsError: true });
     expect(serializeProviderRecord({ id: 'z', secretsEnc: null })).toMatchObject({ secrets: {}, hasSecrets: false });
@@ -217,5 +241,44 @@ describe('logger + env', () => {
     expect(() => loadEnv({ source: { DATABASE_URL: 'x' }, required: ['ENCRYPTION_KEY'] })).toThrow(/ENCRYPTION_KEY is required/);
     expect(() => loadEnv({ source: { DATABASE_URL: 'x', ENCRYPTION_KEYS: 'a:b' }, required: ['ENCRYPTION_KEY'] })).not.toThrow();
     expect(boolish(true).parse(undefined)).toBe(true);
+  });
+});
+
+describe('ProviderResolver — platform providers from the admin panel', () => {
+  const platformRow = (over: Record<string, unknown>) => ({ id: 'pp1', kind: 'email', name: 'Panel SMTP', driver: 'smtp', config: { host: 'smtp.panel.test', port: 587 }, secretsEnc: null, fromEmail: 'hello@panel.test', fromName: 'Panel', isDefault: true, enabled: true, updatedAt: now, ...over });
+  const db = (rows: Record<string, unknown>[], org: Partial<Record<keyof ResolverPrisma, Record<string, unknown>[]>> = {}) =>
+    ({ ...prisma(org), platformProvider: delegate(rows) }) as unknown as ResolverPrisma;
+
+  it('panel email takes precedence over SMTP_* env, and an organization provider over both', async () => {
+    const r = new ProviderResolver(db([platformRow({})]), { env: platformEnv });
+    expect(await r.email({ organizationId: null })).toMatchObject({ id: 'pp1', source: 'platform', from: { email: 'hello@panel.test', name: 'Panel' } });
+    expect(await r.email({ organizationId: 'org1' })).toMatchObject({ id: 'pp1', source: 'platform' });
+    const withOrg = new ProviderResolver(db([platformRow({})], { emailProvider: [row({ id: 'own', config: { host: 'smtp.org.test', port: 587 }, fromEmail: 'org@x.com', fromName: null, isDefault: true })] }), { env: platformEnv });
+    expect((await withOrg.email({ organizationId: 'org1' })).id).toBe('own');
+  });
+
+  it('disabled panel rows are ignored (env fallback)', async () => {
+    const r = new ProviderResolver(db([platformRow({ enabled: false })]), { env: platformEnv });
+    expect((await r.email({ organizationId: null })).id).toBeNull();
+  });
+
+  it('panel AI key powers organizations without their own integration', async () => {
+    const enc = mergeSecrets(null, { apiKey: 'sk-ant-panel' });
+    const r = new ProviderResolver(db([platformRow({ id: 'ai1', kind: 'ai', driver: 'anthropic', config: {}, secretsEnc: enc })]), { env: {} });
+    expect(await r.ai({ organizationId: 'org1' })).toMatchObject({ id: 'ai1', source: 'platform', driver: 'anthropic' });
+    await expect(new ProviderResolver(db([]), { env: {} }).ai({ organizationId: 'org1' })).rejects.toThrow(/No AI provider configured/);
+  });
+
+  it('panel SMS gateway is used when an organization has none', async () => {
+    const enc = mergeSecrets(null, { authToken: 'tok' });
+    const r = new ProviderResolver(db([platformRow({ id: 'sms1', kind: 'sms', driver: 'twilio', config: { accountSid: 'AC' + 'a'.repeat(32), from: '+15550001111' }, secretsEnc: enc })]), { env: {} });
+    expect(await r.sms({ organizationId: 'org1' })).toMatchObject({ id: 'sms1', source: 'platform' });
+  });
+
+  it('reports where each capability comes from', async () => {
+    const status = await new ProviderResolver(db([platformRow({})]), { env: { ANTHROPIC_API_KEY: 'k' } }).platformStatus();
+    expect(status.email).toMatchObject({ source: 'admin', provider: { id: 'pp1' } });
+    expect(status.ai.source).toBe('env');
+    expect(status.sms.source).toBe('none');
   });
 });

@@ -1,14 +1,28 @@
 import { Injectable } from '@nestjs/common';
-import { applyOperation, OperationError, type SiteOperation } from '@atrium/builder-core';
+import { applyOperation, OperationError, siteChangeRequirements, type SiteOperation } from '@atrium/builder-core';
 import { registry } from '@atrium/component-registry';
 import { loadDraft, persistDraft, SiteStoreError, type PersistMeta, type PersistResult } from '@atrium/site-store';
 import type { WebsiteDefinition } from '@atrium/schema';
 import { createDraft, finishDraft } from 'immer';
+import type { AccessContext } from '../../common/decorators';
+import { assertRequirements } from '../../common/access.service';
 import { conflict, notFound, validation } from '../../common/errors';
 import { sanitizeDefinition } from '../../common/sanitize';
 import { PrismaService } from '../../common/prisma.service';
 
 export type Tx = Parameters<Parameters<PrismaService['client']['$transaction']>[0]>[0];
+
+/**
+ * Who is changing the draft. User writes are authorized by the *diff* they
+ * produce (see siteChangeRequirements); `system` is reserved for trusted
+ * server-side flows that have already been authorized (e.g. renaming the site
+ * from website settings) and must name the reason.
+ */
+export type DraftActor = { access: AccessContext } | { system: string };
+
+export function assertDraftChange(actor: DraftActor, before: WebsiteDefinition, after: WebsiteDefinition) {
+  if ('access' in actor) assertRequirements(actor.access, siteChangeRequirements(before, after));
+}
 
 /**
  * All structural edits funnel through here: load the draft, transform it with
@@ -33,7 +47,8 @@ export class DraftService {
   async transform(
     websiteId: string,
     mutate: (draft: WebsiteDefinition, before: WebsiteDefinition) => void | Promise<void>,
-    meta: PersistMeta = {},
+    meta: PersistMeta,
+    actor: DraftActor,
   ): Promise<PersistResult & { before: WebsiteDefinition; after: WebsiteDefinition }> {
     return this.prisma.client.$transaction(
       async (tx) => {
@@ -50,6 +65,7 @@ export class DraftService {
           if ((err as { name?: string }).name === 'ZodError') throw validation('Invalid change', (err as { issues?: unknown }).issues);
           throw err;
         }
+        assertDraftChange(actor, before, after);
         const res = await persistDraft(tx, websiteId, before, after, meta);
         return { ...res, before, after };
       },
@@ -57,7 +73,7 @@ export class DraftService {
     );
   }
 
-  async applyOperations(websiteId: string, operations: SiteOperation[], meta: PersistMeta = {}) {
+  async applyOperations(websiteId: string, operations: SiteOperation[], meta: PersistMeta, actor: DraftActor) {
     const results: Array<{ createdId?: string; warnings: string[] }> = [];
     const res = await this.transform(
       websiteId,
@@ -65,6 +81,7 @@ export class DraftService {
         for (const op of operations) results.push(applyOperation(d, op, this.registry));
       },
       meta,
+      actor,
     );
     return { ...res, results };
   }

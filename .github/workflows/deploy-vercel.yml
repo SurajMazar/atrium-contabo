@@ -39,27 +39,50 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { app: admin, project: VERCEL_PROJECT_ID_ADMIN }
-          - { app: renderer, project: VERCEL_PROJECT_ID_RENDERER }
+          - app: admin
+          - app: renderer
     env:
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-      VERCEL_PROJECT_ID: ${{ secrets[matrix.project] }}
+      # Reference each secret by name (secrets[matrix.x] would expose the whole secrets context).
+      # A missing secret yields '' (never the other app's project) and fails the pull step below.
+      VERCEL_PROJECT_ID: ${{ matrix.app == 'admin' && secrets.VERCEL_PROJECT_ID_ADMIN || matrix.app == 'renderer' && secrets.VERCEL_PROJECT_ID_RENDERER || '' }}
       VERCEL_ENV: ${{ inputs.environment || 'production' }}
+      APP: ${{ matrix.app }}
+      VERCEL_CLI_VERSION: 62.2.0 # exact pin; Renovate bumps it (customManagers in renovate.json)
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24'
           cache: pnpm
-      - run: npm install --global vercel@latest
+      - name: Install Vercel CLI (pinned)
+        # exact version, no lifecycle scripts; tracked by Renovate (renovate.json customManagers)
+        run: npm install --global --ignore-scripts "vercel@$VERCEL_CLI_VERSION" # zizmor: ignore[adhoc-packages]
+      # The Vercel CLI reads VERCEL_TOKEN from the environment; it is never put on a command line
+      # (argv is visible to other processes and ends up in logs on error). Only the vercel steps get it.
       - name: Pull project settings + env
-        run: vercel pull --yes --environment="$VERCEL_ENV" --token="${{ secrets.VERCEL_TOKEN }}"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          if [ -z "$VERCEL_PROJECT_ID" ]; then echo "::error::Vercel project id secret for $APP is not set"; exit 1; fi
+          vercel pull --yes --environment="$VERCEL_ENV"
       - name: Build
-        run: vercel build ${{ (inputs.environment || 'production') == 'production' && '--prod' || '' }} --token="${{ secrets.VERCEL_TOKEN }}"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          args=()
+          if [ "$VERCEL_ENV" = production ]; then args+=(--prod); fi
+          vercel build "${args[@]}"
       - name: Deploy prebuilt output
         id: deploy
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
-          url=$(vercel deploy --prebuilt ${{ (inputs.environment || 'production') == 'production' && '--prod' || '' }} --token="${{ secrets.VERCEL_TOKEN }}")
+          args=(--prebuilt)
+          if [ "$VERCEL_ENV" = production ]; then args+=(--prod); fi
+          url=$(vercel deploy "${args[@]}")
           echo "url=$url" >> "$GITHUB_OUTPUT"
-          echo "### ${{ matrix.app }}: $url" >> "$GITHUB_STEP_SUMMARY"
+          echo "### $APP: $url" >> "$GITHUB_STEP_SUMMARY"

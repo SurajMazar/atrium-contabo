@@ -1,6 +1,6 @@
 import { HttpException, HttpStatus } from '@nestjs/common';
 
-export type ErrorCode = 'NOT_FOUND' | 'FORBIDDEN' | 'VALIDATION' | 'CONFLICT' | 'RATE_LIMITED' | 'UNAUTHORIZED' | 'INTERNAL' | 'BAD_REQUEST' | 'LIMIT_EXCEEDED' | 'NOT_CONFIGURED';
+export type ErrorCode = 'NOT_FOUND' | 'FORBIDDEN' | 'VALIDATION' | 'CONFLICT' | 'RATE_LIMITED' | 'UNAUTHORIZED' | 'INTERNAL' | 'BAD_REQUEST' | 'LIMIT_EXCEEDED' | 'NOT_CONFIGURED' | 'CONFIRMATION_REQUIRED';
 
 export class ApiError extends HttpException {
   constructor(status: number, public readonly code: ErrorCode, message: string, public readonly details?: unknown) {
@@ -9,7 +9,7 @@ export class ApiError extends HttpException {
 }
 
 export const notFound = (what = 'Resource') => new ApiError(HttpStatus.NOT_FOUND, 'NOT_FOUND', `${what} not found`);
-export const forbidden = (message = 'You do not have permission to do this') => new ApiError(HttpStatus.FORBIDDEN, 'FORBIDDEN', message);
+export const forbidden = (message = 'You do not have permission to do this', details?: unknown) => new ApiError(HttpStatus.FORBIDDEN, 'FORBIDDEN', message, details);
 export const unauthorized = (message = 'Authentication required') => new ApiError(HttpStatus.UNAUTHORIZED, 'UNAUTHORIZED', message);
 export const conflict = (message: string, details?: unknown) => new ApiError(HttpStatus.CONFLICT, 'CONFLICT', message, details);
 export const badRequest = (message: string, details?: unknown) => new ApiError(HttpStatus.BAD_REQUEST, 'BAD_REQUEST', message, details);

@@ -4,6 +4,12 @@ export interface CaptchaVerifyInput {
   /** reCAPTCHA v3 action name expected. */
   action?: string;
   minScore?: number;
+  /**
+   * Hostnames the token must have been solved on (the website's verified domains + its platform
+   * subdomain; `*.example.com` wildcards allowed). When provided and the vendor reports a
+   * hostname, a mismatch fails verification with `hostname-mismatch`.
+   */
+  expectedHostnames?: string[];
 }
 
 export interface CaptchaVerifyResult {

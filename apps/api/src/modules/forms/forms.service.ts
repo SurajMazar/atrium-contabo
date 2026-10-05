@@ -6,6 +6,7 @@ import { AuditService } from '../../common/audit.service';
 import type { AuthUser } from '../../common/decorators';
 import { conflict, notFound, validation } from '../../common/errors';
 import { PrismaService } from '../../common/prisma.service';
+import { ResolverService } from '../providers/resolver.service';
 
 const STATUS = ['NEW', 'CONTACTED', 'QUALIFIED', 'CONVERTED', 'REJECTED', 'SPAM', 'ARCHIVED'] as const;
 type Status = (typeof STATUS)[number];
@@ -25,7 +26,7 @@ export interface SubmissionQuery {
 
 @Injectable()
 export class FormsService {
-  constructor(private readonly prisma: PrismaService, private readonly audit: AuditService) {}
+  constructor(private readonly prisma: PrismaService, private readonly audit: AuditService, private readonly resolver: ResolverService) {}
 
   private get db() {
     return this.prisma.client;
@@ -124,13 +125,33 @@ export class FormsService {
     return { items, nextCursor: hasMore ? items[items.length - 1]!.id : null, total };
   }
 
+  /**
+   * File values hold server-generated private keys. The admin gets short-lived signed download
+   * links built from those keys only (never a URL supplied by the visitor).
+   */
+  private async withFileLinks(websiteId: string, organizationId: string, values: Array<{ fieldName: string; fieldLabel: string; fieldType: string; value: unknown }>) {
+    if (!values.some((v) => v.fieldType === 'file')) return values;
+    const storage = await this.resolver.resolver.storage({ organizationId }).catch(() => null);
+    const prefix = `private/submissions/${websiteId}/`;
+    return Promise.all(values.map(async (v) => {
+      if (v.fieldType !== 'file' || !Array.isArray(v.value)) return v;
+      const files = await Promise.all((v.value as Array<Record<string, unknown>>).map(async (f) => {
+        const key = typeof f.key === 'string' && f.key.startsWith(prefix) && !f.key.includes('..') ? f.key : null;
+        const filename = String(f.filename ?? 'file').slice(0, 200);
+        const url = key && storage ? await storage.getSignedUrl(key, { expiresInSeconds: 600, disposition: `attachment; filename="${filename.replace(/[^\w.-]/g, '_')}"` }).catch(() => null) : null;
+        return { filename, size: typeof f.size === 'number' ? f.size : undefined, mimeType: typeof f.mimeType === 'string' ? f.mimeType : undefined, url };
+      }));
+      return { ...v, value: files };
+    }));
+  }
+
   async submission(id: string) {
-    const s = await this.db.formSubmission.findUniqueOrThrow({ where: { id }, include: { form: { select: { name: true } }, values: true, notes: { orderBy: { createdAt: 'asc' } } } });
+    const s = await this.db.formSubmission.findUniqueOrThrow({ where: { id }, include: { form: { select: { name: true } }, values: true, notes: { orderBy: { createdAt: 'asc' } }, website: { select: { organizationId: true } } } });
     const users = await this.assignees([s.assignedToId, ...s.notes.map((n) => n.authorId)]);
     return {
       id: s.id, formId: s.formId, formName: s.form.name, status: s.status, read: s.read, tags: s.tags, assignedTo: s.assignedToId ? (users.get(s.assignedToId) ?? null) : null,
       summary: s.summary, spamScore: s.spamScore, createdAt: s.createdAt.toISOString(), pageUrl: s.pageUrl, referrer: s.referrer, userAgent: s.userAgent,
-      values: s.values.map((v) => ({ fieldName: v.fieldName, fieldLabel: v.fieldLabel, fieldType: v.fieldType, value: v.valueJson ?? v.value })),
+      values: await this.withFileLinks(s.websiteId, s.website.organizationId, s.values.map((v) => ({ fieldName: v.fieldName, fieldLabel: v.fieldLabel, fieldType: v.fieldType, value: v.valueJson ?? v.value }))),
       notes: s.notes.map((n) => ({ id: n.id, body: n.body, author: users.get(n.authorId) ?? { id: n.authorId, name: 'Unknown' }, createdAt: n.createdAt.toISOString() })),
       actionsLog: s.actionsLog,
     };
@@ -197,16 +218,12 @@ export class FormsService {
       const wb = new ExcelJS.Workbook();
       const ws = wb.addWorksheet('Submissions');
       ws.addRow(header).font = { bold: true };
-      data.forEach((d) => ws.addRow(d));
+      // Cells are written as plain strings (never formulas); still neutralize for users who re-save as CSV.
+      data.forEach((d) => ws.addRow(d.map((c) => neutralizeFormula(String(c ?? '')))));
       ws.columns.forEach((c) => (c.width = 22));
       return { buffer: Buffer.from(await wb.xlsx.writeBuffer()), contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', ext: 'xlsx' };
     }
-    const esc = (v: unknown) => {
-      const s = String(v ?? '');
-      // neutralize spreadsheet formula injection
-      const safe = /^[=+\-@]/.test(s) ? `'${s}` : s;
-      return /[",\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
-    };
+    const esc = (v: unknown) => csvCell(v);
     const csv = [header, ...data].map((r) => r.map(esc).join(',')).join('\n');
     return { buffer: Buffer.from(`﻿${csv}`), contentType: 'text/csv; charset=utf-8', ext: 'csv' };
   }
@@ -214,4 +231,14 @@ export class FormsService {
   notFoundIfMissing(x: unknown) {
     if (!x) throw notFound('Form');
   }
+}
+
+/** Spreadsheet formula injection: values starting with = + - @ (after optional whitespace) or tab/CR are prefixed with '. */
+export function neutralizeFormula(s: string): string {
+  return /^[\s\u00a0\u3000]*[=+\-@\uFF1D\uFF0B\uFF0D\uFF20]/.test(s) || /^[\t\r]/.test(s) ? `'${s}` : s;
+}
+
+export function csvCell(v: unknown): string {
+  const safe = neutralizeFormula(String(v ?? ''));
+  return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }

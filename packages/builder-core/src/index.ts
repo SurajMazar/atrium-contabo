@@ -7,3 +7,4 @@ export * from './validation';
 export * from './diff';
 export * from './scope';
 export * from './history';
+export * from './change-authz';

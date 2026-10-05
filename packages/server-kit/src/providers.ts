@@ -1,6 +1,7 @@
 import {
   instantiateProvider,
   maskSecret,
+  type DriverContext,
   ProviderError,
   parseAddress,
   type AIProvider,
@@ -42,6 +43,23 @@ export interface IntegrationRow extends BaseProviderRow {
   enabled: boolean;
 }
 
+/** Platform-wide provider configured by super admins (PlatformProvider model). */
+export interface PlatformProviderRow {
+  id: string;
+  kind: string;
+  name: string;
+  driver: string;
+  config: unknown;
+  secretsEnc: string | null;
+  fromEmail: string | null;
+  fromName: string | null;
+  isDefault: boolean;
+  enabled: boolean;
+  updatedAt: Date;
+}
+export type PlatformProviderKind = 'email' | 'sms' | 'storage' | 'ai';
+export const PLATFORM_PROVIDER_KINDS: PlatformProviderKind[] = ['email', 'sms', 'storage', 'ai'];
+
 interface Delegate<T> {
   findFirst(args: { where: Record<string, unknown>; orderBy?: Record<string, 'asc' | 'desc'> | Array<Record<string, 'asc' | 'desc'>> }): Promise<T | null>;
 }
@@ -52,6 +70,8 @@ export interface ResolverPrisma {
   smsProvider: Delegate<SmsProviderRow>;
   storageProvider: Delegate<StorageProviderRow>;
   integration: Delegate<IntegrationRow>;
+  /** Optional so tests/older clients without the table keep working (env fallback only). */
+  platformProvider?: Delegate<PlatformProviderRow>;
   website: { findUnique(args: { where: { id: string }; select?: Record<string, boolean> }): Promise<{ id: string; organizationId: string; deploymentIntegrationId: string | null; deploymentProvider: string | null } | null> };
 }
 
@@ -150,17 +170,83 @@ export class ProviderResolver {
     }
   }
 
+  /**
+   * Driver context for configuration that came from a tenant's DB row: outbound connections are
+   * restricted to public addresses (unless OUTBOUND_ALLOW_PRIVATE) and `local` storage is jailed
+   * to `orgs/<organizationId>`.
+   */
+  private tenantContext(row: BaseProviderRow): DriverContext {
+    return { network: 'public-only', organizationId: row.organizationId, env: this.env };
+  }
+
+  /** Driver context for platform providers configured by the operator from env. */
+  private platformContext(): DriverContext {
+    return { network: 'trusted', env: this.env };
+  }
+
   private fromRow<K extends ProviderKind, R extends BaseProviderRow>(kind: K, row: R, source: ResolutionSource, extraConfig?: Record<string, unknown>) {
     const key = `${kind}:${row.id}:${row.updatedAt.getTime()}`;
     const provider = this.cached(key, row.id, () => {
       const config = { ...((row.config as Record<string, unknown>) ?? {}), ...(extraConfig ?? {}) };
-      return instantiateProvider(kind, row.driver, config, this.secretsOf(row));
+      return instantiateProvider(kind, row.driver, config, this.secretsOf(row), this.tenantContext(row));
     });
     return { provider, id: row.id, driver: row.driver, name: row.name, source };
   }
 
   private wrap<T extends object, X extends object = object>(meta: ResolvedMeta<T>, extra?: X): Resolved<T> & X {
     return withMeta(meta.provider, { ...meta, ...(extra ?? ({} as X)) }) as Resolved<T> & X;
+  }
+
+  /**
+   * Platform provider configured in the super-admin panel for `kind` (default first). Errors
+   * (e.g. table not migrated yet) degrade to the env fallback rather than breaking sends.
+   */
+  async platformRow(kind: PlatformProviderKind, driver?: string): Promise<PlatformProviderRow | null> {
+    if (!this.db.platformProvider) return null;
+    try {
+      return await this.db.platformProvider.findFirst({ where: { kind, enabled: true, ...(driver ? { driver } : {}) }, orderBy: [{ isDefault: 'desc' }, { updatedAt: 'desc' }] });
+    } catch {
+      return null;
+    }
+  }
+
+  private fromPlatformRow<K extends ProviderKind>(kind: K, row: PlatformProviderRow, extraConfig?: Record<string, unknown>) {
+    const key = `platform:${kind}:${row.id}:${row.updatedAt.getTime()}`;
+    const provider = this.cached(key, row.id, () => {
+      const config: Record<string, unknown> = { ...((row.config as Record<string, unknown>) ?? {}), ...(extraConfig ?? {}) };
+      const secrets = this.secretsOf(row);
+      if (kind === 'storage' && row.driver === 'local') {
+        // The platform's local disk is always LOCAL_STORAGE_DIR — never a directory typed into a form.
+        config.directory = this.env.LOCAL_STORAGE_DIR || './storage';
+        config.publicBaseUrl ??= this.env.LOCAL_STORAGE_PUBLIC_URL || 'http://localhost:4000/v1/storage';
+        secrets.signingSecret ??= localStorageSigningSecret(this.env);
+      }
+      return instantiateProvider(kind, row.driver, config, secrets, this.platformContext());
+    });
+    return { provider, id: row.id, driver: row.driver, name: row.name, source: 'platform' as const };
+  }
+
+  /** Instance for one platform provider row (super-admin "Test" button). */
+  platformInstance(kind: PlatformProviderKind, row: PlatformProviderRow) {
+    const from = kind === 'email' ? (row.fromEmail ? { email: row.fromEmail, name: row.fromName ?? undefined } : parseAddress(this.env.MAIL_FROM || 'Atrium <no-reply@atrium.localhost>')) : undefined;
+    return this.wrap(this.fromPlatformRow(kind, row, from ? { defaultFrom: from } : undefined));
+  }
+
+  /** Where each platform capability currently comes from (admin panel status). */
+  async platformStatus(): Promise<Record<PlatformProviderKind, { source: 'admin' | 'env' | 'none'; provider?: { id: string; name: string; driver: string } }>> {
+    const env = this.env;
+    const envConfigured: Record<PlatformProviderKind, boolean> = {
+      email: !!env.SMTP_HOST,
+      sms: false,
+      storage: true, // local disk is always available
+      ai: !!(env.ANTHROPIC_API_KEY || env.OPENAI_API_KEY || env.GEMINI_API_KEY),
+    };
+    const out = {} as Awaited<ReturnType<ProviderResolver['platformStatus']>>;
+    for (const kind of PLATFORM_PROVIDER_KINDS) {
+      const row = await this.platformRow(kind);
+      out[kind] = row ? { source: 'admin', provider: { id: row.id, name: row.name, driver: row.driver } } : { source: envConfigured[kind] ? 'env' : 'none' };
+    }
+    return out;
   }
 
   /** Generic lookup chain over a delegate. */
@@ -198,6 +284,11 @@ export class ProviderResolver {
         return this.wrap(this.fromRow('email', found.row, found.source, { defaultFrom: from }), { from });
       }
     }
+    const row = await this.platformRow('email');
+    if (row) {
+      const from = row.fromEmail ? { email: row.fromEmail, name: row.fromName ?? undefined } : parseAddress(this.env.MAIL_FROM || 'Atrium <no-reply@atrium.localhost>');
+      return this.wrap(this.fromPlatformRow('email', row, { defaultFrom: from }), { from });
+    }
     return this.platformEmail();
   }
 
@@ -217,6 +308,7 @@ export class ProviderResolver {
           defaultFrom: from,
         },
         { password: env.SMTP_PASSWORD || undefined },
+        this.platformContext(),
       ),
     );
     return this.wrap({ provider, id: null, driver: 'smtp', name: 'Platform SMTP', source: 'platform' }, { from });
@@ -226,8 +318,10 @@ export class ProviderResolver {
 
   async sms(args: { organizationId: string; websiteId?: string | null; providerId?: string | null }): Promise<Resolved<SmsProvider>> {
     const found = await this.lookup(this.db.smsProvider, 'SMS', args);
-    if (!found) throw new ProviderError('No SMS provider is configured for this organization', 'resolver', false);
-    return this.wrap(this.fromRow('sms', found.row, found.source));
+    if (found) return this.wrap(this.fromRow('sms', found.row, found.source));
+    const row = await this.platformRow('sms');
+    if (row) return this.wrap(this.fromPlatformRow('sms', row));
+    throw new ProviderError('No SMS provider is configured for this organization or the platform', 'resolver', false);
   }
 
   // ───────────────────────────── Storage ─────────────────────────────
@@ -240,6 +334,8 @@ export class ProviderResolver {
     } else if (args.providerId) {
       throw new ProviderError('providerId requires organizationId', 'resolver', false);
     }
+    const row = await this.platformRow('storage');
+    if (row) return this.wrap(this.fromPlatformRow('storage', row));
     return this.platformStorage();
   }
 
@@ -261,16 +357,18 @@ export class ProviderResolver {
             publicUrl: env.S3_PUBLIC_URL || undefined,
           },
           { secretAccessKey: env.S3_SECRET_ACCESS_KEY || undefined },
+          this.platformContext(),
         );
       }
       if (driver === 'azure-blob') {
-        return instantiateProvider('storage', 'azure-blob', { accountName: env.AZURE_STORAGE_ACCOUNT, container: env.AZURE_STORAGE_CONTAINER }, { accountKey: env.AZURE_STORAGE_KEY });
+        return instantiateProvider('storage', 'azure-blob', { accountName: env.AZURE_STORAGE_ACCOUNT, container: env.AZURE_STORAGE_CONTAINER }, { accountKey: env.AZURE_STORAGE_KEY }, this.platformContext());
       }
       return instantiateProvider(
         'storage',
         'local',
         { directory: env.LOCAL_STORAGE_DIR || './storage', publicBaseUrl: env.LOCAL_STORAGE_PUBLIC_URL || 'http://localhost:4000/v1/storage' },
         { signingSecret: localStorageSigningSecret(env) },
+        this.platformContext(),
       );
     });
     return this.wrap({ provider, id: null, driver, name: 'Platform storage', source: 'platform' });
@@ -289,6 +387,8 @@ export class ProviderResolver {
       );
       if (found) return this.wrap(this.fromRow('ai', found.row, found.source));
     }
+    const row = (args.driver ? await this.platformRow('ai', args.driver) : null) ?? (await this.platformRow('ai'));
+    if (row) return this.wrap(this.fromPlatformRow('ai', row));
     return this.platformAi(args.driver);
   }
 
@@ -301,9 +401,9 @@ export class ProviderResolver {
     };
     const order = [preferred, env.AI_DEFAULT_PROVIDER || 'anthropic', 'anthropic', 'openai', 'gemini'].filter((d): d is string => !!d && d in keys);
     const driver = order.find((d) => keys[d]!.key);
-    if (!driver) throw new ProviderError('No AI provider configured: connect one in Integrations or set ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY', 'resolver', false);
+    if (!driver) throw new ProviderError('No AI provider configured: connect one in Integrations (organization) or Platform providers (super admin)', 'resolver', false);
     const { key, model } = keys[driver]!;
-    const provider = this.cached(`ai:platform:${driver}`, null, () => instantiateProvider('ai', driver, model ? { defaultModel: model } : {}, { apiKey: key }));
+    const provider = this.cached(`ai:platform:${driver}`, null, () => instantiateProvider('ai', driver, model ? { defaultModel: model } : {}, { apiKey: key }, this.platformContext()));
     return this.wrap({ provider, id: null, driver, name: `Platform ${driver}`, source: 'platform' });
   }
 
@@ -334,7 +434,9 @@ export class ProviderResolver {
 
   /**
    * Deployment provider for independent deployments: explicit integration → the website's
-   * configured integration → website/org default DEPLOYMENT integration → platform VERCEL_TOKEN.
+   * configured integration → website/org default DEPLOYMENT integration. There is deliberately
+   * NO fallback to the platform VERCEL_TOKEN: tenant deployments must use the tenant's own
+   * integration (otherwise any org could deploy into / read from the platform's Vercel team).
    * Use `platformDeployment()` for platform-hosted mode.
    */
   async deployment(args: { organizationId: string; websiteId?: string | null; integrationId?: string | null; providerId?: string | null; driver?: string }): Promise<Resolved<DeploymentProvider>> {
@@ -355,10 +457,6 @@ export class ProviderResolver {
       { kind: 'DEPLOYMENT', enabled: true, ...(driver && !integrationId ? { driver } : {}) },
     );
     if (found) return this.wrap(this.fromRow('deployment', found.row, found.source));
-    if ((!driver || driver === 'vercel') && this.env.VERCEL_TOKEN) {
-      const provider = this.cached('deployment:platform:vercel', null, () => instantiateProvider('deployment', 'vercel', { teamId: this.env.VERCEL_TEAM_ID || undefined }, { token: this.env.VERCEL_TOKEN }));
-      return this.wrap({ provider, id: null, driver: 'vercel', name: 'Platform Vercel', source: 'platform' });
-    }
     throw new ProviderError(`No ${driver ?? 'deployment'} integration is configured for this organization`, 'resolver', false);
   }
 
@@ -378,6 +476,7 @@ export class ProviderResolver {
           ingressCname: this.env.PLATFORM_INGRESS_CNAME || undefined,
         },
         {},
+        this.platformContext(),
       );
     });
     return this.wrap({ provider, id: null, driver: 'self-hosted', name: 'Platform hosting', source: 'platform' });

@@ -1,6 +1,7 @@
 import type { PrismaClient } from '@atrium/db';
 import type { JobInput, JobName, Logger, ProviderResolver } from '@atrium/server-kit';
 import type { JobsOptions } from 'bullmq';
+import type { QuotaStore } from './lib/quota';
 
 /** Worker settings (from env; see main.ts). */
 export interface WorkerSettings {
@@ -9,7 +10,10 @@ export interface WorkerSettings {
   adminUrl: string;
   rendererUrl: string;
   repoRoot?: string;
-  /** Allow webhooks/HTTP actions to target private network addresses (default: non-production only). */
+  /**
+   * Allow webhooks/HTTP actions to target private network addresses. WORKER_ALLOW_PRIVATE_NETWORK
+   * when set, otherwise the shared OUTBOUND_ALLOW_PRIVATE decision (default: non-production only).
+   */
   allowPrivateNetwork: boolean;
   /** Allow npm install/build inside the worker for static-only hosts (Netlify, Cloudflare Pages). */
   enableLocalBuilds: boolean;
@@ -26,6 +30,8 @@ export interface WorkerContext {
   enqueue<N extends JobName>(name: N, data: JobInput<N>, opts?: JobsOptions): Promise<unknown>;
   /** Overridable for tests. */
   fetch: typeof fetch;
+  /** Counters for form-rule message quotas (Redis-backed in production; in-memory fallback otherwise). */
+  quota?: QuotaStore;
   now(): Date;
 }
 

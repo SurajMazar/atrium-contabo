@@ -36,12 +36,15 @@ spec:
         - name: renderer
           image: ghcr.io/your-org/atrium-renderer
           ports: [{ name: http, containerPort: 3001 }]
+          # Least privilege: non-secret config + ONLY the renderer's shared secret (not the whole
+          # atrium-secrets: database, Redis, JWT, encryption and provider keys stay out of this pod).
           envFrom:
             - configMapRef: { name: atrium-config }
-            - secretRef: { name: atrium-secrets }
           env:
             - { name: PORT, value: '3001' }
             - { name: HOSTNAME, value: '0.0.0.0' }
+            - name: RENDERER_SECRET
+              valueFrom: { secretKeyRef: { name: atrium-secrets, key: RENDERER_SECRET } }
           # Unknown hosts legitimately return 404, so probe the socket rather than "/".
           startupProbe:
             tcpSocket: { port: http }

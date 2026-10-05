@@ -6,8 +6,13 @@ After=atrium-postgres.service
 [Container]
 ContainerName=atrium-migrate
 Image=ghcr.io/your-org/atrium-migrate:latest
-Network=atrium.network
+Network=atrium-data.network
 EnvironmentFile=%h/.config/atrium/atrium.env
+# migrate.env overrides DATABASE_URL with the owner role (MIGRATE_DATABASE_URL); the app role is DML-only.
+EnvironmentFile=%h/.config/atrium/migrate.env
+Environment=CHECKPOINT_DISABLE=1
+DropCapability=all
+NoNewPrivileges=true
 
 [Service]
 Type=oneshot

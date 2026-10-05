@@ -1,13 +1,16 @@
 import { Readable } from 'node:stream';
 import { z } from 'zod';
 import type { S3Client } from '@aws-sdk/client-s3';
-import { defineDriver, ProviderError, type TestResult } from '../driver';
+import { defineDriver, ProviderError, TENANT_CONTEXT, type DriverContext, type TestResult } from '../driver';
+import { assertOutboundUrl, createGuardedAgents } from '../net/guard';
+import { allowsPrivate, remoteExcerpt } from '../net/policy';
 import { encodeKeyPath, joinPrefix, normalizeKey, probeStorage, toBuffer, trimSlash } from './shared';
 import type { PutObjectInput, StorageProvider, StoredObject } from './types';
 
 export const s3ConfigSchema = z.object({
-  bucket: z.string().min(1),
-  region: z.string().default('us-east-1'),
+  bucket: z.string().min(1).max(255).regex(/^[A-Za-z0-9._-]+$/, 'Invalid bucket name'),
+  /** AWS region or provider region id (`auto` for R2) — becomes part of the endpoint host name. */
+  region: z.string().regex(/^[a-z0-9][a-z0-9-]{0,40}$/, 'Invalid region').default('us-east-1'),
   /** Custom endpoint for S3-compatible services (R2, MinIO, SeaweedFS, Oracle, Spaces, B2). Empty = AWS. */
   endpoint: z.string().url().optional(),
   forcePathStyle: z.boolean().default(false),
@@ -27,12 +30,14 @@ export type S3Config = z.output<typeof s3ConfigSchema>;
 const PROVIDER = 's3';
 type S3Module = typeof import('@aws-sdk/client-s3');
 
-function toProviderError(err: unknown, action: string): ProviderError {
+function toProviderError(err: unknown, action: string, trusted = true): ProviderError {
   if (err instanceof ProviderError) return err;
-  const e = err as { name?: string; message?: string; $retryable?: unknown; $metadata?: { httpStatusCode?: number } };
+  const e = err as { name?: string; message?: string; code?: string; $retryable?: unknown; $metadata?: { httpStatusCode?: number } };
   const status = e.$metadata?.httpStatusCode ?? 0;
   const retryable = Boolean(e.$retryable) || status >= 500 || status === 429 || e.name === 'SlowDown' || e.name === 'TimeoutError';
-  return new ProviderError(`s3: ${action} failed — ${e.name ?? 'Error'}: ${e.message ?? String(err)}`, PROVIDER, retryable, err);
+  // SDK messages can embed the remote response (deserialization errors) — hidden in production for tenant endpoints.
+  const detail = trusted ? (e.message ?? String(err)) : (remoteExcerpt(e.message ?? String(err), 300) ?? (status ? `HTTP ${status}` : (e.code ?? 'request failed')));
+  return new ProviderError(`s3: ${action} failed — ${e.name ?? 'Error'}: ${detail}`, PROVIDER, retryable, err);
 }
 
 function isNotFound(err: unknown): boolean {
@@ -47,12 +52,24 @@ export class S3StorageProvider implements StorageProvider {
   constructor(
     private readonly config: S3Config,
     private readonly secrets: z.output<typeof s3SecretsSchema>,
+    private readonly ctx: DriverContext = TENANT_CONTEXT,
   ) {}
 
   private load() {
     this.sdk ??= import('@aws-sdk/client-s3').then((s3) => {
       const c = this.config;
+      // Tenant endpoints: syntactic check (IP literals bypass `lookup`) + connections pinned to
+      // validated public addresses via agents with a guarded DNS lookup.
+      const guarded = !allowsPrivate(this.ctx.network);
+      if (guarded && c.endpoint) {
+        try {
+          assertOutboundUrl(c.endpoint);
+        } catch (err) {
+          throw new ProviderError(`s3: endpoint rejected — ${(err as Error).message}`, PROVIDER, false, err);
+        }
+      }
       const client = new s3.S3Client({
+        ...(guarded ? { requestHandler: { ...createGuardedAgents(), requestTimeout: 60_000 } } : {}),
         region: c.region,
         endpoint: c.endpoint,
         forcePathStyle: c.forcePathStyle,
@@ -64,6 +81,10 @@ export class S3StorageProvider implements StorageProvider {
       return { s3, client };
     });
     return this.sdk;
+  }
+
+  private get trusted(): boolean {
+    return this.ctx.network === 'trusted';
   }
 
   private k(key: string): string {
@@ -90,7 +111,7 @@ export class S3StorageProvider implements StorageProvider {
       );
       return { key: input.key, etag: out.ETag?.replace(/"/g, ''), size: Buffer.isBuffer(body) || body instanceof Uint8Array ? body.byteLength : input.contentLength, contentType: input.contentType };
     } catch (err) {
-      throw toProviderError(err, 'upload');
+      throw toProviderError(err, 'upload', this.trusted);
     }
   }
 
@@ -102,7 +123,7 @@ export class S3StorageProvider implements StorageProvider {
       return Buffer.from(await out.Body.transformToByteArray());
     } catch (err) {
       if (isNotFound(err)) throw new ProviderError(`s3: object not found: ${key}`, PROVIDER, false, err);
-      throw toProviderError(err, 'download');
+      throw toProviderError(err, 'download', this.trusted);
     }
   }
 
@@ -111,7 +132,7 @@ export class S3StorageProvider implements StorageProvider {
     try {
       await client.send(new s3.DeleteObjectCommand({ Bucket: this.config.bucket, Key: this.k(key) }));
     } catch (err) {
-      if (!isNotFound(err)) throw toProviderError(err, 'delete');
+      if (!isNotFound(err)) throw toProviderError(err, 'delete', this.trusted);
     }
   }
 
@@ -127,7 +148,7 @@ export class S3StorageProvider implements StorageProvider {
         }),
       );
     } catch (err) {
-      throw toProviderError(err, 'copy');
+      throw toProviderError(err, 'copy', this.trusted);
     }
   }
 
@@ -143,7 +164,7 @@ export class S3StorageProvider implements StorageProvider {
       return true;
     } catch (err) {
       if (isNotFound(err)) return false;
-      throw toProviderError(err, 'head');
+      throw toProviderError(err, 'head', this.trusted);
     }
   }
 
@@ -192,5 +213,5 @@ export const s3Driver = defineDriver({
     { id: 'digitalocean-spaces', name: 'DigitalOcean Spaces', config: { region: 'nyc3', endpoint: 'https://nyc3.digitaloceanspaces.com', forcePathStyle: false, usePublicAcl: true } },
     { id: 'backblaze-b2', name: 'Backblaze B2 (S3 API)', config: { region: 'us-west-004', endpoint: 'https://s3.us-west-004.backblazeb2.com', forcePathStyle: true } },
   ],
-  create: (config, secrets): StorageProvider => new S3StorageProvider(config, secrets),
+  create: (config, secrets, ctx): StorageProvider => new S3StorageProvider(config, secrets, ctx),
 });

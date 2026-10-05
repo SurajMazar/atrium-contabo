@@ -9,8 +9,15 @@ Image=ghcr.io/your-org/atrium-admin:latest
 AutoUpdate=registry
 Network=atrium.network
 NetworkAlias=admin
-EnvironmentFile=%h/.config/atrium/atrium.env
+# Public URLs only (no secrets): ~/.config/atrium/admin.env
+EnvironmentFile=%h/.config/atrium/admin.env
 Environment=ATRIUM_API_INTERNAL_URL=http://api:4000
+Volume=atrium-admin-cache.volume:/app/apps/admin/.next/cache
+# Immutable root filesystem (tmpfs /tmp, /var/tmp, /run), no capabilities, no privilege escalation.
+ReadOnly=true
+ReadOnlyTmpfs=true
+DropCapability=all
+NoNewPrivileges=true
 
 [Service]
 Restart=always

@@ -1,4 +1,4 @@
-import { SOCIAL_NETWORKS } from '@atrium/schema';
+import { SOCIAL_NETWORKS, safeUrlSchema } from '@atrium/schema';
 import { z } from 'zod';
 import { defineComponent } from '../types';
 import { headingLevel, introControls, media, mediaControl, sectionBase, sectionControls } from '../fields';
@@ -28,7 +28,7 @@ export const contactInfo = defineComponent({
     showAddress: z.boolean().default(true),
     showHours: z.boolean().default(true),
     showSocial: z.boolean().default(false),
-    extra: z.array(z.object({ label: z.string().max(60), value: z.string().max(200), link: z.string().max(300).optional() })).max(8).default([]),
+    extra: z.array(z.object({ label: z.string().max(60), value: z.string().max(200), link: safeUrlSchema('link', undefined, 300).optional() })).max(8).default([]),
     mapZoom: z.number().int().min(3).max(20).default(14),
   }),
   defaultProps: { eyebrow: 'Contact', heading: 'Get in *touch*' },

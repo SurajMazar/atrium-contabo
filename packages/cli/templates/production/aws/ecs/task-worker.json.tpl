@@ -93,6 +93,18 @@
         {
           "name": "MALLOC_ARENA_MAX",
           "value": "2"
+        },
+        {
+          "name": "COOKIE_SECURE",
+          "value": "true"
+        },
+        {
+          "name": "TRUST_PROXY",
+          "value": "loopback,uniquelocal"
+        },
+        {
+          "name": "OUTBOUND_ALLOW_PRIVATE",
+          "value": "false"
         }
       ],
       "secrets": [

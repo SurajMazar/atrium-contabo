@@ -10,7 +10,8 @@ Type=simple
 User=atrium
 Group=atrium
 WorkingDirectory=/opt/atrium/apps/admin
-EnvironmentFile=/etc/atrium/atrium.env
+# Public URLs only (generated env/admin.env); the admin holds no secrets.
+EnvironmentFile=/etc/atrium/admin.env
 Environment=NODE_ENV=production PORT=3000
 ExecStart=/usr/bin/node node_modules/next/dist/bin/next start --port 3000 --hostname 127.0.0.1
 Restart=always

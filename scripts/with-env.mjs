@@ -11,8 +11,14 @@ const env = { ...process.env };
 if (existsSync(file)) {
   for (const line of readFileSync(file, 'utf8').split('\n')) {
     const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/.exec(line);
-    if (!m || line.trimStart().startsWith('#') || m[1] === 'NODE_ENV') continue; // Next manages NODE_ENV itself
+    if (!m || line.trimStart().startsWith('#')) continue;
     const value = m[2].replace(/^(['"])(.*)\1$/, '$2');
+    // Next manages NODE_ENV itself (`next start` is always "production"); pass the deployment's
+    // own environment separately so production-only safety checks know a local run is local.
+    if (m[1] === 'NODE_ENV') {
+      env.ATRIUM_DEPLOY_ENV ??= value;
+      continue;
+    }
     if (env[m[1]] === undefined) env[m[1]] = value;
   }
 }

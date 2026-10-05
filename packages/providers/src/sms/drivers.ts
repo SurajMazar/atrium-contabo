@@ -1,7 +1,9 @@
 import { z } from 'zod';
 import { getByPath, interpolate } from '@atrium/schema';
-import { defineDriver, ProviderError, type TestResult } from '../driver';
-import { basicAuth, httpRequest } from '../http';
+import { defineDriver, ProviderError, TENANT_CONTEXT, type DriverContext, type TestResult } from '../driver';
+import { basicAuth, excerpt, httpRequest, type HttpRequestOptions } from '../http';
+import { assertOutboundUrl, createGuardedAgents } from '../net/guard';
+import { allowsPrivate, remoteExcerpt } from '../net/policy';
 import { normalizePhoneE164, toNationalNumber } from './phone';
 import type { SmsParams, SmsProvider, SmsResult } from './types';
 
@@ -28,6 +30,9 @@ async function runSmsTest(provider: SmsProvider, to: string | undefined, check: 
   }
 }
 
+/** AWS region names (also used to build the endpoint host name). */
+const awsRegion = z.string().regex(/^[a-z]{2}(-[a-z0-9]+)+-\d+$|^us-gov-[a-z]+-\d+$/, 'Invalid AWS region');
+
 const defaultCountry = z.string().optional().describe('ISO country (e.g. NP) or calling code applied to numbers without a + prefix');
 
 // ───────────────────────────── Twilio ─────────────────────────────
@@ -49,7 +54,13 @@ export class TwilioSmsProvider implements SmsProvider {
   constructor(
     private readonly config: z.output<typeof twilioConfigSchema>,
     private readonly secrets: z.output<typeof twilioSecretsSchema>,
+    private readonly ctx: DriverContext = TENANT_CONTEXT,
   ) {}
+
+  /** Fixed vendor API: error bodies may be shown. */
+  private net(): Pick<HttpRequestOptions, 'network' | 'revealErrorBody'> {
+    return { network: this.ctx.network, revealErrorBody: true };
+  }
 
   private get base() {
     return `https://api.twilio.com/2010-04-01/Accounts/${this.config.accountSid}`;
@@ -71,6 +82,7 @@ export class TwilioSmsProvider implements SmsProvider {
     }
     if (this.config.statusCallbackUrl) form.set('StatusCallback', this.config.statusCallbackUrl);
     const res = await httpRequest<{ sid?: string; status?: string; error_code?: number | null; error_message?: string | null }>(this.driver, `${this.base}/Messages.json`, {
+      ...this.net(),
       method: 'POST',
       headers: { ...this.auth(), 'Content-Type': 'application/x-www-form-urlencoded' },
       body: form,
@@ -81,7 +93,7 @@ export class TwilioSmsProvider implements SmsProvider {
 
   test(to?: string): Promise<TestResult> {
     return runSmsTest(this, to, async () => {
-      const res = await httpRequest<{ friendly_name?: string; status?: string }>(this.driver, `${this.base}.json`, { headers: this.auth() });
+      const res = await httpRequest<{ friendly_name?: string; status?: string }>(this.driver, `${this.base}.json`, { ...this.net(), headers: this.auth() });
       return `Twilio account "${res.data?.friendly_name ?? this.config.accountSid}" is ${res.data?.status ?? 'reachable'}`;
     });
   }
@@ -94,7 +106,7 @@ export const twilioDriver = defineDriver({
   description: 'Twilio Programmable Messaging (REST API).',
   configSchema: twilioConfigSchema,
   secretsSchema: twilioSecretsSchema,
-  create: (config, secrets): SmsProvider => new TwilioSmsProvider(config, secrets),
+  create: (config, secrets, ctx): SmsProvider => new TwilioSmsProvider(config, secrets, ctx),
 });
 
 // ───────────────────────────── Vonage ─────────────────────────────
@@ -107,7 +119,13 @@ export class VonageSmsProvider implements SmsProvider {
   constructor(
     private readonly config: z.output<typeof vonageConfigSchema>,
     private readonly secrets: z.output<typeof vonageSecretsSchema>,
+    private readonly ctx: DriverContext = TENANT_CONTEXT,
   ) {}
+
+  /** Fixed vendor API: error bodies may be shown. */
+  private net(): Pick<HttpRequestOptions, 'network' | 'revealErrorBody'> {
+    return { network: this.ctx.network, revealErrorBody: true };
+  }
 
   async send(params: SmsParams): Promise<SmsResult> {
     const to = requirePhone(this.driver, params.to, this.config.defaultCountry).slice(1);
@@ -115,6 +133,7 @@ export class VonageSmsProvider implements SmsProvider {
     const form = new URLSearchParams({ api_key: this.config.apiKey, api_secret: this.secrets.apiSecret, from: params.from ?? this.config.from, to, text: body });
     if (/[^\u0000-\u007f]/.test(body)) form.set('type', 'unicode');
     const res = await httpRequest<{ messages?: Array<{ status?: string; 'message-id'?: string; 'error-text'?: string }> }>(this.driver, 'https://rest.nexmo.com/sms/json', {
+      ...this.net(),
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: form,
@@ -130,7 +149,7 @@ export class VonageSmsProvider implements SmsProvider {
 
   test(to?: string): Promise<TestResult> {
     return runSmsTest(this, to, async () => {
-      const res = await httpRequest<{ value?: number }>(this.driver, 'https://rest.nexmo.com/account/get-balance', { query: { api_key: this.config.apiKey, api_secret: this.secrets.apiSecret } });
+      const res = await httpRequest<{ value?: number }>(this.driver, 'https://rest.nexmo.com/account/get-balance', { ...this.net(), query: { api_key: this.config.apiKey, api_secret: this.secrets.apiSecret } });
       return `Vonage credentials valid (balance €${res.data?.value?.toFixed(2) ?? '?'})`;
     });
   }
@@ -143,13 +162,13 @@ export const vonageDriver = defineDriver({
   description: 'Vonage SMS API.',
   configSchema: vonageConfigSchema,
   secretsSchema: vonageSecretsSchema,
-  create: (config, secrets): SmsProvider => new VonageSmsProvider(config, secrets),
+  create: (config, secrets, ctx): SmsProvider => new VonageSmsProvider(config, secrets, ctx),
 });
 
 // ───────────────────────────── AWS SNS ─────────────────────────────
 
 export const snsConfigSchema = z.object({
-  region: z.string().default('us-east-1'),
+  region: awsRegion.default('us-east-1'),
   accessKeyId: z.string().optional().describe('Leave empty to use the default AWS credential chain'),
   senderId: z.string().max(11).optional(),
   smsType: z.enum(['Transactional', 'Promotional']).default('Transactional'),
@@ -164,6 +183,7 @@ export class SnsSmsProvider implements SmsProvider {
   constructor(
     private readonly config: z.output<typeof snsConfigSchema>,
     private readonly secrets: z.output<typeof snsSecretsSchema>,
+    private readonly ctx: DriverContext = TENANT_CONTEXT,
   ) {}
 
   private client() {
@@ -171,6 +191,8 @@ export class SnsSmsProvider implements SmsProvider {
       sdk,
       client: new sdk.SNSClient({
         region: this.config.region,
+        // Tenant credentials: connections are pinned to validated public addresses.
+        ...(allowsPrivate(this.ctx.network) ? {} : { requestHandler: createGuardedAgents() }),
         credentials: this.config.accessKeyId && this.secrets.secretAccessKey ? { accessKeyId: this.config.accessKeyId, secretAccessKey: this.secrets.secretAccessKey } : undefined,
       }),
     }));
@@ -209,7 +231,7 @@ export const snsDriver = defineDriver({
   description: 'Send SMS through Amazon Simple Notification Service.',
   configSchema: snsConfigSchema,
   secretsSchema: snsSecretsSchema,
-  create: (config, secrets): SmsProvider => new SnsSmsProvider(config, secrets),
+  create: (config, secrets, ctx): SmsProvider => new SnsSmsProvider(config, secrets, ctx),
 });
 
 // ───────────────────────────── Generic HTTP ─────────────────────────────
@@ -266,21 +288,29 @@ export class HttpSmsProvider implements SmsProvider {
   constructor(
     private readonly config: z.output<typeof httpSmsConfigSchema>,
     private readonly secrets: z.output<typeof httpSmsSecretsSchema>,
+    private readonly ctx: DriverContext = TENANT_CONTEXT,
   ) {}
+
+  private net(): Pick<HttpRequestOptions, 'network' | 'revealErrorBody'> {
+    return { network: this.ctx.network };
+  }
 
   async send(params: SmsParams): Promise<SmsResult> {
     const req = renderHttpSmsRequest(this.config, this.secrets, params);
-    const res = await httpRequest<unknown>(this.driver, req.url, { method: req.method, headers: req.headers, body: req.body });
+    const res = await httpRequest<unknown>(this.driver, req.url, { ...this.net(), method: req.method, headers: req.headers, body: req.body });
     if (this.config.successPath) {
       const v = getByPath(res.data, this.config.successPath);
-      if (String(v) !== (this.config.successValue ?? 'true')) throw new ProviderError(`http: gateway reported failure (${this.config.successPath}=${String(v)})`, this.driver, false, res.data);
+      if (String(v) !== (this.config.successValue ?? 'true')) throw new ProviderError(`http: gateway reported failure (${this.config.successPath}=${remoteExcerpt(v, 60) ?? 'unexpected value'})`, this.driver, false, res.data);
     }
     const id = this.config.idPath ? getByPath(res.data, this.config.idPath) : undefined;
     return { id: id === undefined || id === null ? undefined : String(id), status: 'sent', provider: this.driver, raw: res.data };
   }
 
   test(to?: string): Promise<TestResult> {
-    return runSmsTest(this, to, async () => `HTTP gateway configured (${this.config.method} ${new URL(this.config.url.replace(/\{\{[^}]+\}\}/g, 'x')).host}); send a test SMS to verify`);
+    return runSmsTest(this, to, async () => {
+      const url = assertOutboundUrl(this.config.url.replace(/\{\{[^}]+\}\}/g, 'x'), { allowPrivate: allowsPrivate(this.ctx.network) });
+      return `HTTP gateway configured (${this.config.method} ${url.host}); send a test SMS to verify`;
+    });
   }
 }
 
@@ -291,15 +321,17 @@ export const httpSmsDriver = defineDriver({
   description: 'Any SMS gateway with an HTTP API: configure method, URL, headers and a body template using {{to}}, {{body}}, {{from}}.',
   configSchema: httpSmsConfigSchema,
   secretsSchema: httpSmsSecretsSchema,
-  create: (config, secrets): SmsProvider => new HttpSmsProvider(config, secrets),
+  create: (config, secrets, ctx): SmsProvider => new HttpSmsProvider(config, secrets, ctx),
 });
 
 // ───────────────────────────── Sparrow SMS (Nepal) ─────────────────────────────
 
+const SPARROW_API = 'https://api.sparrowsms.com/v2';
+
 export const sparrowConfigSchema = z.object({
   /** Sender identity approved by Sparrow (e.g. "Demo" / "InfoSMS"). */
   from: z.string().min(1),
-  baseUrl: z.string().url().default('https://api.sparrowsms.com/v2'),
+  baseUrl: z.string().url().default(SPARROW_API),
 });
 export const sparrowSecretsSchema = z.object({ token: z.string().min(1) });
 
@@ -308,26 +340,41 @@ export class SparrowSmsProvider implements SmsProvider {
   constructor(
     private readonly config: z.output<typeof sparrowConfigSchema>,
     private readonly secrets: z.output<typeof sparrowSecretsSchema>,
+    private readonly ctx: DriverContext = TENANT_CONTEXT,
   ) {}
+
+  /** Error bodies are only revealed for the official API host. */
+  private get official(): boolean {
+    return this.config.baseUrl.replace(/\/+$/, '') === SPARROW_API;
+  }
+
+  private net(): Pick<HttpRequestOptions, 'network' | 'revealErrorBody'> {
+    return { network: this.ctx.network, revealErrorBody: this.official };
+  }
+
+  private remote(text: unknown): string | undefined {
+    return this.official ? (text === undefined || text === null ? undefined : excerpt(String(text), 200)) : remoteExcerpt(text);
+  }
 
   async send(params: SmsParams): Promise<SmsResult> {
     const to = toNationalNumber(params.to, 'NP');
     if (!to || !/^9\d{9}$/.test(to)) throw new ProviderError(`sparrow: "${params.to}" is not a Nepali mobile number`, this.driver, false);
     const form = new URLSearchParams({ token: this.secrets.token, from: params.from ?? this.config.from, to, text: requireBody(this.driver, params.body) });
     const res = await httpRequest<{ response_code?: number; response?: string; message_id?: string | number; count?: number }>(this.driver, `${this.config.baseUrl}/sms/`, {
+      ...this.net(),
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: form,
     });
     if (res.data?.response_code !== undefined && res.data.response_code !== 200) {
-      throw new ProviderError(`sparrow: ${res.data.response ?? `code ${res.data.response_code}`}`, this.driver, false, res.data);
+      throw new ProviderError(`sparrow: ${this.remote(res.data.response) ?? `code ${res.data.response_code}`}`, this.driver, false, res.data);
     }
     return { id: res.data?.message_id !== undefined ? String(res.data.message_id) : undefined, status: 'sent', provider: this.driver, raw: res.data };
   }
 
   test(to?: string): Promise<TestResult> {
     return runSmsTest(this, to, async () => {
-      const res = await httpRequest<{ credits_available?: number; response_code?: number }>(this.driver, `${this.config.baseUrl}/credit/`, { query: { token: this.secrets.token } });
+      const res = await httpRequest<{ credits_available?: number; response_code?: number }>(this.driver, `${this.config.baseUrl}/credit/`, { ...this.net(), query: { token: this.secrets.token } });
       return `Sparrow SMS token valid (${res.data?.credits_available ?? '?'} credits available)`;
     });
   }
@@ -340,12 +387,13 @@ export const sparrowDriver = defineDriver({
   description: 'Sparrow SMS REST API — Nepal local delivery (NTC/Ncell).',
   configSchema: sparrowConfigSchema,
   secretsSchema: sparrowSecretsSchema,
-  create: (config, secrets): SmsProvider => new SparrowSmsProvider(config, secrets),
+  create: (config, secrets, ctx): SmsProvider => new SparrowSmsProvider(config, secrets, ctx),
 });
 
 // ───────────────────────────── Aakash SMS (Nepal) ─────────────────────────────
 
-export const aakashConfigSchema = z.object({ baseUrl: z.string().url().default('https://sms.aakashsms.com/sms') });
+const AAKASH_API = 'https://sms.aakashsms.com/sms';
+export const aakashConfigSchema = z.object({ baseUrl: z.string().url().default(AAKASH_API) });
 export const aakashSecretsSchema = z.object({ authToken: z.string().min(1) });
 
 export class AakashSmsProvider implements SmsProvider {
@@ -353,18 +401,33 @@ export class AakashSmsProvider implements SmsProvider {
   constructor(
     private readonly config: z.output<typeof aakashConfigSchema>,
     private readonly secrets: z.output<typeof aakashSecretsSchema>,
+    private readonly ctx: DriverContext = TENANT_CONTEXT,
   ) {}
+
+  /** Error bodies are only revealed for the official API host. */
+  private get official(): boolean {
+    return this.config.baseUrl.replace(/\/+$/, '') === AAKASH_API;
+  }
+
+  private net(): Pick<HttpRequestOptions, 'network' | 'revealErrorBody'> {
+    return { network: this.ctx.network, revealErrorBody: this.official };
+  }
+
+  private remote(text: unknown): string | undefined {
+    return this.official ? (text === undefined || text === null ? undefined : excerpt(String(text), 200)) : remoteExcerpt(text);
+  }
 
   async send(params: SmsParams): Promise<SmsResult> {
     const to = toNationalNumber(params.to, 'NP');
     if (!to || !/^9\d{9}$/.test(to)) throw new ProviderError(`aakash: "${params.to}" is not a Nepali mobile number`, this.driver, false);
     const form = new URLSearchParams({ auth_token: this.secrets.authToken, to, text: requireBody(this.driver, params.body) });
     const res = await httpRequest<{ error?: boolean; message?: string; data?: { valid?: Array<{ id?: number | string }>; invalid?: unknown[] } }>(this.driver, `${this.config.baseUrl}/v3/send`, {
+      ...this.net(),
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: form,
     });
-    if (res.data?.error) throw new ProviderError(`aakash: ${res.data.message ?? 'send failed'}`, this.driver, false, res.data);
+    if (res.data?.error) throw new ProviderError(`aakash: ${this.remote(res.data.message) ?? 'send failed'}`, this.driver, false, res.data);
     const valid = res.data?.data?.valid ?? [];
     if (!valid.length && (res.data?.data?.invalid ?? []).length) return { status: 'failed', provider: this.driver, raw: res.data };
     return { id: valid[0]?.id !== undefined ? String(valid[0].id) : undefined, status: 'sent', provider: this.driver, raw: res.data };
@@ -373,11 +436,12 @@ export class AakashSmsProvider implements SmsProvider {
   test(to?: string): Promise<TestResult> {
     return runSmsTest(this, to, async () => {
       const res = await httpRequest<{ error?: boolean; message?: string; available_credit?: number; data?: { available_credit?: number } }>(this.driver, `${this.config.baseUrl}/v1/credit`, {
+        ...this.net(),
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({ auth_token: this.secrets.authToken }),
       });
-      if (res.data?.error) throw new Error(res.data.message ?? 'Aakash SMS rejected the token');
+      if (res.data?.error) throw new Error(this.remote(res.data.message) ?? 'Aakash SMS rejected the token');
       return `Aakash SMS token valid (${res.data?.available_credit ?? res.data?.data?.available_credit ?? '?'} credits)`;
     });
   }
@@ -390,5 +454,5 @@ export const aakashDriver = defineDriver({
   description: 'Aakash SMS v3 API — Nepal local delivery.',
   configSchema: aakashConfigSchema,
   secretsSchema: aakashSecretsSchema,
-  create: (config, secrets): SmsProvider => new AakashSmsProvider(config, secrets),
+  create: (config, secrets, ctx): SmsProvider => new AakashSmsProvider(config, secrets, ctx),
 });

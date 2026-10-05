@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { TRUSTED_CONTEXT } from '../src/driver';
 import { LocalStorageProvider, localStorageConfigSchema } from '../src/storage/local';
 import { S3StorageProvider, s3ConfigSchema } from '../src/storage/s3';
 import { normalizeKey, verifyLocalSignedUrl } from '../src/storage/shared';
@@ -14,7 +15,7 @@ describe('local storage', () => {
 
   beforeAll(async () => {
     dir = await mkdtemp(join(tmpdir(), 'atrium-local-'));
-    p = new LocalStorageProvider(localStorageConfigSchema.parse({ directory: dir, publicBaseUrl: 'http://localhost:4000/v1/storage/' }), { signingSecret: secret });
+    p = new LocalStorageProvider(localStorageConfigSchema.parse({ directory: dir, publicBaseUrl: 'http://localhost:4000/v1/storage/' }), { signingSecret: secret }, TRUSTED_CONTEXT);
   });
   afterAll(() => rm(dir, { recursive: true, force: true }));
 

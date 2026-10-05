@@ -8,9 +8,17 @@ ContainerName=atrium-worker
 Image=ghcr.io/your-org/atrium-worker:latest
 AutoUpdate=registry
 Network=atrium.network
+Network=atrium-data.network
 NetworkAlias=worker
 EnvironmentFile=%h/.config/atrium/atrium.env
-Environment=MALLOC_ARENA_MAX=2
+Environment=MALLOC_ARENA_MAX=2 npm_config_cache=/tmp/.npm XDG_CACHE_HOME=/tmp/.cache
+# Opt-in local builds (WORKER_ENABLE_LOCAL_BUILDS=1) run npm in /tmp: larger, exec allowed.
+Tmpfs=/tmp:rw,size=2g,mode=1777,exec
+# Immutable root filesystem (tmpfs /tmp, /var/tmp, /run), no capabilities, no privilege escalation.
+ReadOnly=true
+ReadOnlyTmpfs=true
+DropCapability=all
+NoNewPrivileges=true
 
 [Service]
 Restart=always

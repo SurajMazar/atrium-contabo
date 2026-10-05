@@ -79,7 +79,15 @@ describe('production env', () => {
       root: REPO_ROOT,
     });
     const env = buildProductionEnv(example, vars, 'compose').toObject();
-    expect(env.DATABASE_URL).toMatch(/^postgresql:\/\/atrium:[0-9a-f]{48}@postgres:5432\/atrium$/);
+    // app role is DML-only; migrations use the owner role
+    expect(env.DATABASE_URL).toMatch(/^postgresql:\/\/atrium_app:[0-9a-f]{48}@postgres:5432\/atrium$/);
+    expect(env.MIGRATE_DATABASE_URL).toMatch(/^postgresql:\/\/atrium:[0-9a-f]{48}@postgres:5432\/atrium$/);
+    expect(env.POSTGRES_APP_PASSWORD).not.toBe(env.POSTGRES_PASSWORD);
+    expect(env.REDIS_PASSWORD).toMatch(/^[0-9a-f]{48}$/);
+    expect(env.REDIS_URL).toBe(`redis://:${env.REDIS_PASSWORD}@redis:6379`);
+    expect(env.TRUST_PROXY).toBe('loopback,uniquelocal');
+    expect(env.OUTBOUND_ALLOW_PRIVATE).toBe('false');
+    expect(env.JWT_ACCESS_SECRET).not.toBe(env.JWT_REFRESH_SECRET);
     expect(env.COOKIE_DOMAIN).toBe('admin.acme.dev');
     const failing = productionChecks(env)
       .filter((c) => c.status === 'fail')
@@ -134,5 +142,38 @@ describe('production env', () => {
     expect(existsSync(join(out, base, 'kustomization.yaml'))).toBe(true);
     expect(readFileSync(join(out, 'secrets.env'), 'utf8')).toContain('JWT_ACCESS_SECRET=');
     expect(readFileSync(join(out, 'config.env'), 'utf8')).not.toContain('JWT_ACCESS_SECRET');
+  });
+
+  it('podman target writes least-privilege service env files and scopes anonymous S3 reads', () => {
+    const out = mkdtempSync(join(tmpdir(), 'atrium-podman-'));
+    generateProduction(
+      {
+        target: 'podman',
+        domain: 'acme.dev',
+        email: 'o@acme.dev',
+        registry: 'ghcr.io/acme',
+        tag: '1',
+        namespace: 'prod',
+        appDir: '/opt',
+        outDir: out,
+        root: REPO_ROOT,
+      },
+      example,
+    );
+    const read = (f: string) => readFileSync(join(out, f), 'utf8');
+    const renderer = read('env/renderer.env');
+    expect(renderer).toMatch(/^RENDERER_SECRET=.{32,}$/m);
+    for (const k of ['DATABASE_URL', 'JWT_ACCESS_SECRET', 'ENCRYPTION_KEY', 'REDIS_URL', 'S3_SECRET_ACCESS_KEY'])
+      expect(renderer).not.toContain(`${k}=`);
+    const admin = read('env/admin.env');
+    expect(admin).toContain('API_URL=https://api.acme.dev');
+    expect(admin).not.toMatch(/SECRET|PASSWORD|DATABASE_URL/);
+    expect(read('env/caddy.env')).not.toMatch(/SECRET|PASSWORD|DATABASE_URL/);
+    expect(read('env/postgres.env')).toMatch(/^POSTGRES_APP_PASSWORD=/m);
+    expect(read('env/migrate.env')).toMatch(/^DATABASE_URL=postgresql:\/\/atrium:/m);
+    expect(read('redis/redis.conf')).toMatch(/^requirepass [0-9a-f]{48}$/m);
+    expect(existsSync(join(out, 'postgres', 'initdb', '10-app-role.sh'))).toBe(true);
+    const s3 = JSON.parse(read('seaweedfs/s3.json')) as { identities: Array<{ name: string; actions: string[] }> };
+    expect(s3.identities.find((i) => i.name === 'anonymous')?.actions).toEqual(['Read:atrium-media']);
   });
 });

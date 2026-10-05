@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildNextProject, findRepoRoot, toDeploymentFiles, writeProject } from '@atrium/exporter';
@@ -50,9 +50,37 @@ async function resolveProvider(ctx: WorkerContext, d: LoadedDeployment): Promise
   return { provider: r, driver: r.driver, platform: false };
 }
 
+/** Host variables a build legitimately needs (toolchain lookup, locale, proxies, npm registry). */
+const BUILD_ENV_PASSTHROUGH = ['PATH', 'LANG', 'LC_ALL', 'TZ', 'SYSTEMROOT', 'COMSPEC', 'PATHEXT', 'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy', 'npm_config_registry', 'NPM_CONFIG_REGISTRY'] as const;
+
+/**
+ * INT-2: environment for tenant builds — an allow-list, never the worker's own environment
+ * (which holds DATABASE_URL, ENCRYPTION_KEY(S), REDIS_URL, VERCEL_TOKEN, AI keys…). HOME and the
+ * npm cache point into the build's private temp directory.
+ */
+export function buildEnv(home: string, extra: Record<string, string>, source: Record<string, string | undefined> = process.env): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const k of BUILD_ENV_PASSTHROUGH) {
+    const v = source[k];
+    if (v) env[k] = v;
+  }
+  return {
+    ...env,
+    HOME: home,
+    USERPROFILE: home,
+    TMPDIR: home,
+    npm_config_cache: join(home, '.npm'),
+    npm_config_userconfig: join(home, '.npmrc'),
+    npm_config_update_notifier: 'false',
+    CI: '1',
+    NEXT_TELEMETRY_DISABLED: '1',
+    ...extra,
+  };
+}
+
 function run(cmd: string, args: string[], cwd: string, env: Record<string, string>, timeoutMs: number): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { cwd, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(cmd, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '';
     const append = (b: Buffer) => {
       out = (out + b.toString()).slice(-20_000);
@@ -87,18 +115,23 @@ async function buildStatic(ctx: WorkerContext, files: Map<string, Buffer | strin
   if (!ctx.settings.enableLocalBuilds) {
     throw new PermanentError('This provider deploys static files only; enable WORKER_ENABLE_LOCAL_BUILDS=1 to build static exports inside the worker, or use Vercel.');
   }
-  const dir = await mkdtemp(join(tmpdir(), 'atrium-build-'));
+  const root = await mkdtemp(join(tmpdir(), 'atrium-build-'));
+  const dir = join(root, 'project');
+  const home = join(root, 'home');
   try {
+    await mkdir(dir, { recursive: true });
+    await mkdir(home, { recursive: true });
     await writeProject(files, dir);
-    logs.push(logLine('Installing dependencies (npm install)'));
-    await run('npm', ['install', '--no-audit', '--no-fund', '--loglevel=error'], dir, { NODE_ENV: 'development' }, 10 * 60_000);
+    logs.push(logLine('Installing dependencies (npm install --ignore-scripts)'));
+    // Lifecycle scripts of dependencies never run inside the worker.
+    await run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund', '--loglevel=error'], dir, buildEnv(home, { NODE_ENV: 'development' }), 10 * 60_000);
     logs.push(logLine('Building static export (next build)'));
-    await run('npm', ['run', 'build'], dir, { ATRIUM_STATIC_EXPORT: '1', NODE_ENV: 'production', NEXT_TELEMETRY_DISABLED: '1' }, 15 * 60_000);
+    await run('npm', ['run', 'build'], dir, buildEnv(home, { ATRIUM_STATIC_EXPORT: '1', NODE_ENV: 'production' }), 15 * 60_000);
     const out = await collectDir(join(dir, 'out'));
     logs.push(logLine(`Static export ready (${out.length} files)`));
     return out;
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true });
   }
 }
 

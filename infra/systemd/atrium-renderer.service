@@ -10,7 +10,8 @@ Type=simple
 User=atrium
 Group=atrium
 WorkingDirectory=/opt/atrium/apps/renderer
-EnvironmentFile=/etc/atrium/atrium.env
+# RENDERER_SECRET + public URLs only (generated env/renderer.env); not the full atrium.env.
+EnvironmentFile=/etc/atrium/renderer.env
 Environment=NODE_ENV=production PORT=3001
 ExecStart=/usr/bin/node node_modules/next/dist/bin/next start --port 3001 --hostname 127.0.0.1
 Restart=always

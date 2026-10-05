@@ -1,4 +1,4 @@
-import type { FontDefinition, ThemeTokens } from '@atrium/schema';
+import { isSafeCssValue, sanitizeThemeTokens, sanitizeUrl, type FontDefinition, type ThemeTokens } from '@atrium/schema';
 
 /** Prefix for every generated custom property to avoid clashing with customer CSS. */
 export const VAR_PREFIX = '--a';
@@ -14,7 +14,8 @@ export const SPACE_STEPS = [0, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24
 export const TEXT_STEPS: Record<string, number> = { xs: -2, sm: -1, base: 0, lg: 1, xl: 2, '2xl': 3, '3xl': 4, '4xl': 5, '5xl': 6, '6xl': 7 };
 
 function fontStack(f: FontDefinition): string {
-  const family = /\s/.test(f.family) ? `"${f.family}"` : f.family;
+  const name = f.family.replace(/["\\<>;{}]/g, '');
+  const family = /\s/.test(name) ? `"${name}"` : name;
   return f.source === 'system' ? f.fallback : `${family}, ${f.fallback}`;
 }
 
@@ -49,7 +50,10 @@ export function typeScale(theme: ThemeTokens): Record<string, string> {
 const SECTION_Y = { compact: [56, 40], regular: [112, 64], airy: [160, 80] } as const;
 
 /** Flattened map of CSS custom properties for a theme. */
-export function themeToVariables(theme: ThemeTokens): Record<string, string> {
+export function themeToVariables(input: ThemeTokens): Record<string, string> {
+  // Theme values are validated by ThemeTokensSchema; re-sanitize so unvalidated objects (editor
+  // state, legacy data) can never inject CSS.
+  const theme = sanitizeThemeTokens(input);
   const vars: Record<string, string> = {};
   for (const [k, v] of Object.entries(theme.colors)) vars[cssVar('color', k)] = v;
   vars[cssVar('font', 'heading')] = fontStack(theme.typography.heading);
@@ -80,11 +84,15 @@ export function themeToVariables(theme: ThemeTokens): Record<string, string> {
   return vars;
 }
 
+const VAR_NAME = /^--[A-Za-z0-9_-]+$/;
+
 export function themeToCss(theme: ThemeTokens, selector = ':root'): string {
   const body = Object.entries(themeToVariables(theme))
+    .filter(([k, v]) => VAR_NAME.test(k) && isSafeCssValue(v, 1000))
     .map(([k, v]) => `${k}:${v};`)
     .join('');
-  return `${selector}{${body}color-scheme:${theme.colorScheme};}`;
+  const scheme = theme.colorScheme === 'dark' ? 'dark' : 'light';
+  return `${selector}{${body}color-scheme:${scheme};}`;
 }
 
 const TOKEN_REF = /@(color|space|radius|shadow|font|text|container|weight|leading|tracking)\.([a-zA-Z0-9_.-]+)/g;
@@ -107,7 +115,7 @@ export function googleFontsUrl(theme: ThemeTokens): string | null {
   if (unique.size === 0) return null;
   const families = [...unique.values()].map((f) => {
     const weights = [...new Set(f.weights)].sort((a, b) => a - b);
-    const name = f.family.replace(/ /g, '+');
+    const name = encodeURIComponent(f.family).replace(/%20/g, '+');
     if (f.italic) return `family=${name}:ital,wght@${[...weights.map((w) => `0,${w}`), ...weights.map((w) => `1,${w}`)].join(';')}`;
     return `family=${name}:wght@${weights.join(';')}`;
   });
@@ -115,15 +123,23 @@ export function googleFontsUrl(theme: ThemeTokens): string | null {
 }
 
 /** @font-face rules for custom/local uploaded fonts. */
-export function customFontFaces(theme: ThemeTokens): string {
+export function customFontFaces(input: ThemeTokens): string {
+  const theme = sanitizeThemeTokens(input);
   const fonts = [theme.typography.heading, theme.typography.body, theme.typography.accent].filter(
     (f): f is FontDefinition => !!f && (f.source === 'custom' || f.source === 'local') && !!f.files?.length,
   );
   return fonts
     .flatMap((f) =>
       (f.files ?? []).map(
-        (file) =>
-          `@font-face{font-family:"${f.family}";src:url("${file.url}")${file.format ? ` format("${file.format}")` : ''};font-weight:${file.weight};font-style:${file.style};font-display:swap;}`,
+        (file) => {
+          const url = sanitizeUrl(file.url, 'font');
+          if (!url) return '';
+          const family = f.family.replace(/["\\<>;{}]/g, '');
+          const format = file.format && /^[a-z0-9-]{1,30}$/i.test(file.format) ? ` format("${file.format}")` : '';
+          const weight = /^(?:\d{1,4}(?: \d{1,4})?|normal|bold|bolder|lighter)$/.test(String(file.weight)) ? String(file.weight) : '400';
+          const style = file.style === 'italic' ? 'italic' : 'normal';
+          return `@font-face{font-family:"${family}";src:url("${url.replace(/["\\\n\r\f<>]/g, (c) => `\\${c.charCodeAt(0).toString(16)} `)}")${format};font-weight:${weight};font-style:${style};font-display:swap;}`;
+        },
       ),
     )
     .join('');

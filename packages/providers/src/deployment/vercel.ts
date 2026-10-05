@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { defineDriver, ProviderError, type TestResult } from '../driver';
+import { defineDriver, ProviderError, type TestResult, TENANT_CONTEXT, type DriverContext } from '../driver';
 import { errorStatus, httpRequest, type HttpRequestOptions, type HttpResponse } from '../http';
 import { digestFiles, errorBody, mapWithConcurrency, toIso, uniqueByDigest, type DigestedFile } from './digest';
 import { isApexDomain, normalizeDomain, subdomainLabel, type DnsRecord } from './dns';
@@ -157,11 +157,16 @@ export class VercelDeploymentProvider implements DeploymentProvider {
   constructor(
     private readonly config: VercelConfig,
     private readonly secrets: VercelSecrets,
+    private readonly ctx: DriverContext = TENANT_CONTEXT,
   ) {}
 
   private request<T>(path: string, opts: HttpRequestOptions = {}): Promise<HttpResponse<T>> {
     const scope = this.config.teamId ? { teamId: this.config.teamId } : this.config.teamSlug ? { slug: this.config.teamSlug } : {};
     return httpRequest<T>(PROVIDER, `${API}${path}`, {
+      // Fixed vendor API: error bodies may be shown; build logs can be large.
+      network: this.ctx.network,
+      revealErrorBody: true,
+      maxResponseBytes: 16 * 1024 * 1024,
       ...opts,
       headers: { Authorization: `Bearer ${this.secrets.token}`, ...opts.headers },
       query: { ...scope, ...opts.query },
@@ -449,5 +454,5 @@ export const vercelDriver = defineDriver({
   presets: [
     { id: 'nextjs', name: 'Next.js (server rendering)', config: { framework: 'nextjs', nodeVersion: '24.x' } },
   ],
-  create: (config, secrets): DeploymentProvider => new VercelDeploymentProvider(config, secrets),
+  create: (config, secrets, ctx): DeploymentProvider => new VercelDeploymentProvider(config, secrets, ctx),
 });

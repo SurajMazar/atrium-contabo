@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { AnimationSchema, type Animation } from './animation';
 import { responsive, type Responsive } from './responsive';
+import { isSafeNodeId, toSafeNodeId } from './security';
 import { StyleSchema, type StyleProps } from './style';
 
 export const ConditionOperatorSchema = z.enum([
@@ -72,8 +73,16 @@ export interface Node {
   ref?: string;
 }
 
+/** Node ids end up in CSS selectors/class names: legacy unsafe ids are mapped to a stable safe id. */
+const StoredNodeIdSchema = z.string().min(1).transform(toSafeNodeId);
+/** Input ids that are not `[A-Za-z0-9_-]{1,64}` are dropped and re-assigned during normalization. */
+const InputNodeIdSchema = z
+  .string()
+  .optional()
+  .transform((v) => (isSafeNodeId(v) ? v : undefined));
+
 export const NodeSchema: z.ZodType<Node> = z.object({
-  id: z.string().min(1),
+  id: StoredNodeIdSchema,
   type: z.string().min(1),
   variant: z.string().optional(),
   name: z.string().max(120).optional(),
@@ -100,7 +109,7 @@ export interface NodeInput extends Omit<Node, 'id' | 'children' | 'props'> {
   children?: NodeInput[];
 }
 export const NodeInputSchema: z.ZodType<NodeInput> = z.object({
-  id: z.string().optional(),
+  id: InputNodeIdSchema,
   type: z.string().min(1),
   variant: z.string().optional(),
   name: z.string().max(120).optional(),

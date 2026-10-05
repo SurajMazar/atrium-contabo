@@ -4,6 +4,7 @@ import cookieParser from 'cookie-parser';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AppModule } from '../src/app.module';
+import { resetThrottles } from './reset-throttle';
 
 /**
  * Integration suite against real Postgres + Redis (podman compose / CI services).
@@ -24,6 +25,7 @@ beforeAll(async () => {
     await app.init();
     http = request(app.getHttpServer());
     await http.get('/v1/health/ready').expect(200);
+    await resetThrottles(app);
   } catch (err) {
     if (process.env.REQUIRE_DB === '1') throw err;
     ready = false;

@@ -1,3 +1,4 @@
+import { sanitizeUrl } from '@atrium/schema';
 import type { CSSProperties } from 'react';
 import { Carousel } from '../islands/carousel';
 import { VideoFacade } from '../islands/interactive';
@@ -120,7 +121,7 @@ export function BackgroundVideoRenderer(rp: RenderProps) {
 
 // ---------------------------------------------------------------- gallery
 
-type GalleryItem = { src: string; alt?: string; caption?: string; width?: number; height?: number; mediaId?: string; focalPoint?: { x: number; y: number } };
+type GalleryItem = { src: string; alt?: string; caption?: string; category?: string; width?: number; height?: number; mediaId?: string; focalPoint?: { x: number; y: number } };
 
 export function galleryImages(ctx: RenderContext, props: Record<string, any>): GalleryItem[] {
   const field = props.fromItemField as string | undefined;
@@ -149,8 +150,8 @@ export function GalleryRenderer(rp: RenderProps) {
       </>
     );
     return (
-      <figure key={i} className={cx('a-gallery__item', opts.className)}>
-        {lightbox ? <a href={img.src} className="a-gallery__open a-hover-zoom" data-lightbox-index={i} aria-label={`Open image: ${img.alt || `image ${i + 1}`}`}>{inner}</a> : inner}
+      <figure key={i} className={cx('a-gallery__item', opts.className)} data-category={img.category || undefined}>
+        {lightbox && sanitizeUrl(img.src, 'media') ? <a href={sanitizeUrl(img.src, 'media')} className="a-gallery__open a-hover-zoom" data-lightbox-index={i} aria-label={`Open image: ${img.alt || `image ${i + 1}`}`}>{inner}</a> : inner}
       </figure>
     );
   };

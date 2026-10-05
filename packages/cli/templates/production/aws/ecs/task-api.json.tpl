@@ -93,6 +93,22 @@
         {
           "name": "PORT",
           "value": "4000"
+        },
+        {
+          "name": "COOKIE_SECURE",
+          "value": "true"
+        },
+        {
+          "name": "TRUST_PROXY",
+          "value": "loopback,uniquelocal"
+        },
+        {
+          "name": "OUTBOUND_ALLOW_PRIVATE",
+          "value": "false"
+        },
+        {
+          "name": "SUPER_ADMIN_REQUIRE_MFA",
+          "value": "true"
         }
       ],
       "secrets": [
