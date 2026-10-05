@@ -35,7 +35,7 @@ export interface TimelineEntry {
   text: string;
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /** Drives one recorded scene: cursor, captions, highlights, narration timing. */
 export class Director {
@@ -45,9 +45,12 @@ export class Director {
   timeline: TimelineEntry[] = [];
   firstStepMs = 0;
 
+  private storagePath?: string;
+
   constructor(private readonly scene: Scene) {}
 
   async start(browser: Browser, opts: { storageState?: string; videoDir: string }) {
+    this.storagePath = opts.storageState;
     this.context = await browser.newContext({
       viewport: { width: W, height: H },
       deviceScaleFactor: 1,
@@ -56,6 +59,8 @@ export class Director {
       colorScheme: 'light',
       reducedMotion: 'no-preference',
     });
+    // tsx/esbuild keepNames wraps functions passed to evaluate() in __name(); provide it in the page.
+    await this.context.addInitScript('globalThis.__name = globalThis.__name || ((f) => f);');
     await this.context.addInitScript(OVERLAY);
     this.page = await this.context.newPage();
     this.t0 = Date.now();
@@ -192,6 +197,8 @@ export class Director {
   async finish(): Promise<string> {
     await sleep(500);
     const video = this.page.video();
+    // Refresh tokens rotate on use: persist the rotated session for the next scene.
+    if (this.storagePath) await this.context.storageState({ path: this.storagePath }).catch(() => undefined);
     await this.context.close();
     return (await video!.path()) as string;
   }

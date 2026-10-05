@@ -6,6 +6,7 @@ import { Director, type Scene } from './director';
 import { SCENES } from './scenes/index';
 import { say } from './tts';
 import { prepareAdminSession } from './session';
+import { getWorld, resetWorld } from './world';
 
 const OUT = path.resolve(import.meta.dirname, '../out');
 const SCENE_DIR = path.join(OUT, 'scenes');
@@ -26,6 +27,10 @@ async function main() {
     if (++i % 10 === 0) console.log(`    ${i}/${texts.length}`);
   }
 
+  if (!args.has('no-reset') && !only) {
+    console.log('    resetting demo world (fresh seed)…');
+    await resetWorld();
+  } else await getWorld();
   console.log('2/3 Recording scenes (Playwright, 1920×1080)…');
   const browser = await chromium.launch({ args: ['--disable-gpu-vsync', '--hide-scrollbars', '--font-render-hinting=none'] });
   const storage = scenes.some((s) => s.storage === 'admin') ? await prepareAdminSession(browser) : undefined;

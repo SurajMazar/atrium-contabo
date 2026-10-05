@@ -4,9 +4,9 @@
   "private": true,
   "description": "Public website renderer (Next.js): SSR/ISR of published snapshots, previews, sitemap/robots, redirects",
   "scripts": {
-    "dev": "node --env-file-if-exists=../../.env ./node_modules/next/dist/bin/next dev --port 3001",
-    "build": "node --env-file-if-exists=../../.env ./node_modules/next/dist/bin/next build",
-    "start": "node --env-file-if-exists=../../.env ./node_modules/next/dist/bin/next start --port 3001",
+    "dev": "node ../../scripts/with-env.mjs next dev --port 3001",
+    "build": "node ../../scripts/with-env.mjs next build",
+    "start": "node ../../scripts/with-env.mjs next start --port 3001",
     "typecheck": "tsc --noEmit",
     "lint": "echo skip",
     "export": "ATRIUM_STATIC_EXPORT=1 ATRIUM_SNAPSHOT_SOURCE=file next build"

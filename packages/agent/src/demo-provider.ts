@@ -17,8 +17,10 @@ const COLLECTION_FIELD_TYPES = new Set(['text', 'textarea', 'richtext', 'number'
 const STRUCTURED_DATA = new Set(['Organization', 'LocalBusiness', 'Hotel', 'Resort', 'Restaurant', 'EventVenue', 'Event', 'FAQPage', 'Service', 'Product', 'Article']);
 
 function pickBlueprint(text: string) {
-  const t = text.toLowerCase();
+  const typeLine = /Type:\s*(.+)/i.exec(text)?.[1] ?? '';
+  const t = `${typeLine} ${typeLine} ${text}`.toLowerCase();
   const by = (key: string) => BLUEPRINTS.find((b) => b.key === key)!;
+  if (/hotel|resort|lodge/.test(typeLine.toLowerCase())) return by('hospitality-resort');
   if (/wedding|venue|banquet|event space/.test(t)) return by('wedding-venue');
   if (/restaurant|bistro|cafe|café|dining|kitchen/.test(t) && !/resort|hotel/.test(t)) return by('restaurant');
   if (/resort|hotel|lodge|retreat|villa|stay|rooms/.test(t)) return by('hospitality-resort');
@@ -214,7 +216,7 @@ export function createDemoProvider(): AIProvider {
     },
     async generateStructuredData<T>(req: StructuredRequest<T>) {
       await new Promise((r) => setTimeout(r, req.schemaName === 'site_plan' ? 1600 : 1100));
-      return { data: req.parse(structured(req.schemaName, `${req.system ?? ''}\n${req.prompt}`)), usage, model: 'atrium-demo' };
+      return { data: req.parse(structured(req.schemaName, req.prompt)), usage, model: 'atrium-demo' };
     },
     estimateCost: () => 0,
     async test() {

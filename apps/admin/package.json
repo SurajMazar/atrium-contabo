@@ -4,9 +4,9 @@
   "private": true,
   "description": "Admin dashboard + visual website builder (Next.js SPA-style app)",
   "scripts": {
-    "dev": "node --env-file-if-exists=../../.env ./node_modules/next/dist/bin/next dev --port 3000",
-    "build": "node --env-file-if-exists=../../.env ./node_modules/next/dist/bin/next build",
-    "start": "node --env-file-if-exists=../../.env ./node_modules/next/dist/bin/next start --port 3000",
+    "dev": "node ../../scripts/with-env.mjs next dev --port 3000",
+    "build": "node ../../scripts/with-env.mjs next build",
+    "start": "node ../../scripts/with-env.mjs next start --port 3000",
     "typecheck": "tsc --noEmit",
     "lint": "echo skip",
     "test": "vitest run"

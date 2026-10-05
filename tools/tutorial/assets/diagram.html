@@ -1,0 +1,30 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Architecture</title>
+<style>
+  html,body{margin:0;height:100%;background:#f4f1ea;font-family:Inter,system-ui,sans-serif;color:#1d1b18;overflow:hidden}
+  h1{position:absolute;left:120px;top:70px;margin:0;font-family:Georgia,serif;font-weight:400;font-size:52px}
+  .sub{position:absolute;left:120px;top:140px;font-size:21px;color:#6b645a}
+  .n{position:absolute;background:#fff;border:1px solid #d9d1c2;border-radius:12px;padding:16px 20px;box-shadow:0 6px 20px -12px rgba(0,0,0,.25);opacity:0;transform:translateY(10px);animation:in .7s forwards cubic-bezier(.2,.8,.2,1)}
+  .n b{display:block;font-size:20px;margin-bottom:4px}.n span{font-size:15px;color:#6b645a;line-height:1.45;display:block}
+  .tag{display:inline-block;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#8a6e4b;margin-bottom:6px}
+  .z{position:absolute;border:1.5px dashed #cdbfa8;border-radius:16px;opacity:0;animation:in .7s forwards}
+  .zl{position:absolute;font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#9a8c76}
+  svg{position:absolute;inset:0}
+  path{stroke:#b9a98f;stroke-width:2;fill:none;stroke-dasharray:6 6;opacity:0;animation:fade 1s forwards}
+  @keyframes in{to{opacity:1;transform:none}} @keyframes fade{to{opacity:1}}
+</style></head><body>
+<h1>Production topology</h1><div class="sub">Next.js apps on an edge platform · long-running API and workers on containers · managed data services</div>
+<div class="z" style="left:110px;top:220px;width:820px;height:190px;animation-delay:.1s"></div><div class="zl" style="left:130px;top:232px">Edge · Vercel, Cloudflare or your CDN</div>
+<div class="n" style="left:140px;top:270px;width:330px;animation-delay:.2s"><div class="tag">apps/admin</div><b>Admin & visual builder</b><span>Next.js · teams, CMS, forms, AI, publishing</span></div>
+<div class="n" style="left:560px;top:270px;width:330px;animation-delay:.35s"><div class="tag">apps/renderer</div><b>Public website renderer</b><span>Next.js · SSR + ISR per host · custom domains</span></div>
+<div class="z" style="left:110px;top:460px;width:820px;height:190px;animation-delay:.5s"></div><div class="zl" style="left:130px;top:472px">Containers · ECS, Container Apps, Kubernetes, Fly or a VPS</div>
+<div class="n" style="left:140px;top:510px;width:330px;animation-delay:.6s"><div class="tag">apps/api</div><b>NestJS API</b><span>Auth · RBAC · tenancy · publishing · AI agent</span></div>
+<div class="n" style="left:560px;top:510px;width:330px;animation-delay:.75s"><div class="tag">apps/worker</div><b>BullMQ workers</b><span>Email · SMS · webhooks · media · deploys · AI</span></div>
+<div class="z" style="left:110px;top:700px;width:820px;height:170px;animation-delay:.9s"></div><div class="zl" style="left:130px;top:712px">Managed services</div>
+<div class="n" style="left:140px;top:750px;width:220px;animation-delay:1s"><b>PostgreSQL</b><span>RDS · Flexible Server · Cloud SQL</span></div>
+<div class="n" style="left:400px;top:750px;width:220px;animation-delay:1.1s"><b>Redis</b><span>ElastiCache · Azure Cache</span></div>
+<div class="n" style="left:660px;top:750px;width:240px;animation-delay:1.2s"><b>Object storage</b><span>S3 · R2 · Blob · GCS</span></div>
+<div class="n" style="left:1060px;top:270px;width:660px;animation-delay:1.4s"><div class="tag">Independent deployments</div><b>Each customer site → its own Vercel project</b><span>The exporter turns a published snapshot into a standalone Next.js project; the Vercel provider uploads it, tracks the build, attaches domains, and can redeploy or roll back.</span></div>
+<div class="n" style="left:1060px;top:470px;width:660px;animation-delay:1.6s"><div class="tag">Rule of thumb</div><b>Never force workers onto serverless</b><span>Queues, media processing and AI generation are long-running; run them on containers and keep the Next.js apps at the edge.</span></div>
+<div class="n" style="left:1060px;top:670px;width:660px;animation-delay:1.8s"><div class="tag">One command per target</div><b>atrium setup production --target …</b><span>podman · docker · systemd · k8s · cpanel · aws · azure · gcp · vercel · fly · railway · render</span></div>
+</body></html>

@@ -1,0 +1,20 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Mobile</title>
+<style>
+  html,body{margin:0;height:100%;background:radial-gradient(1100px 700px at 30% 30%,#f2eee6,#e3ddd1);font-family:Inter,system-ui,sans-serif;overflow:hidden}
+  .stage{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:120px}
+  .phone{width:390px;height:844px;border-radius:54px;background:#111;padding:14px;box-shadow:0 40px 90px rgba(40,30,20,.35),0 0 0 1px rgba(0,0,0,.4) inset}
+  .phone iframe{width:390px;height:844px;border:0;border-radius:42px;background:#fff;transform:scale(.9457);transform-origin:top left;width:412px;height:892px}
+  .screen{width:390px;height:844px;overflow:hidden;border-radius:42px}
+  .copy{max-width:520px;color:#2a2620}
+  .copy h2{font-family:Georgia,serif;font-weight:400;font-size:54px;line-height:1.05;margin:0 0 18px}
+  .copy p{font-size:22px;line-height:1.55;color:#5d564c;margin:0}
+</style></head>
+<body><div class="stage"><div class="phone"><div class="screen"><iframe id="f"></iframe></div></div>
+<div class="copy"><h2 id="t"></h2><p id="s"></p></div></div>
+<script>
+const q = new URLSearchParams(location.search);
+document.getElementById('f').src = q.get('src');
+document.getElementById('t').textContent = q.get('title') || '';
+document.getElementById('s').textContent = q.get('subtitle') || '';
+</script></body></html>

@@ -81,7 +81,7 @@ function PageSettings({ page, disabled }: { page: PageDocument; disabled: boolea
         <NativeSelect value={page.status} disabled={disabled} onChange={(status) => updatePage(page.id, { status: status as PageDocument['status'] }, { label: 'Change page status' })} options={['draft', 'published', 'scheduled', 'archived'].map((s) => ({ label: s[0]!.toUpperCase() + s.slice(1), value: s }))} />
       </Row>
       <Row label="Header">
-        <Segmented value={page.layout.header} disabled={disabled} onChange={(header) => updatePage(page.id, { layout: { header } }, { label: 'Change header layout' })} options={[{ label: 'Default', value: 'default' }, { label: 'Transparent', value: 'transparent' }, { label: 'Hidden', value: 'hidden' }]} />
+        <Segmented value={page.layout.header} disabled={disabled} onChange={(header) => updatePage(page.id, { layout: { header } }, { label: 'Change header layout' })} options={[{ label: 'Default', value: 'default' }, { label: 'Overlay', value: 'transparent' }, { label: 'Hidden', value: 'hidden' }]} />
       </Row>
       <Row label="Footer">
         <Segmented value={page.layout.footer} disabled={disabled} onChange={(footer) => updatePage(page.id, { layout: { footer } }, { label: 'Change footer layout' })} options={[{ label: 'Default', value: 'default' }, { label: 'Hidden', value: 'hidden' }]} />

@@ -179,7 +179,8 @@ export class WebsitesService {
       loadDraft(db, id).catch(() => null),
     ]);
     const pv = daily.length ? daily.reduce((a, d) => a + d.pageviews, 0) : (events7d.find((e) => e.type === 'pageview')?._count ?? 0);
-    const visitors = daily.reduce((a, d) => a + d.visitors, 0);
+    // Fall back to raw events until the hourly rollup has produced daily aggregates.
+    const visitors = daily.length ? daily.reduce((a, d) => a + d.visitors, 0) : (await db.analyticsEvent.findMany({ where: { websiteId: id, type: 'pageview', createdAt: { gte: since } }, distinct: ['visitorHash'], select: { visitorHash: true } })).length;
     let seoScore: number | null = null;
     if (draft) {
       const scores = draft.definition.pages.filter((p) => p.status !== 'archived').map((p) => analyzePageSeo(p, draft.definition).score);
