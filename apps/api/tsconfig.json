@@ -1,0 +1,14 @@
+{
+  "extends": "@atrium/typescript-config/nestjs.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "baseUrl": ".",
+    "types": ["node"],
+    "isolatedModules": false,
+    "noUncheckedIndexedAccess": false,
+    "sourceMap": true
+  },
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts", "test"]
+}

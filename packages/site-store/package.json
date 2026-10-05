@@ -1,0 +1,30 @@
+{
+  "name": "@atrium/site-store",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Persistence for website drafts and published snapshots: assembles a WebsiteDefinition from relational tables and syncs edits back (diff-based), shared by API, worker, CLI and AI agent.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@atrium/builder-core": "workspace:*",
+    "@atrium/component-registry": "workspace:*",
+    "@atrium/db": "workspace:*",
+    "@atrium/schema": "workspace:*",
+    "immer": "^10.1.3"
+  },
+  "devDependencies": {
+    "@atrium/design-tokens": "workspace:*",
+    "@atrium/typescript-config": "workspace:*",
+    "@types/node": "^24.0.0",
+    "typescript": "5.9.3",
+    "vitest": "^5.0.3"
+  }
+}
