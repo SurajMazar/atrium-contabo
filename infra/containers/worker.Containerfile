@@ -82,6 +82,9 @@ COPY --from=builder /repo ./
 COPY --from=pruner /repo/apps/renderer ./apps/renderer
 COPY --from=pruner /repo/packages ./packages
 WORKDIR /app/apps/worker
+# STORAGE_DRIVER=local: the worker reads/writes the same files as the API (media variants), through the
+# shared storage volume mounted at the API's path. Pre-create it so the volume is owned by `node`.
+RUN mkdir -p /app/apps/api/storage && chown node:node /app/apps/api/storage
 USER node
 # No HTTP port: liveness is the process itself. The worker exits on unrecoverable errors
 # (e.g. Redis gone for good) and the orchestrator restarts it; queue depth/failures are

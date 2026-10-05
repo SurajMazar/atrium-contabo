@@ -11,8 +11,9 @@ Network=atrium.network
 Network=atrium-data.network
 NetworkAlias=api
 EnvironmentFile=%h/.config/atrium/atrium.env
-# Only used with STORAGE_DRIVER=local.
+# STORAGE_DRIVER=local: shared with the worker at the same absolute path.
 Volume=atrium-api-storage.volume:/app/apps/api/storage
+Environment=LOCAL_STORAGE_DIR=/app/apps/api/storage
 HealthCmd=node -e "fetch('http://127.0.0.1:4000/v1/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
 HealthInterval=15s
 HealthStartPeriod=40s

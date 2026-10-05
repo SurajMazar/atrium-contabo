@@ -188,7 +188,10 @@ services:
     image: ${ATRIUM_IMAGE_REGISTRY:-localhost}/atrium-api:${ATRIUM_IMAGE_TAG:-latest}
     build: { context: '${ATRIUM_SRC_DIR:-..}', dockerfile: infra/containers/api.Containerfile }
     mem_limit: 1g
-    # Only used with STORAGE_DRIVER=local (LOCAL_STORAGE_DIR=./storage).
+    # STORAGE_DRIVER=local: files live in the api-storage volume, shared with the worker at the same
+    # absolute path (a relative LOCAL_STORAGE_DIR would resolve differently in each container).
+    environment:
+      LOCAL_STORAGE_DIR: /app/apps/api/storage
     volumes: [api-storage:/app/apps/api/storage]
     depends_on:
       postgres: { condition: service_healthy }
@@ -217,6 +220,9 @@ services:
     environment:
       npm_config_cache: /tmp/.npm
       XDG_CACHE_HOME: /tmp/.cache
+      LOCAL_STORAGE_DIR: /app/apps/api/storage
+    # Same storage volume as the API (STORAGE_DRIVER=local): media processing reads originals, writes variants.
+    volumes: [api-storage:/app/apps/api/storage]
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }

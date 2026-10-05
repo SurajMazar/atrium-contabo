@@ -88,7 +88,8 @@ describe('production env', () => {
     expect(env.TRUST_PROXY).toBe('loopback,uniquelocal');
     expect(env.OUTBOUND_ALLOW_PRIVATE).toBe('false');
     expect(env.JWT_ACCESS_SECRET).not.toBe(env.JWT_REFRESH_SECRET);
-    expect(env.COOKIE_DOMAIN).toBe('admin.acme.dev');
+    // host-only __Host- refresh cookie: never shared with tenant subdomains
+    expect(env.COOKIE_DOMAIN).toBe('');
     const failing = productionChecks(env)
       .filter((c) => c.status === 'fail')
       .map((c) => c.label);
@@ -109,6 +110,18 @@ describe('production env', () => {
     expect(productionChecks(env).find((c) => c.label.startsWith('COOKIE_DOMAIN'))?.status).toBe(
       'fail',
     );
+  });
+
+  it('can put admin, api, media and tenant sites under one root', () => {
+    const base = { target: 'podman' as const, email: 'ops@x.dev', registry: 'r', tag: 't', namespace: 'n', appDir: '/opt', outDir: '/tmp/x', root: REPO_ROOT };
+    const vars = productionVars({ ...base, domain: 'sites.acme.dev', sitesDomain: 'sites.acme.dev' });
+    expect(vars).toMatchObject({ adminHost: 'admin.sites.acme.dev', apiHost: 'api.sites.acme.dev', mediaHost: 'media.sites.acme.dev', sitesDomain: 'sites.acme.dev' });
+    const env = buildProductionEnv(example, vars, 'compose').toObject();
+    expect(env.PLATFORM_SITES_DOMAIN).toBe('sites.acme.dev');
+    expect(env.RENDERER_URL).toBe('https://sites.acme.dev');
+    expect(rewriteArtifact('*.sites.example.com admin.example.com', vars)).toBe('*.sites.acme.dev admin.sites.acme.dev');
+    // default layout unchanged
+    expect(productionVars({ ...base, domain: 'acme.dev' }).sitesDomain).toBe('sites.acme.dev');
   });
 
   it('rewrites copied infra files', () => {

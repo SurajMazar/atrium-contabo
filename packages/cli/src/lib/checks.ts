@@ -90,11 +90,12 @@ export function productionChecks(env: Record<string, string | undefined>): Check
     !!cookie && !!sites && (sites === cookie || sites.endsWith(`.${cookie.replace(/^\./, '')}`));
   add(
     'COOKIE_DOMAIN does not cover tenant sites',
-    !!cookie && cookie !== 'localhost' && !cookieLeaks,
+    // Unset is best: the API then issues a host-only `__Host-` refresh cookie on the admin host.
+    cookie !== 'localhost' && !cookieLeaks,
     cookieLeaks
       ? `COOKIE_DOMAIN=${cookie} would send auth cookies to *.${sites}`
-      : `COOKIE_DOMAIN=${cookie || '(unset)'}`,
-    'Use the admin host (e.g. admin.example.com)',
+      : `COOKIE_DOMAIN=${cookie || '(unset — host-only __Host- cookie)'}`,
+    'Leave COOKIE_DOMAIN empty (recommended) or set it to the admin host only',
   );
   add(
     'COOKIE_SECURE=true',

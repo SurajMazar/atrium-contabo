@@ -1,0 +1,9 @@
+{
+  "name": "atrium-importer-leela",
+  "private": true,
+  "type": "module",
+  "description": "Converts the Leela Garden / Vilasa by Leela Next.js sites into importable Atrium site bundles. Not a workspace package (tools/* only matches one level).",
+  "scripts": {
+    "build": "tsx build.ts"
+  }
+}

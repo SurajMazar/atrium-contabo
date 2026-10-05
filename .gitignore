@@ -28,3 +28,6 @@ Procfile.local
 
 # scratch files
 .tmp/
+
+# importer outputs (bundles, screenshots)
+/tools/importers/*/out/

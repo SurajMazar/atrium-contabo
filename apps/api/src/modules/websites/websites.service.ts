@@ -12,7 +12,8 @@ import { TemplatesService } from '../templates/templates.service';
 import { blankWebsite } from './blank';
 import { DraftService } from './draft.service';
 
-const RESERVED_SLUGS = new Set(['www', 'api', 'admin', 'app', 'preview', 'static', 'assets', 'cdn', 'mail', 'status', 'docs']);
+// Platform hostnames can share the sites root (admin.<root>, api.<root>, media.<root>), so a site may never take them.
+const RESERVED_SLUGS = new Set(['www', 'api', 'admin', 'app', 'preview', 'static', 'assets', 'cdn', 'mail', 'status', 'docs', 'media', 'sites', 's3', 'smtp', 'auth', 'login']);
 
 export type WebsiteSource = { type: 'blank'; presetKey?: string } | { type: 'template'; templateKey: string } | { type: 'import'; definition: unknown };
 

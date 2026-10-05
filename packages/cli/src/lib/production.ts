@@ -148,6 +148,10 @@ export const TARGET_IDS = Object.keys(TARGETS) as TargetId[];
 export interface ProductionOptions {
   target: TargetId;
   domain: string;
+  /** Where tenant sites live ({slug}.<sitesDomain>); default sites.<domain>. May equal <domain>. */
+  sitesDomain?: string;
+  /** Platform storage: S3-compatible (default) or the server's disk (single-node only). */
+  storage?: 's3' | 'local';
   email: string;
   registry: string;
   tag: string;
@@ -170,9 +174,10 @@ export function productionVars(o: ProductionOptions): TemplateVars {
     domain,
     adminHost: `admin.${domain}`,
     apiHost: `api.${domain}`,
-    sitesDomain: `sites.${domain}`,
+    sitesDomain: (o.sitesDomain ?? `sites.${domain}`).replace(/^https?:\/\//, '').replace(/\/.*$/, ''),
     mediaHost: `media.${domain}`,
     acmeEmail: o.email,
+    storage: o.storage ?? 's3',
     registry: o.registry.replace(/\/+$/, ''),
     tag: o.tag,
     namespace: o.namespace,
@@ -192,6 +197,8 @@ const MANAGED_PLACEHOLDER = 'REPLACE_ME';
 /** Point copied infra files at the chosen domain, registry and image tag. */
 export function rewriteArtifact(src: string, vars: TemplateVars): string {
   return src
+    // Sites first: the sites domain need not be sites.<domain> (e.g. everything under one root).
+    .replace(/sites\.example\.com/g, String(vars.sitesDomain ?? `sites.${vars.domain}`))
     .replace(/example\.com/g, String(vars.domain))
     .replace(/ghcr\.io\/your-org/g, String(vars.registry))
     .replace(/(atrium-(?:api|worker|renderer|admin|migrate)):latest/g, `$1:${vars.tag}`);
@@ -218,8 +225,9 @@ export function buildProductionEnv(example: EnvFile, vars: TemplateVars, mode: E
   set('PLATFORM_SITES_DOMAIN', String(vars.sitesDomain));
   set('PREVIEW_URL', `https://${vars.sitesDomain}`);
   set('CORS_ORIGINS', `https://${vars.adminHost}`);
-  // Scope cookies to the admin host only — never the parent domain shared with tenant sites.
-  set('COOKIE_DOMAIN', String(vars.adminHost));
+  // No COOKIE_DOMAIN: the refresh cookie becomes a host-only `__Host-` cookie on the admin host,
+  // which sibling tenant subdomains can never read or overwrite.
+  set('COOKIE_DOMAIN', '');
   // Secure cookies over https; DNS guidance shown to tenants for custom domains.
   env.set('COOKIE_SECURE', 'true');
   // Trust X-Forwarded-For only from private-network hops (Caddy/nginx/ALB/ingress and the admin's
@@ -239,7 +247,12 @@ export function buildProductionEnv(example: EnvFile, vars: TemplateVars, mode: E
     set(k, generateSecret(k));
   set('SEED_ADMIN_EMAIL', String(vars.acmeEmail));
   set('MAIL_FROM', `Atrium <no-reply@${d}>`);
-  set('STORAGE_DRIVER', 's3');
+  set('STORAGE_DRIVER', vars.storage === 'local' ? 'local' : 's3');
+  if (vars.storage === 'local') {
+    // Files on the server's disk (api-storage volume shared by api + worker), served by the API.
+    set('LOCAL_STORAGE_DIR', '/app/apps/api/storage');
+    set('LOCAL_STORAGE_PUBLIC_URL', `https://${vars.apiHost}/v1/storage`);
+  }
   set('S3_FORCE_PATH_STYLE', 'true');
   set('SMTP_SECURE', 'false');
 

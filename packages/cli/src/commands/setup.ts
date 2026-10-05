@@ -240,6 +240,8 @@ export function registerSetup(program: Command) {
       '-d, --domain <domain>',
       'base domain; produces admin.<d>, api.<d>, *.sites.<d>, media.<d>',
     )
+    .option('--sites-domain <domain>', 'domain for tenant sites ({slug}.<sites-domain>); default sites.<domain>. Use the base domain itself to put everything under one root')
+    .option('--storage <driver>', 'platform storage: s3 (default) or local (server disk, single node)', 's3')
     .option('--email <email>', 'ACME / super-admin email (default admin@<domain>)')
     .option('--registry <registry>', 'container registry/namespace for images', 'ghcr.io/your-org')
     .option('--tag <tag>', 'image tag', 'latest')
@@ -266,6 +268,8 @@ export function registerSetup(program: Command) {
       opts: {
         target: string;
         domain?: string;
+        sitesDomain?: string;
+        storage?: string;
         email?: string;
         registry: string;
         tag: string;
@@ -302,6 +306,8 @@ export function registerSetup(program: Command) {
           {
             target,
             domain: domain!,
+            sitesDomain: opts.sitesDomain,
+            storage: opts.storage === 'local' ? 'local' : 's3',
             email: opts.email ?? `admin@${domain}`,
             registry: opts.registry,
             tag: opts.tag,
@@ -371,9 +377,11 @@ export function registerSetup(program: Command) {
       'TLS/HTTPS guidance for your topology, and DNS checks for admin/api/wildcard records',
     )
     .option('-d, --domain <domain>', 'base domain to check DNS for')
-    .action(async function (this: Command, opts: { domain?: string }) {
+    .option('--sites-domain <domain>', 'tenant sites domain (default SITES_DOMAIN from the env, else sites.<domain>)')
+    .action(async function (this: Command, opts: { domain?: string; sitesDomain?: string }) {
       const ctx = context(this);
       const domain = opts.domain ?? ctx.vars.ATRIUM_DOMAIN;
+      const sites = opts.sitesDomain ?? ctx.vars.SITES_DOMAIN ?? (domain ? `sites.${domain}` : undefined);
       note(
         [
           `${color.bold('Caddy (compose/Quadlet, recommended):')} automatic HTTPS for admin/api, and on-demand TLS for`,
@@ -394,8 +402,9 @@ export function registerSetup(program: Command) {
       const hosts = [
         `admin.${domain}`,
         `api.${domain}`,
-        `sites.${domain}`,
-        `wildcard-check-${Date.now()}.sites.${domain}`,
+        `media.${domain}`,
+        String(sites),
+        `wildcard-check-${Date.now()}.${sites}`,
       ];
       for (const h of hosts) {
         try {
@@ -403,7 +412,7 @@ export function registerSetup(program: Command) {
             async () => (await resolveDns(h, 'CNAME')) as string[],
           );
           log.raw(
-            `  ${statusIcon('ok')} ${h.startsWith('wildcard-check') ? `*.sites.${domain}` : h} → ${ips.join(', ')}`,
+            `  ${statusIcon('ok')} ${h.startsWith('wildcard-check') ? `*.${sites}` : h} → ${ips.join(', ')}`,
           );
         } catch {
           log.raw(

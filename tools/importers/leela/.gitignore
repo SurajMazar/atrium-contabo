@@ -1,0 +1,7 @@
+out/shots/
+out/imports.json
+out/*.log
+out/leela-garden/
+out/vilasa-by-leela/
+out/editor/
+__pycache__/
