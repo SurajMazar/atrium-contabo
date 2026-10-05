@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
-import { QUEUES } from '@atrium/server-kit';
-import { Queue, type JobsOptions } from 'bullmq';
+import { QUEUES, createQueue } from '@atrium/server-kit';
+import type { JobsOptions, Queue } from 'bullmq';
 import { env } from '../config/env';
 import { RedisService } from './redis.service';
 
@@ -24,7 +24,8 @@ export class QueueService implements OnModuleDestroy {
     const name = QUEUES[key] as string;
     let q = this.queues.get(name);
     if (!q) {
-      q = new Queue(name, { connection: this.redis.client.duplicate() });
+      // Shared factory keeps the key prefix identical to the worker's consumers.
+      q = createQueue(name as never, this.redis.client.duplicate() as never);
       this.queues.set(name, q);
     }
     return q;
