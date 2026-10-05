@@ -116,20 +116,21 @@ export const TextArea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<H
 });
 
 /**
- * Text field that keeps a local draft and commits after a short pause or on
- * blur, so typing never waits on the document store / canvas re-render.
+ * Text field that keeps a local draft and commits on the next animation frame
+ * (or after `delay` ms when given), so bursts of keystrokes coalesce into one
+ * document update while the canvas still feels live. Commits on blur/Enter too.
  */
-export function useDraftValue<T>(value: T, commit: (v: T) => void, delay = 160) {
+export function useDraftValue<T>(value: T, commit: (v: T) => void, delay = 0) {
   const [draft, setDraft] = useState(value);
   const dirty = useRef(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const timer = useRef<{ cancel(): void } | null>(null);
   const latest = useRef(commit);
   latest.current = commit;
   useEffect(() => {
     if (!dirty.current) setDraft(value);
   }, [value]);
   const flush = () => {
-    if (timer.current) clearTimeout(timer.current);
+    timer.current?.cancel();
     timer.current = null;
     if (dirty.current) {
       dirty.current = false;
@@ -142,8 +143,14 @@ export function useDraftValue<T>(value: T, commit: (v: T) => void, delay = 160) 
     dirty.current = true;
     setDraft(v);
     draftRef.current = v;
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(flush, delay);
+    timer.current?.cancel();
+    if (delay > 0) {
+      const t = setTimeout(flush, delay);
+      timer.current = { cancel: () => clearTimeout(t) };
+    } else {
+      const f = requestAnimationFrame(flush);
+      timer.current = { cancel: () => cancelAnimationFrame(f) };
+    }
   };
   useEffect(() => () => flush(), []); // eslint-disable-line react-hooks/exhaustive-deps
   return { draft, change, flush };

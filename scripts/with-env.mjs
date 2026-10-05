@@ -3,6 +3,7 @@
 // Usage: node ../../scripts/with-env.mjs next dev --port 3000
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const file = fileURLToPath(new URL('../.env', import.meta.url));
@@ -15,6 +16,8 @@ if (existsSync(file)) {
     if (env[m[1]] === undefined) env[m[1]] = value;
   }
 }
+// Resolve local binaries (next, tsx, …) even when not launched through pnpm.
+env.PATH = [path.join(process.cwd(), 'node_modules', '.bin'), env.PATH].filter(Boolean).join(path.delimiter);
 const [cmd, ...args] = process.argv.slice(2);
 const child = spawn(cmd, args, { stdio: 'inherit', env, shell: process.platform === 'win32' });
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => child.kill(sig));

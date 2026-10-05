@@ -10,7 +10,7 @@ registerBuiltinRenderers();
 export type { RenderOptions, RenderContext, RenderProps, RenderMode, Renderer, MediaVariantInfo, ImageHelpers } from './types';
 export { createRenderContext, computeHeaderOverlay, withPage, withWidth, RESPONSIVE_WIDTHS, type CreateContextExtras } from './context';
 export { PageView, siteRootAttrs, analyticsScripts, partitionScripts } from './page-view';
-export { NodeView, resolveNode, type ResolvedNode } from './node-view';
+export { NodeView, EditorNodeView, childContext, resolveNode, type ResolvedNode } from './node-view';
 export { getSiteCss, SiteStyles, RENDERER_CSS, RENDERER_CSS_HASH, minifyCss, type SiteCssOptions, pageHasAnimations, pageTrees } from './styles';
 export { registerRenderer, getRenderer, listRenderers } from './registry';
 export { BUILTIN_RENDERERS, CSS_CHUNKS, registerComponentCss, registerBuiltinRenderers } from './builtin';

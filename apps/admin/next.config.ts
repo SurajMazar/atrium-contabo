@@ -3,6 +3,8 @@ import type { NextConfig } from 'next';
 const API_ORIGIN = (process.env.ATRIUM_API_INTERNAL_URL ?? process.env.API_URL ?? 'http://localhost:4000').replace(/\/$/, '');
 
 const nextConfig: NextConfig = {
+  // Optional separate output dir (e.g. NEXT_DIST_DIR=.next-perf for side-by-side builds).
+  ...(process.env.NEXT_DIST_DIR ? { distDir: process.env.NEXT_DIST_DIR } : {}),
   reactStrictMode: true,
   poweredByHeader: false,
   transpilePackages: ['@atrium/ui', '@atrium/renderer-core'],

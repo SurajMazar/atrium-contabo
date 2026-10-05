@@ -1,7 +1,7 @@
 import { animationAttrs } from '@atrium/animations';
 import { nodeClass } from '@atrium/design-tokens';
 import type { Node } from '@atrium/schema';
-import type { ReactNode } from 'react';
+import { memo, type ReactNode } from 'react';
 import { applyBinding, applyTranslations, interpolateProps, parseWithSchema, visibilityOf } from './props';
 import { getRenderer } from './registry';
 import type { RenderContext } from './types';
@@ -64,7 +64,7 @@ export function NodeView({ ctx, node }: { ctx: RenderContext; node: Node }): Rea
     if (ctx.mode === 'editor') {
       return (
         <div className={`a-global ${nodeClass(node.id)}`} data-node-id={node.id} data-node-type={node.type} data-global-ref={gs.id} {...(node.hidden ? { 'data-node-hidden': '' } : {})}>
-          <NodeView ctx={ctx} node={gs.node} />
+          <EditorNodeView ctx={ctx} node={gs.node} />
         </div>
       );
     }
@@ -75,10 +75,11 @@ export function NodeView({ ctx, node }: { ctx: RenderContext; node: Node }): Rea
   if (resolved.hidden && ctx.mode !== 'editor') return null;
   const Renderer = getRenderer(node.type);
   const def = ctx.registry.get(node.type);
-  const childCtx: RenderContext = { ...ctx, depth: ctx.depth + 1 };
+  const childCtx = childContext(ctx);
+  const Child = nodeComponent(ctx);
   let children: ReactNode = null;
   if (node.children?.length) {
-    children = node.children.map((child) => <NodeView key={child.id} ctx={childCtx} node={child} />);
+    children = node.children.map((child) => <Child key={child.id} ctx={childCtx} node={child} />);
   } else if (def?.children) {
     children = <Dropzone ctx={ctx} parentId={node.id} />;
   }
@@ -88,4 +89,29 @@ export function NodeView({ ctx, node }: { ctx: RenderContext; node: Node }): Rea
       {children}
     </Renderer>
   );
+}
+
+// ── Editor performance ───────────────────────────────────────────────────────
+// The builder re-renders on every edit. With immer's structural sharing, untouched
+// nodes keep their identity, so a memoized NodeView only re-renders the edited
+// branch — provided the context object is stable too (child contexts are cached).
+
+const childContexts = new WeakMap<RenderContext, RenderContext>();
+
+/** Stable `{ ...ctx, depth: depth + 1 }` per parent context (keeps memoization effective). */
+export function childContext(ctx: RenderContext): RenderContext {
+  let c = childContexts.get(ctx);
+  if (!c) {
+    c = { ...ctx, depth: ctx.depth + 1 };
+    childContexts.set(ctx, c);
+  }
+  return c;
+}
+
+/** Memoized NodeView for the editor canvas: skips nodes whose identity and context are unchanged. */
+export const EditorNodeView = memo(NodeView, (a, b) => a.node === b.node && a.ctx === b.ctx);
+
+/** Server/static renders use the plain component; the editor uses the memoized one. */
+export function nodeComponent(ctx: RenderContext): typeof NodeView {
+  return ctx.mode === 'editor' ? (EditorNodeView as unknown as typeof NodeView) : NodeView;
 }

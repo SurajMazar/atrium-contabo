@@ -2,13 +2,15 @@ import type { PageDocument, ScriptDefinition, SiteSettings } from '@atrium/schem
 import type { ReactNode } from 'react';
 import './styles';
 import { withPage } from './context';
-import { NodeView } from './node-view';
+import { nodeComponent } from './node-view';
 import type { RenderContext } from './types';
 import { Dropzone } from './ui/core';
 
 /** Site header + <main> sections + footer for a page (respects page.layout). No <html>/<body>. */
 export function PageView({ ctx, page }: { ctx: RenderContext; page: PageDocument }): ReactNode {
-  const pctx = withPage(ctx, page);
+  // Reuse the context when it already describes this page (the editor passes a stable page shell).
+  const pctx = ctx.page && ctx.page.id === page.id ? ctx : withPage(ctx, page);
+  const NodeView = nodeComponent(pctx);
   const { header, footer } = page.layout;
   return (
     <>

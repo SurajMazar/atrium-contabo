@@ -2,7 +2,6 @@ import { getPath } from '@atrium/builder-core';
 import { registry } from '@atrium/component-registry';
 import { getNode, setProp } from '../actions';
 import { controlForPath } from '../lib/controls';
-import { bumpCanvasEpoch } from '../store/document';
 import { canEdit } from '../store/editor';
 import { setEditing, useUiStore } from '../store/ui';
 
@@ -39,6 +38,8 @@ export function startInlineEdit(el: HTMLElement, nodeId: string, prop: string): 
   const original = raw ?? '';
   const doc = el.ownerDocument;
 
+  // Keep React's own DOM nodes so they can be restored on finish (no canvas remount needed).
+  const reactNodes = Array.from(el.childNodes);
   el.setAttribute('data-atrium-editing', '');
   try {
     el.contentEditable = 'plaintext-only';
@@ -87,9 +88,9 @@ export function startInlineEdit(el: HTMLElement, nodeId: string, prop: string): 
     el.contentEditable = 'false';
     setEditing(null);
     const next = multiline ? text : text.replace(/\s*\n\s*/g, ' ');
+    // Put back exactly the nodes React rendered, then let React reconcile the change normally.
+    el.replaceChildren(...reactNodes);
     if (commit && next !== original) setProp(nodeId, prop, next, { label: 'Edit text', mergeKey: `inline:${nodeId}:${prop}:${Date.now()}` });
-    // React's text nodes were touched by the browser — remount the canvas tree.
-    bumpCanvasEpoch();
   }
 
   el.addEventListener('keydown', onKey, true);

@@ -112,11 +112,38 @@ function CanvasContent({ mount }: { mount: HTMLElement }) {
   );
 }
 
+/**
+ * Keep the previous value while `key` is unchanged. Used so the render context
+ * only changes for site-level edits (theme, settings, navigation, forms, CMS, page
+ * list) — editing a section then re-renders just that section's branch.
+ */
+function useStableBy<T>(value: T, key: string): T {
+  const ref = useRef<{ key: string; value: T } | null>(null);
+  if (!ref.current || ref.current.key !== key) ref.current = { key, value };
+  return ref.current.value;
+}
+
+const pageListKey = (pages: PageDocument[]) => pages.map((p) => `${p.id}|${p.slug}|${p.title}|${p.isHomepage}|${p.kind}|${p.collection ?? ''}|${p.status}|${JSON.stringify(p.translations ?? null)}`).join('¦');
+const pageShellKey = (p: PageDocument) => {
+  const first = p.sections.find((s) => !s.hidden);
+  return `${p.id}|${p.slug}|${p.title}|${JSON.stringify(p.layout)}|${JSON.stringify(p.translations ?? null)}|${first ? `${first.type}:${first.variant ?? ''}` : ''}`;
+};
+
 const SiteRoot = memo(function SiteRoot({ definition, page, playAnimations, websiteId }: { definition: WebsiteDefinition; page: PageDocument; playAnimations: boolean; websiteId?: string }) {
   const locale = definition.settings.localization.defaultLocale;
+  // Page list for link/path resolution: stable unless pages are added, renamed or re-slugged.
+  const pages = useStableBy(definition.pages, pageListKey(definition.pages));
+  const { settings, theme, navigation, header, footer, globalSections, forms, collections, redirects, customCss } = definition;
+  const ctxDefinition = useMemo(
+    () => ({ ...definition, pages }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [settings, theme, navigation, header, footer, globalSections, forms, collections, redirects, customCss, pages],
+  );
+  // Page shell for the context: stable while only section content changes.
+  const pageShell = useStableBy(page, pageShellKey(page));
   const ctx = useMemo(
-    () => createRenderContext({ definition, mode: 'editor', editor: { playAnimations, showEmptyPlaceholders: true }, locale, basePath: '', websiteId }, page),
-    [definition, page, playAnimations, locale, websiteId],
+    () => createRenderContext({ definition: ctxDefinition, mode: 'editor', editor: { playAnimations, showEmptyPlaceholders: true }, locale, basePath: '', websiteId }, pageShell),
+    [ctxDefinition, pageShell, playAnimations, locale, websiteId],
   );
   const doc = useCanvasDom((s) => s.doc);
 
