@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 
-const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select,textarea,[tabindex]:not([tabindex="-1"])';
+const FOCUSABLE = 'summary,a[href],button:not([disabled]),input:not([disabled]),select,textarea,[tabindex]:not([tabindex="-1"])';
 
 /**
  * Progressive enhancement for the server-rendered header: scroll state (solid after scroll,
@@ -79,7 +79,7 @@ export function HeaderBehavior({ hideOnScroll, editor }: { hideOnScroll?: boolea
       if (!editor) doc.documentElement.style.overflow = open ? 'hidden' : '';
       if (open) {
         lastFocus = doc.activeElement as HTMLElement | null;
-        win.requestAnimationFrame(() => drawer.querySelector<HTMLElement>(FOCUSABLE)?.focus());
+        win.requestAnimationFrame(() => Array.from(drawer.querySelectorAll<HTMLElement>(FOCUSABLE)).find((n) => n.offsetParent !== null)?.focus());
       } else if (lastFocus) {
         (toggle ?? lastFocus).focus();
         lastFocus = null;

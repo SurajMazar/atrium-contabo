@@ -51,6 +51,7 @@ export function FormIsland({ form, formId, apiBaseUrl, mode, locale, captcha, su
   const captchaHandle = useRef<CaptchaHandle | null>(null);
   const hpRef = useRef<HTMLInputElement>(null);
   const successRef = useRef<HTMLDivElement>(null);
+  const filesRef = useRef<Record<string, File[]>>({});
   const editor = mode === 'editor';
 
   const visible = useMemo(() => form.fields.filter((f) => !f.showIf || evaluateConditionGroup(f.showIf, values)), [form.fields, values]);
@@ -125,11 +126,23 @@ export function FormIsland({ form, formId, apiBaseUrl, mode, locale, captcha, su
     }
     const win = formRef.current?.ownerDocument.defaultView ?? window;
     try {
-      const response = await fetch(`${apiBaseUrl}/public/forms/${encodeURIComponent(formId)}/submit`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ values: res.values, captchaToken, _hp: hpRef.current?.value ?? '', pageUrl: win.location.href, locale }),
-      });
+      const payload = { values: res.values, captchaToken, _hp: hpRef.current?.value ?? '', pageUrl: win.location.href, locale };
+      const files = Object.entries(filesRef.current).filter(([name, list]) => list.length && res.values[name] !== undefined);
+      let init: RequestInit;
+      if (files.length) {
+        // Uploads go as multipart: `values` is JSON, files are appended under their field name.
+        const fd = new FormData();
+        fd.set('values', JSON.stringify(payload.values));
+        if (captchaToken) fd.set('captchaToken', captchaToken);
+        fd.set('_hp', payload._hp);
+        fd.set('pageUrl', payload.pageUrl);
+        fd.set('locale', locale);
+        for (const [name, list] of files) for (const file of list) fd.append(name, file, file.name);
+        init = { method: 'POST', body: fd };
+      } else {
+        init = { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) };
+      }
+      const response = await fetch(`${apiBaseUrl}/public/forms/${encodeURIComponent(formId)}/submit`, init);
       if (response.ok) {
         setStatus({ kind: 'success', message: settings.successMessage });
         if (settings.redirectUrl) win.location.assign(settings.redirectUrl);
@@ -155,8 +168,8 @@ export function FormIsland({ form, formId, apiBaseUrl, mode, locale, captcha, su
 
   if (status.kind === 'success' && !settings.redirectUrl) {
     return (
-      <div ref={successRef} tabIndex={-1} className="a-form__success" role="status">
-        <p className="a-form__success-title">Thank you</p>
+      <div ref={successRef} tabIndex={-1} className="a-fm__success" role="status">
+        <p className="a-fm__success-title">Thank you</p>
         <p>{status.message}</p>
       </div>
     );
@@ -164,13 +177,13 @@ export function FormIsland({ form, formId, apiBaseUrl, mode, locale, captcha, su
 
   const label = submitLabel ?? settings.submitLabel ?? 'Send';
   return (
-    <form ref={formRef} className={['a-form', `a-form--${layout}`, className].filter(Boolean).join(' ')} noValidate onSubmit={onSubmit} aria-describedby={status.message ? `${uid}-status` : undefined}>
-      <div className="a-form__fields">
+    <form ref={formRef} className={['a-fm', `a-fm--${layout}`, className].filter(Boolean).join(' ')} noValidate onSubmit={onSubmit} aria-describedby={status.message ? `${uid}-status` : undefined}>
+      <div className="a-fm__fields">
         {visible.map((f) => (
-          <Field key={f.id} field={f} uid={uid} value={values[f.name]} error={errors[f.name]} onChange={set} hideLabel={layout === 'inline'} placeholder={layout === 'inline' ? placeholder : undefined} consentText={settings.consentText} />
+          <Field key={f.id} field={f} uid={uid} value={values[f.name]} error={errors[f.name]} onChange={set} onFiles={(name, list) => (filesRef.current[name] = list)} hideLabel={layout === 'inline'} placeholder={layout === 'inline' ? placeholder : undefined} consentText={settings.consentText} />
         ))}
         {settings.honeypot !== false ? (
-          <div className="a-form__hp" aria-hidden="true">
+          <div className="a-fm__hp" aria-hidden="true">
             <label>
               Leave this field empty
               <input ref={hpRef} type="text" name="_hp" tabIndex={-1} autoComplete="off" defaultValue="" />
@@ -179,9 +192,9 @@ export function FormIsland({ form, formId, apiBaseUrl, mode, locale, captcha, su
         ) : null}
         {layout === 'inline' ? <SubmitButton label={label} busy={status.kind === 'submitting'} /> : null}
       </div>
-      {captcha?.siteKey && !editor ? <div ref={captchaRef} className="a-form__captcha" /> : null}
+      {captcha?.siteKey && !editor ? <div ref={captchaRef} className="a-fm__captcha" /> : null}
       {layout !== 'inline' ? <SubmitButton label={label} busy={status.kind === 'submitting'} /> : null}
-      <p id={`${uid}-status`} className={`a-form__status${status.kind === 'error' ? ' is-error' : ''}`} role={status.kind === 'error' ? 'alert' : 'status'} aria-live="polite">
+      <p id={`${uid}-status`} className={`a-fm__status${status.kind === 'error' ? ' is-error' : ''}`} role={status.kind === 'error' ? 'alert' : 'status'} aria-live="polite">
         {status.kind === 'submitting' ? 'Sending…' : status.message ?? ''}
       </p>
     </form>
@@ -190,7 +203,7 @@ export function FormIsland({ form, formId, apiBaseUrl, mode, locale, captcha, su
 
 function SubmitButton({ label, busy }: { label: string; busy: boolean }) {
   return (
-    <div className="a-form__submit">
+    <div className="a-fm__submit">
       <button type="submit" className="a-btn a-btn--primary" disabled={busy} aria-busy={busy || undefined}>
         <span className="a-btn__label">{busy ? 'Sending…' : label}</span>
       </button>
@@ -204,12 +217,13 @@ interface FieldProps {
   value: unknown;
   error?: string;
   onChange: (name: string, value: unknown) => void;
+  onFiles?: (name: string, files: File[]) => void;
   hideLabel?: boolean;
   placeholder?: string;
   consentText?: string;
 }
 
-function Field({ field: f, uid, value, error, onChange, hideLabel, placeholder, consentText }: FieldProps): ReactNode {
+function Field({ field: f, uid, value, error, onChange, onFiles, hideLabel, placeholder, consentText }: FieldProps): ReactNode {
   const id = `${uid}-${f.name}`;
   const helpId = f.helpText ? `${id}-help` : undefined;
   const errId = error ? `${id}-err` : undefined;
@@ -229,8 +243,8 @@ function Field({ field: f, uid, value, error, onChange, hideLabel, placeholder, 
     </>
   );
 
-  if (f.type === 'heading') return <h3 className="a-form__heading a-field--full">{f.label}</h3>;
-  if (f.type === 'paragraph') return <p className="a-form__para a-field--full">{f.helpText ?? f.label}</p>;
+  if (f.type === 'heading') return <h3 className="a-fm__heading a-field--full">{f.label}</h3>;
+  if (f.type === 'paragraph') return <p className="a-fm__para a-field--full">{f.helpText ?? f.label}</p>;
   if (f.type === 'hidden') return <input type="hidden" name={f.name} value={String(value ?? '')} />;
 
   if (f.type === 'textarea') {
@@ -301,7 +315,7 @@ function Field({ field: f, uid, value, error, onChange, hideLabel, placeholder, 
     return (
       <div className={`a-field ${width}${error ? ' is-invalid' : ''}`}>
         {labelEl}
-        <input {...common} type="file" multiple={(f.validation?.maxFiles ?? 1) > 1} accept={f.validation?.accept?.join(',')} onChange={(e) => onChange(f.name, Array.from(e.target.files ?? []).map((file) => file.name).join(', '))} />
+        <input {...common} type="file" multiple={(f.validation?.maxFiles ?? 1) > 1} accept={f.validation?.accept?.join(',')} onChange={(e) => { const list = Array.from(e.target.files ?? []); onFiles?.(f.name, list); onChange(f.name, list.map((file) => file.name).join(', ')); }} />
         {meta}
       </div>
     );

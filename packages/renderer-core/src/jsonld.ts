@@ -198,5 +198,5 @@ export function buildJsonLd(ctx: RenderContext, page: PageDocument): object[] {
 
 /** Serialize JSON-LD safely for a <script> tag (prevents `</script>` breakouts). */
 export function jsonLdScript(data: object): string {
-  return JSON.stringify(data).replace(/</g, '\\u003c').replace(/ /g, '\\u2028').replace(/ /g, '\\u2029');
+  return JSON.stringify(data).replace(/</g, '\\u003c').replace(new RegExp('\\u2028', 'g'), '\\u2028').replace(new RegExp('\\u2029', 'g'), '\\u2029');
 }

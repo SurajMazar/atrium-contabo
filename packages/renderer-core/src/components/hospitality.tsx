@@ -610,7 +610,7 @@ export function AttractionsRenderer(rp: RenderProps) {
   return (
     <Section rp={rp} labelled>
       <Intro ctx={ctx} props={props} nodeId={node.id} />
-      <ul className="a-attractions" style={{ '--cols': props.columns ?? 2 } as CSSProperties}>
+      <ul className="a-attrlist" style={{ '--cols': props.columns ?? 2 } as CSSProperties}>
         {items.map((a, i) => (
           <li key={i} className="a-attraction">
             <div className="a-attraction__head">
@@ -817,12 +817,12 @@ html.a-motion-ready .atrium-site .a-hscroll[data-a-anim] .a-hscroll__viewport{ov
 .atrium-site .a-events__empty{padding:2rem 0;border-block:1px solid var(--t-border)}
 
 /* attractions */
-.atrium-site .a-attractions{display:grid;grid-template-columns:repeat(var(--cols,2),minmax(0,1fr));gap:0 clamp(2rem,6vw,5rem);border-top:1px solid var(--t-border)}
+.atrium-site .a-attrlist{display:grid;grid-template-columns:repeat(var(--cols,2),minmax(0,1fr));gap:0 clamp(2rem,6vw,5rem);border-top:1px solid var(--t-border)}
 .atrium-site .a-attraction{display:grid;gap:.5rem;align-content:start;padding-block:1.5rem;border-bottom:1px solid var(--t-border)}
 .atrium-site .a-attraction__head{display:flex;align-items:baseline;justify-content:space-between;gap:1rem}
 .atrium-site .a-attraction__name{font-size:var(--a-text-xl)}
 .atrium-site .a-attraction__dist{flex:none;font-size:var(--a-text-xs);color:var(--t-muted);letter-spacing:.04em;text-align:right}
-@media (max-width:767px){.atrium-site .a-attractions{grid-template-columns:1fr}}
+@media (max-width:767px){.atrium-site .a-attrlist{grid-template-columns:1fr}}
 
 /* booking */
 .atrium-site .a-booking{display:grid;gap:1.5rem}

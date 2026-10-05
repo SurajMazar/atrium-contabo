@@ -173,10 +173,12 @@ export function StatsRenderer(rp: RenderProps) {
   const variant = rp.variant ?? 'inline';
   const items = toArray<{ value: string; label: string; description?: string; prefix?: string; suffix?: string }>(props.items);
   const n = Math.max(1, Number(props.columns ?? items.length ?? 4));
+  // Word-like values ("2 adults + 1 child") switch to a text scale so they never overflow.
+  const textual = items.some((s) => `${s.prefix ?? ''}${s.value}${s.suffix ?? ''}`.length > 7);
   return (
     <Section rp={rp} labelled>
       <Intro ctx={ctx} props={props} nodeId={node.id} />
-      <dl className={cx('a-stats', `a-stats--${variant}`, props.dividers !== false && 'a-stats--dividers')} style={{ '--cols': n, '--cols-t': Math.min(n, 2), '--cols-m': variant === 'large' ? 1 : 2 } as CSSProperties}>
+      <dl className={cx('a-statlist', `a-statlist--${variant}`, props.dividers !== false && 'a-statlist--dividers', textual && 'a-statlist--text')} style={{ '--cols': n, '--cols-t': Math.min(n, 2), '--cols-m': variant === 'large' ? 1 : 2 } as CSSProperties}>
         {items.map((s, i) => (
           <div key={i} className="a-stat">
             <dt className="a-stat__label" {...editProp(ctx, `items.${i}.label`)}>{s.label}</dt>
@@ -431,15 +433,15 @@ export function TimelineRenderer(rp: RenderProps) {
   return (
     <Section rp={rp} labelled width={variant === 'steps' ? props.containerWidth : props.containerWidth === 'default' && variant === 'vertical' ? 'narrow' : props.containerWidth}>
       <Intro ctx={ctx} props={props} nodeId={node.id} />
-      <ol className={cx('a-timeline', `a-timeline--${variant}`)} style={variant === 'steps' ? ({ '--cols': Math.min(items.length || 1, 4) } as CSSProperties) : undefined}>
+      <ol className={cx('a-tl', `a-tl--${variant}`)} style={variant === 'steps' ? ({ '--cols': Math.min(items.length || 1, 4) } as CSSProperties) : undefined}>
         {items.map((it, i) => (
-          <li key={i} className="a-timeline__item">
-            <span className="a-timeline__dot" aria-hidden="true">{variant === 'steps' ? String(i + 1).padStart(2, '0') : null}</span>
-            <div className="a-timeline__body">
-              {it.date ? <p className="a-timeline__date" {...editProp(ctx, `items.${i}.date`)}>{it.date}</p> : null}
-              <Heading as={level} text={it.title} className="a-timeline__title" {...editProp(ctx, `items.${i}.title`)} />
+          <li key={i} className="a-tl__item">
+            <span className="a-tl__dot" aria-hidden="true">{variant === 'steps' ? String(i + 1).padStart(2, '0') : null}</span>
+            <div className="a-tl__body">
+              {it.date ? <p className="a-tl__date" {...editProp(ctx, `items.${i}.date`)}>{it.date}</p> : null}
+              <Heading as={level} text={it.title} className="a-tl__title" {...editProp(ctx, `items.${i}.title`)} />
               {it.text ? <p className="a-muted" {...editProp(ctx, `items.${i}.text`)}><Rich text={it.text} /></p> : null}
-              {toMedia(it.image) ? <Frame ctx={ctx} media={it.image} aspect="3:2" sizes="(max-width: 767px) 100vw, 30rem" rounded="sm" className="a-timeline__img" /> : null}
+              {toMedia(it.image) ? <Frame ctx={ctx} media={it.image} aspect="3:2" sizes="(max-width: 767px) 100vw, 30rem" rounded="sm" className="a-tl__img" /> : null}
             </div>
           </li>
         ))}
@@ -580,7 +582,7 @@ export function BenefitsRenderer(rp: RenderProps) {
   const items = toArray<{ title: string; text?: string; icon?: string }>(props.items);
   const level = subLevel(props.headingLevel);
   const list = (
-    <ul className={cx('a-benefits', `a-benefits--${variant}`)} style={variant !== 'with-image' ? ({ '--cols': props.columns ?? 2, '--cols-t': Math.min(Number(props.columns ?? 2), 2) } as CSSProperties) : undefined}>
+    <ul className={cx('a-blist', `a-blist--${variant}`)} style={variant !== 'with-image' ? ({ '--cols': props.columns ?? 2, '--cols-t': Math.min(Number(props.columns ?? 2), 2) } as CSSProperties) : undefined}>
       {items.map((b, i) => (
         <li key={i} className="a-benefit">
           <span className="a-benefit__icon"><Icon name={b.icon ?? 'check'} size={variant === 'grid' ? 24 : 16} strokeWidth={variant === 'grid' ? 1.25 : 1.75} /></span>
@@ -668,19 +670,21 @@ export const MARKETING_CSS = /* css */ `
 @media (max-width:540px){.atrium-site .a-features__row{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
 /* stats */
-.atrium-site .a-stats{display:grid;grid-template-columns:repeat(var(--cols,4),minmax(0,1fr));gap:clamp(1.5rem,3vw,2.5rem)}
+.atrium-site .a-statlist{display:grid;grid-template-columns:repeat(var(--cols,4),minmax(0,1fr));gap:clamp(1.5rem,3vw,2.5rem)}
 .atrium-site .a-stat{display:flex;flex-direction:column-reverse;justify-content:flex-end;gap:.6rem;min-width:0}
 .atrium-site .a-stat__desc{order:-1;font-size:var(--a-text-sm);color:var(--t-muted)}
 .atrium-site .a-stat__value{display:flex;align-items:baseline;gap:.15em;margin:0;font-family:var(--a-font-heading);font-weight:var(--a-weight-heading);font-size:var(--a-text-5xl);line-height:1;letter-spacing:-.02em;font-variant-numeric:lining-nums}
 .atrium-site .a-stat__affix{font-size:.5em;color:var(--t-muted)}
+.atrium-site .a-statlist--text .a-stat__value,.atrium-site .a-statlist--text.a-statlist--large .a-stat__value{font-size:var(--a-text-2xl);line-height:1.15;flex-wrap:wrap;letter-spacing:-.005em}
+.atrium-site .a-stat__value{overflow-wrap:anywhere;min-width:0}
 .atrium-site .a-stat__label{font-size:var(--a-text-sm);color:var(--t-muted);line-height:1.45}
-.atrium-site .a-stats--dividers.a-stats--inline .a-stat+.a-stat{padding-left:clamp(1.5rem,3vw,2.5rem);border-left:1px solid var(--t-border)}
-.atrium-site .a-stats--cards .a-stat{padding:clamp(1.5rem,3vw,2.25rem);background:var(--t-surface);border-radius:var(--a-radius-md)}
-.atrium-site .a-stats--large{gap:0}
-.atrium-site .a-stats--large .a-stat{padding:clamp(1.5rem,3vw,2.5rem) clamp(1rem,2vw,2rem) clamp(1.5rem,3vw,2.5rem) 0;border-top:1px solid var(--t-border)}
-.atrium-site .a-stats--large .a-stat__value{font-size:clamp(3.5rem,8vw,7.5rem)}
-@media (max-width:991px){.atrium-site .a-stats{grid-template-columns:repeat(var(--cols-t,2),minmax(0,1fr))}.atrium-site .a-stats--dividers.a-stats--inline .a-stat:nth-child(odd){padding-left:0;border-left:0}}
-@media (max-width:540px){.atrium-site .a-stats{grid-template-columns:repeat(var(--cols-m,2),minmax(0,1fr))}}
+.atrium-site .a-statlist--dividers.a-statlist--inline .a-stat+.a-stat{padding-left:clamp(1.5rem,3vw,2.5rem);border-left:1px solid var(--t-border)}
+.atrium-site .a-statlist--cards .a-stat{padding:clamp(1.5rem,3vw,2.25rem);background:var(--t-surface);border-radius:var(--a-radius-md)}
+.atrium-site .a-statlist--large{gap:0}
+.atrium-site .a-statlist--large .a-stat{padding:clamp(1.5rem,3vw,2.5rem) clamp(1rem,2vw,2rem) clamp(1.5rem,3vw,2.5rem) 0;border-top:1px solid var(--t-border)}
+.atrium-site .a-statlist--large .a-stat__value{font-size:clamp(3.5rem,8vw,7.5rem)}
+@media (max-width:991px){.atrium-site .a-statlist{grid-template-columns:repeat(var(--cols-t,2),minmax(0,1fr))}.atrium-site .a-statlist--dividers.a-statlist--inline .a-stat:nth-child(odd){padding-left:0;border-left:0}}
+@media (max-width:540px){.atrium-site .a-statlist{grid-template-columns:repeat(var(--cols-m,2),minmax(0,1fr))}}
 
 /* testimonials */
 .atrium-site .a-testimonial{display:grid;gap:1.4rem;margin:0;align-content:start}
@@ -696,7 +700,7 @@ export const MARKETING_CSS = /* css */ `
 .atrium-site .a-testimonial__role{color:var(--t-muted);font-size:var(--a-text-xs)}
 .atrium-site .a-testimonials__grid .a-testimonial{padding:clamp(1.5rem,3vw,2.25rem);border:1px solid var(--t-border);border-radius:var(--a-radius-md)}
 .atrium-site .a-testimonials__grid .a-testimonial__quote{font-size:var(--a-text-lg)}
-.atrium-site .a-testimonials__carousel .a-carousel__controls{justify-content:center;gap:2rem}
+.atrium-site .a-testimonials__carousel .a-slider__controls{justify-content:center;gap:2rem}
 .atrium-site .a-stars{display:inline-flex;gap:.15rem;color:var(--t-muted)}
 .atrium-site .a-stars .is-on{color:var(--a-color-accent);fill:currentColor}
 
@@ -762,31 +766,31 @@ export const MARKETING_CSS = /* css */ `
 @media (max-width:540px){.atrium-site .a-member-row{grid-template-columns:7rem 1fr}}
 
 /* timeline */
-.atrium-site .a-timeline{position:relative;display:grid;gap:clamp(2rem,4vw,3rem)}
-.atrium-site .a-timeline--vertical,.atrium-site .a-timeline--alternating{padding-left:2.25rem}
-.atrium-site .a-timeline--vertical::before,.atrium-site .a-timeline--alternating::before{content:"";position:absolute;left:.35rem;top:.5rem;bottom:.5rem;width:1px;background:var(--t-border)}
-.atrium-site .a-timeline__item{position:relative;display:grid}
-.atrium-site .a-timeline__dot{position:absolute;left:-2.25rem;top:.45rem;width:.75rem;height:.75rem;border-radius:50%;background:var(--t-bg);border:1px solid var(--t-text)}
-.atrium-site .a-timeline__body{display:grid;gap:.5rem}
-.atrium-site .a-timeline__date{font-size:var(--a-text-xs);font-weight:600;letter-spacing:var(--a-tracking-eyebrow);text-transform:uppercase;color:var(--t-muted)}
-.atrium-site .a-timeline__title{font-size:var(--a-text-2xl)}
-.atrium-site .a-timeline__img{margin-top:.75rem;max-width:30rem}
+.atrium-site .a-tl{position:relative;display:grid;gap:clamp(2rem,4vw,3rem)}
+.atrium-site .a-tl--vertical,.atrium-site .a-tl--alternating{padding-left:2.25rem}
+.atrium-site .a-tl--vertical::before,.atrium-site .a-tl--alternating::before{content:"";position:absolute;left:.35rem;top:.5rem;bottom:.5rem;width:1px;background:var(--t-border)}
+.atrium-site .a-tl__item{position:relative;display:grid}
+.atrium-site .a-tl__dot{position:absolute;left:-2.25rem;top:.45rem;width:.75rem;height:.75rem;border-radius:50%;background:var(--t-bg);border:1px solid var(--t-text)}
+.atrium-site .a-tl__body{display:grid;gap:.5rem}
+.atrium-site .a-tl__date{font-size:var(--a-text-xs);font-weight:600;letter-spacing:var(--a-tracking-eyebrow);text-transform:uppercase;color:var(--t-muted)}
+.atrium-site .a-tl__title{font-size:var(--a-text-2xl)}
+.atrium-site .a-tl__img{margin-top:.75rem;max-width:30rem}
 @media (min-width:992px){
-  .atrium-site .a-timeline--alternating{padding-left:0}
-  .atrium-site .a-timeline--alternating::before{left:50%}
-  .atrium-site .a-timeline--alternating .a-timeline__item{width:50%;padding-right:3.5rem}
-  .atrium-site .a-timeline--alternating .a-timeline__item:nth-child(even){margin-left:50%;padding:0 0 0 3.5rem}
-  .atrium-site .a-timeline--alternating .a-timeline__dot{left:auto;right:-.375rem}
-  .atrium-site .a-timeline--alternating .a-timeline__item:nth-child(even) .a-timeline__dot{left:-.375rem;right:auto}
-  .atrium-site .a-timeline--alternating .a-timeline__item:nth-child(odd){text-align:right}
-  .atrium-site .a-timeline--alternating .a-timeline__item:nth-child(odd) .a-timeline__img{margin-left:auto}
+  .atrium-site .a-tl--alternating{padding-left:0}
+  .atrium-site .a-tl--alternating::before{left:50%}
+  .atrium-site .a-tl--alternating .a-tl__item{width:50%;padding-right:3.5rem}
+  .atrium-site .a-tl--alternating .a-tl__item:nth-child(even){margin-left:50%;padding:0 0 0 3.5rem}
+  .atrium-site .a-tl--alternating .a-tl__dot{left:auto;right:-.375rem}
+  .atrium-site .a-tl--alternating .a-tl__item:nth-child(even) .a-tl__dot{left:-.375rem;right:auto}
+  .atrium-site .a-tl--alternating .a-tl__item:nth-child(odd){text-align:right}
+  .atrium-site .a-tl--alternating .a-tl__item:nth-child(odd) .a-tl__img{margin-left:auto}
 }
-.atrium-site .a-timeline--steps{grid-template-columns:repeat(var(--cols,4),minmax(0,1fr));gap:clamp(1.5rem,3vw,2.5rem)}
-.atrium-site .a-timeline--steps .a-timeline__item{padding-top:1.5rem;border-top:1px solid var(--t-border)}
-.atrium-site .a-timeline--steps .a-timeline__dot{position:static;width:auto;height:auto;border:0;border-radius:0;background:none;margin-bottom:1rem;font-family:var(--a-font-heading);font-size:var(--a-text-sm);color:var(--t-muted)}
-.atrium-site .a-timeline--steps .a-timeline__title{font-size:var(--a-text-xl)}
-@media (max-width:991px){.atrium-site .a-timeline--steps{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media (max-width:540px){.atrium-site .a-timeline--steps{grid-template-columns:1fr}}
+.atrium-site .a-tl--steps{grid-template-columns:repeat(var(--cols,4),minmax(0,1fr));gap:clamp(1.5rem,3vw,2.5rem)}
+.atrium-site .a-tl--steps .a-tl__item{padding-top:1.5rem;border-top:1px solid var(--t-border)}
+.atrium-site .a-tl--steps .a-tl__dot{position:static;width:auto;height:auto;border:0;border-radius:0;background:none;margin-bottom:1rem;font-family:var(--a-font-heading);font-size:var(--a-text-sm);color:var(--t-muted)}
+.atrium-site .a-tl--steps .a-tl__title{font-size:var(--a-text-xl)}
+@media (max-width:991px){.atrium-site .a-tl--steps{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:540px){.atrium-site .a-tl--steps{grid-template-columns:1fr}}
 
 /* content split */
 .atrium-site .a-split__grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:clamp(2.5rem,7vw,7rem);align-items:center}
@@ -845,16 +849,16 @@ export const MARKETING_CSS = /* css */ `
 @media (max-width:991px){.atrium-site .a-text2{grid-template-columns:1fr}}
 
 /* benefits */
-.atrium-site .a-benefits{display:grid;gap:1rem 2.5rem;grid-template-columns:repeat(var(--cols,2),minmax(0,1fr))}
-.atrium-site .a-benefits--with-image{grid-template-columns:1fr;gap:0;border-top:1px solid var(--t-border);width:100%}
-.atrium-site .a-benefits--with-image .a-benefit,.atrium-site .a-benefits--list .a-benefit{padding-block:1rem;border-bottom:1px solid var(--t-border)}
-.atrium-site .a-benefits--list{column-gap:clamp(2rem,5vw,4rem);row-gap:0;border-top:1px solid var(--t-border)}
+.atrium-site .a-blist{display:grid;gap:1rem 2.5rem;grid-template-columns:repeat(var(--cols,2),minmax(0,1fr))}
+.atrium-site .a-blist--with-image{grid-template-columns:1fr;gap:0;border-top:1px solid var(--t-border);width:100%}
+.atrium-site .a-blist--with-image .a-benefit,.atrium-site .a-blist--list .a-benefit{padding-block:1rem;border-bottom:1px solid var(--t-border)}
+.atrium-site .a-blist--list{column-gap:clamp(2rem,5vw,4rem);row-gap:0;border-top:1px solid var(--t-border)}
 .atrium-site .a-benefit{display:flex;gap:1rem;align-items:flex-start}
 .atrium-site .a-benefit__icon{display:inline-flex;margin-top:.2em;color:var(--t-accent)}
 .atrium-site .a-benefit__body{display:grid;gap:.3rem}
 .atrium-site .a-benefit__text{font-size:var(--a-text-sm);color:var(--t-muted)}
-.atrium-site .a-benefits--grid{gap:clamp(2rem,4vw,3rem)}
-.atrium-site .a-benefits--grid .a-benefit{flex-direction:column;gap:1rem}
-.atrium-site .a-benefits--grid .a-benefit__title{font-size:var(--a-text-xl)}
-@media (max-width:767px){.atrium-site .a-benefits{grid-template-columns:1fr}}
+.atrium-site .a-blist--grid{gap:clamp(2rem,4vw,3rem)}
+.atrium-site .a-blist--grid .a-benefit{flex-direction:column;gap:1rem}
+.atrium-site .a-blist--grid .a-benefit__title{font-size:var(--a-text-xl)}
+@media (max-width:767px){.atrium-site .a-blist{grid-template-columns:1fr}}
 `;

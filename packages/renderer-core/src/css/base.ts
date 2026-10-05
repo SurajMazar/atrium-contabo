@@ -10,7 +10,7 @@ export const BASE_CSS = /* css */ `
   --a-gap:clamp(1.5rem,3vw,2.75rem);--a-header-h:4.75rem;
   background:var(--a-color-background);color:var(--a-color-text);font-family:var(--a-font-body);font-weight:var(--a-weight-body);
   font-size:var(--a-text-base);line-height:var(--a-leading-body);-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;
-  text-rendering:optimizeLegibility;font-kerning:normal;overflow-x:clip;min-height:100vh;display:flex;flex-direction:column}
+  text-rendering:optimizeLegibility;font-kerning:normal;overflow-x:clip;min-height:100vh;display:flex;flex-direction:column;margin:0}
 .atrium-site *,.atrium-site *::before,.atrium-site *::after{box-sizing:border-box}
 .atrium-site :where(h1,h2,h3,h4,h5,h6,p,figure,blockquote,dl,dd,ul,ol,fieldset){margin:0}
 .atrium-site :where(ul,ol){padding:0;list-style:none}
@@ -55,13 +55,15 @@ export const BASE_CSS = /* css */ `
 
 /* typography */
 .atrium-site .a-heading{font-family:var(--a-font-heading);font-weight:var(--a-weight-heading);line-height:var(--a-leading-heading);
-  letter-spacing:var(--a-tracking-heading);text-transform:var(--a-transform-heading);text-wrap:balance;color:inherit;font-size:var(--a-text-3xl)}
+  letter-spacing:var(--a-tracking-heading);text-transform:var(--a-transform-heading);text-wrap:balance;color:inherit}
 .atrium-site .a-heading em{font-style:italic;font-weight:inherit;letter-spacing:-.005em}
-.atrium-site h1.a-heading{font-size:var(--a-text-5xl)}
-.atrium-site h2.a-heading{font-size:var(--a-text-4xl)}
-.atrium-site h3.a-heading{font-size:var(--a-text-2xl);line-height:1.15}
-.atrium-site h4.a-heading{font-size:var(--a-text-xl);line-height:1.2}
-.atrium-site h5.a-heading,.atrium-site h6.a-heading{font-size:var(--a-text-lg);line-height:1.25}
+/* level sizes use :where() so component classes (.a-x__title) always win */
+.atrium-site :where(.a-heading){font-size:var(--a-text-3xl)}
+.atrium-site :where(h1.a-heading){font-size:var(--a-text-5xl)}
+.atrium-site :where(h2.a-heading){font-size:var(--a-text-4xl)}
+.atrium-site :where(h3.a-heading){font-size:var(--a-text-2xl);line-height:1.15}
+.atrium-site :where(h4.a-heading){font-size:var(--a-text-xl);line-height:1.2}
+.atrium-site :where(h5.a-heading,h6.a-heading){font-size:var(--a-text-lg);line-height:1.25}
 .atrium-site .a-heading--display{font-size:var(--a-text-6xl)!important;line-height:.98}
 .atrium-site .a-heading--xl{font-size:var(--a-text-5xl)!important}
 .atrium-site .a-heading--lg{font-size:var(--a-text-4xl)!important}

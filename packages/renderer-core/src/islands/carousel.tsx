@@ -79,34 +79,34 @@ export function Carousel({ label, children, autoplay, interval = 6, loop = true,
 
   return (
     <div
-      className={['a-carousel', `a-carousel--${layout}`, className].filter(Boolean).join(' ')}
+      className={['a-slider', `a-slider--${layout}`, className].filter(Boolean).join(' ')}
       role="region"
       aria-roledescription="carousel"
       aria-label={label}
       onMouseEnter={() => (hovering.current = true)}
       onMouseLeave={() => (hovering.current = false)}
     >
-      <div ref={track} className="a-carousel__track" tabIndex={0} onKeyDown={onKey} aria-live={autoplay && !paused ? 'off' : 'polite'}>
+      <div ref={track} className="a-slider__track" tabIndex={0} onKeyDown={onKey} aria-live={autoplay && !paused ? 'off' : 'polite'}>
         {slides.map((s, i) => (
-          <div key={i} className={`a-carousel__slide${i === active ? ' is-active' : ''}`} data-index={i} role="group" aria-roledescription="slide" aria-label={`${i + 1} of ${count}`}>
+          <div key={i} className={`a-slider__slide${i === active ? ' is-active' : ''}`} data-index={i} role="group" aria-roledescription="slide" aria-label={`${i + 1} of ${count}`}>
             {s}
           </div>
         ))}
       </div>
       {count > 1 && (showArrows || showDots) ? (
-        <div className="a-carousel__controls">
+        <div className="a-slider__controls">
           {showDots ? (
-            <div className="a-carousel__dots" role="tablist" aria-label="Choose slide">
+            <div className="a-slider__dots" role="tablist" aria-label="Choose slide">
               {slides.map((_, i) => (
-                <button key={i} type="button" role="tab" aria-selected={i === active} aria-label={`Go to slide ${i + 1}`} className={`a-carousel__dot${i === active ? ' is-active' : ''}`} onClick={() => goTo(i)} />
+                <button key={i} type="button" role="tab" aria-selected={i === active} aria-label={`Go to slide ${i + 1}`} className={`a-slider__dot${i === active ? ' is-active' : ''}`} onClick={() => goTo(i)} />
               ))}
             </div>
           ) : <span />}
           {showArrows ? (
-            <div className="a-carousel__arrows">
-              <span className="a-carousel__count" aria-hidden="true">{String(active + 1).padStart(2, '0')} / {String(count).padStart(2, '0')}</span>
-              <button type="button" className="a-carousel__arrow" onClick={() => goTo(active - 1)} aria-label="Previous slide" disabled={!loop && active === 0}><Chevron dir="left" /></button>
-              <button type="button" className="a-carousel__arrow" onClick={() => goTo(active + 1)} aria-label="Next slide" disabled={!loop && active === count - 1}><Chevron dir="right" /></button>
+            <div className="a-slider__arrows">
+              <span className="a-slider__count" aria-hidden="true">{String(active + 1).padStart(2, '0')} / {String(count).padStart(2, '0')}</span>
+              <button type="button" className="a-slider__arrow" onClick={() => goTo(active - 1)} aria-label="Previous slide" disabled={!loop && active === 0}><Chevron dir="left" /></button>
+              <button type="button" className="a-slider__arrow" onClick={() => goTo(active + 1)} aria-label="Next slide" disabled={!loop && active === count - 1}><Chevron dir="right" /></button>
             </div>
           ) : null}
         </div>
