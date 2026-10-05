@@ -1,0 +1,33 @@
+{
+  "name": "atrium",
+  "private": true,
+  "description": "Atrium \u2014 schema-driven, AI-native, multi-tenant website builder platform",
+  "packageManager": "pnpm@10.21.0",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "turbo run dev --parallel --filter=@atrium/api --filter=@atrium/admin --filter=@atrium/renderer --filter=@atrium/worker",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:generate": "pnpm --filter @atrium/db db:generate",
+    "db:migrate": "pnpm --filter @atrium/db db:migrate",
+    "db:deploy": "pnpm --filter @atrium/db db:deploy",
+    "db:seed": "pnpm --filter @atrium/db db:seed",
+    "db:studio": "pnpm --filter @atrium/db db:studio",
+    "infra:up": "podman compose -f infra/compose.yaml up -d",
+    "infra:down": "podman compose -f infra/compose.yaml down",
+    "atrium": "node packages/cli/bin/atrium.mjs",
+    "e2e": "pnpm --filter @atrium/e2e test",
+    "db:reset": "pnpm --filter @atrium/db db:reset"
+  },
+  "devDependencies": {
+    "prettier": "^3.6.2",
+    "turbo": "^2.11.7",
+    "typescript": "5.9.3"
+  }
+}

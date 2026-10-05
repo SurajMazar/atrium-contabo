@@ -1,0 +1,6 @@
+{
+  "extends": "@atrium/typescript-config/library.json",
+  "compilerOptions": { "rootDir": "src", "outDir": "dist" },
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts", "src/test-fixtures.ts"]
+}

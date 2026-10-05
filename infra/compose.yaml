@@ -1,0 +1,118 @@
+# Atrium local infrastructure — designed for Podman (works with Docker too).
+#   podman compose -f infra/compose.yaml up -d                 # backing services only
+#   podman compose -f infra/compose.yaml --profile app up -d   # + api, worker, renderer, admin containers
+#
+# Host ports default to the 5xxxx range so they never collide with other local
+# stacks (e.g. an existing postgres on 5432 / mailpit on 1025). Override via .env.
+name: atrium
+
+services:
+  postgres:
+    image: docker.io/library/postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-atrium}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-atrium}
+      POSTGRES_DB: ${POSTGRES_DB:-atrium}
+    ports: ["${ATRIUM_PG_PORT:-55432}:5432"]
+    volumes: [atrium-pg:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-atrium} -d ${POSTGRES_DB:-atrium}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: docker.io/library/redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    ports: ["${ATRIUM_REDIS_PORT:-56379}:6379"]
+    volumes: [atrium-redis:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  # S3-compatible object storage (SeaweedFS). Swap for AWS S3, R2, Azure Blob… in production.
+  s3:
+    image: docker.io/chrislusf/seaweedfs:latest
+    command: ["server", "-dir=/data", "-ip.bind=0.0.0.0", "-master.volumeSizeLimitMB=512", "-volume.max=0", "-s3", "-s3.port=8333", "-s3.config=/etc/seaweedfs/s3.json"]
+    ports: ["${ATRIUM_S3_PORT:-59000}:8333"]
+    volumes:
+      - atrium-s3:/data
+      - ./seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro,Z
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9333/cluster/status || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  s3-init:
+    image: docker.io/chrislusf/seaweedfs:latest
+    depends_on:
+      s3: { condition: service_healthy }
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["sleep 3; echo 's3.bucket.create -name ${S3_BUCKET:-atrium-media}' | weed shell -master=s3:9333 || true"]
+    restart: "no"
+
+  mailpit:
+    image: docker.io/axllent/mailpit:latest
+    ports:
+      - "${ATRIUM_SMTP_PORT:-51025}:1025"
+      - "${ATRIUM_MAILPIT_PORT:-58025}:8025"
+    restart: unless-stopped
+
+  # ── Application containers (profile: app) ──────────────────────────────
+  api:
+    profiles: ["app"]
+    build: { context: .., dockerfile: infra/containers/api.Containerfile }
+    env_file: [../.env]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-atrium}:${POSTGRES_PASSWORD:-atrium}@postgres:5432/${POSTGRES_DB:-atrium}
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://s3:8333
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+    ports: ["${API_PORT:-4000}:4000"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  worker:
+    profiles: ["app"]
+    build: { context: .., dockerfile: infra/containers/worker.Containerfile }
+    env_file: [../.env]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-atrium}:${POSTGRES_PASSWORD:-atrium}@postgres:5432/${POSTGRES_DB:-atrium}
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://s3:8333
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  renderer:
+    profiles: ["app"]
+    build: { context: .., dockerfile: infra/containers/renderer.Containerfile }
+    env_file: [../.env]
+    environment:
+      ATRIUM_API_INTERNAL_URL: http://api:4000
+    ports: ["${RENDERER_PORT:-3001}:3001"]
+    depends_on: [api]
+
+  admin:
+    profiles: ["app"]
+    build: { context: .., dockerfile: infra/containers/admin.Containerfile }
+    env_file: [../.env]
+    environment:
+      ATRIUM_API_INTERNAL_URL: http://api:4000
+    ports: ["${ADMIN_PORT:-3000}:3000"]
+    depends_on: [api]
+
+volumes:
+  atrium-pg:
+  atrium-redis:
+  atrium-s3:

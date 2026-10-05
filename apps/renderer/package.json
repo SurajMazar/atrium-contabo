@@ -1,0 +1,32 @@
+{
+  "name": "@atrium/renderer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Public website renderer (Next.js): SSR/ISR of published snapshots, previews, sitemap/robots, redirects",
+  "scripts": {
+    "dev": "next dev --port 3001",
+    "build": "next build",
+    "start": "next start --port 3001",
+    "typecheck": "tsc --noEmit",
+    "lint": "echo skip"
+  },
+  "dependencies": {
+    "@atrium/schema": "workspace:*",
+    "@atrium/renderer-core": "workspace:*",
+    "@atrium/design-tokens": "workspace:*",
+    "@atrium/animations": "workspace:*",
+    "@atrium/component-registry": "workspace:*",
+    "@atrium/builder-core": "workspace:*",
+    "next": "^16.3.8",
+    "gsap": "^3.15.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@atrium/typescript-config": "workspace:*",
+    "@types/node": "^24.0.0",
+    "typescript": "5.9.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0"
+  }
+}

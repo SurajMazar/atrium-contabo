@@ -1,0 +1,43 @@
+{
+  "name": "@atrium/server-kit",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Server-side shared kit for API, worker and CLI: secret encryption, queue contracts, provider resolution, HMAC signing, logging",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@atrium/db": "workspace:*",
+    "@atrium/providers": "workspace:*",
+    "@atrium/schema": "workspace:*",
+    "bullmq": "^5.61.0",
+    "ioredis": "^5.11.1",
+    "pino": "^9.7.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@atrium/typescript-config": "workspace:*",
+    "tsup": "^8.5.1",
+    "typescript": "5.9.3",
+    "vitest": "^5.0.3",
+    "@types/node": "^24.0.0"
+  }
+}

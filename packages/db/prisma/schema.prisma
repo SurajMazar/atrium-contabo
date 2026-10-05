@@ -1,0 +1,1099 @@
+// Atrium platform data model.
+// Conventions: cuid ids, snake_case tables/columns, every tenant-owned row carries
+// organization_id (directly or via its website) and is only accessed through
+// services that scope queries by an authorized organization.
+// JSONB is used for genuinely flexible structures (page trees, theme tokens,
+// provider config, rule definitions) — relational data stays relational.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ───────────────────────────── Identity ─────────────────────────────
+
+model User {
+  id              String    @id @default(cuid())
+  email           String    @unique
+  name            String
+  avatarUrl       String?   @map("avatar_url")
+  passwordHash    String?   @map("password_hash")
+  emailVerifiedAt DateTime? @map("email_verified_at")
+  isSuperAdmin    Boolean   @default(false) @map("is_super_admin")
+  mfaEnabled      Boolean   @default(false) @map("mfa_enabled")
+  mfaSecretEnc    String?   @map("mfa_secret_enc")
+  mfaRecoveryEnc  String?   @map("mfa_recovery_enc")
+  locale          String    @default("en")
+  lastLoginAt     DateTime? @map("last_login_at")
+  disabledAt      DateTime? @map("disabled_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  sessions      Session[]
+  memberships   OrganizationMember[]
+  oauthAccounts OAuthAccount[]
+  tokens        UserToken[]
+
+  @@map("users")
+}
+
+model Session {
+  id               String    @id @default(cuid())
+  userId           String    @map("user_id")
+  refreshTokenHash String    @unique @map("refresh_token_hash")
+  userAgent        String?   @map("user_agent")
+  ip               String?
+  mfaVerified      Boolean   @default(false) @map("mfa_verified")
+  lastUsedAt       DateTime  @default(now()) @map("last_used_at")
+  expiresAt        DateTime  @map("expires_at")
+  revokedAt        DateTime? @map("revoked_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model OAuthAccount {
+  id                String   @id @default(cuid())
+  userId            String   @map("user_id")
+  provider          String
+  providerAccountId String   @map("provider_account_id")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("oauth_accounts")
+}
+
+enum UserTokenType {
+  PASSWORD_RESET
+  EMAIL_VERIFY
+  MFA_CHALLENGE
+}
+
+model UserToken {
+  id        String        @id @default(cuid())
+  userId    String        @map("user_id")
+  type      UserTokenType
+  tokenHash String        @unique @map("token_hash")
+  expiresAt DateTime      @map("expires_at")
+  usedAt    DateTime?     @map("used_at")
+  createdAt DateTime      @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type])
+  @@map("user_tokens")
+}
+
+// ───────────────────────────── Tenancy & RBAC ─────────────────────────────
+
+model Plan {
+  key          String  @id
+  name         String
+  limits       Json
+  features     String[]
+  priceMonthly Int     @default(0) @map("price_monthly")
+  active       Boolean @default(true)
+
+  organizations Organization[]
+
+  @@map("plans")
+}
+
+model Organization {
+  id           String    @id @default(cuid())
+  name         String
+  slug         String    @unique
+  planKey      String    @default("starter") @map("plan_key")
+  featureFlags Json      @default("{}") @map("feature_flags")
+  limits       Json?
+  billingRef   String?   @map("billing_ref")
+  suspendedAt  DateTime? @map("suspended_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  plan        Plan                 @relation(fields: [planKey], references: [key])
+  members     OrganizationMember[]
+  roles       Role[]
+  invitations Invitation[]
+  workspaces  Workspace[]
+  websites    Website[]
+  media       Media[]
+  folders     MediaFolder[]
+  emailProviders   EmailProvider[]
+  smsProviders     SmsProvider[]
+  storageProviders StorageProvider[]
+  integrations     Integration[]
+  webhooks         Webhook[]
+  aiGenerations    AiGeneration[]
+  aiUsage          AiUsage[]
+  auditLogs        AuditLog[]
+  templates        Template[]
+
+  @@map("organizations")
+}
+
+model Workspace {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  name           String
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  websites     Website[]
+
+  @@index([organizationId])
+  @@map("workspaces")
+}
+
+model Permission {
+  key         String @id
+  description String
+
+  roles RolePermission[]
+
+  @@map("permissions")
+}
+
+model Role {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  key            String
+  name           String
+  description    String?
+  isSystem       Boolean  @default(false) @map("is_system")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  permissions  RolePermission[]
+  members      OrganizationMember[]
+  invitations  Invitation[]
+
+  @@unique([organizationId, key])
+  @@map("roles")
+}
+
+model RolePermission {
+  roleId        String @map("role_id")
+  permissionKey String @map("permission_key")
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionKey], references: [key], onDelete: Cascade)
+
+  @@id([roleId, permissionKey])
+  @@map("role_permissions")
+}
+
+model OrganizationMember {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  userId         String   @map("user_id")
+  roleId         String   @map("role_id")
+  /// When non-empty the member can only access these websites (resource-level scoping).
+  websiteIds     String[] @default([]) @map("website_ids")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role         Role         @relation(fields: [roleId], references: [id])
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@map("organization_members")
+}
+
+model Invitation {
+  id             String    @id @default(cuid())
+  organizationId String    @map("organization_id")
+  email          String
+  roleId         String    @map("role_id")
+  tokenHash      String    @unique @map("token_hash")
+  invitedById    String    @map("invited_by_id")
+  expiresAt      DateTime  @map("expires_at")
+  acceptedAt     DateTime? @map("accepted_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  role         Role         @relation(fields: [roleId], references: [id])
+
+  @@index([organizationId])
+  @@map("invitations")
+}
+
+// ───────────────────────────── Websites ─────────────────────────────
+
+enum WebsiteStatus {
+  DRAFT
+  PUBLISHED
+  SUSPENDED
+  ARCHIVED
+}
+
+enum DeploymentMode {
+  PLATFORM
+  INDEPENDENT
+}
+
+model Website {
+  id                 String         @id @default(cuid())
+  organizationId     String         @map("organization_id")
+  workspaceId        String?        @map("workspace_id")
+  name               String
+  /// Platform subdomain: {slug}.sites.example.com
+  slug               String         @unique
+  status             WebsiteStatus  @default(DRAFT)
+  deploymentMode     DeploymentMode @default(PLATFORM) @map("deployment_mode")
+  deploymentProvider String?        @map("deployment_provider")
+  deploymentIntegrationId String?   @map("deployment_integration_id")
+  /// Provider-side project name/id for independent deployments.
+  externalProject    String?        @map("external_project")
+  publishedVersionId String?        @unique @map("published_version_id")
+  defaultLocale      String         @default("en") @map("default_locale")
+  thumbnailUrl       String?        @map("thumbnail_url")
+  createdById        String?        @map("created_by_id")
+  updatedById        String?        @map("updated_by_id")
+  createdAt          DateTime       @default(now()) @map("created_at")
+  updatedAt          DateTime       @updatedAt @map("updated_at")
+  deletedAt          DateTime?      @map("deleted_at")
+
+  organization     Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  workspace        Workspace?       @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  settings         WebsiteSettings?
+  theme            Theme?
+  pages            Page[]
+  versions         WebsiteVersion[] @relation("WebsiteVersions")
+  publishedVersion WebsiteVersion?  @relation("PublishedVersion", fields: [publishedVersionId], references: [id])
+  globalSections   GlobalSection[]
+  collections      Collection[]
+  forms            Form[]
+  submissions      FormSubmission[]
+  domains          Domain[]
+  deployments      Deployment[]
+  redirects        Redirect[]
+  previewTokens    PreviewToken[]
+  analyticsEvents  AnalyticsEvent[]
+  analyticsDaily   AnalyticsDaily[]
+  media            Media[]
+
+  @@index([organizationId])
+  @@map("websites")
+}
+
+/// Draft site-level configuration (published copies live in website_versions.snapshot).
+model WebsiteSettings {
+  websiteId  String   @id @map("website_id")
+  settings   Json
+  navigation Json
+  header     Json
+  footer     Json
+  customCss  String?  @map("custom_css")
+  revision   Int      @default(1)
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  website Website @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+
+  @@map("website_settings")
+}
+
+model Theme {
+  id        String   @id @default(cuid())
+  websiteId String   @unique @map("website_id")
+  presetKey String?  @map("preset_key")
+  tokens    Json
+  revision  Int      @default(1)
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  website Website @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+
+  @@map("themes")
+}
+
+enum VersionSource {
+  MANUAL
+  AUTOSAVE
+  AI
+  RESTORE
+  IMPORT
+  PUBLISH
+}
+
+/// Immutable published snapshot of an entire website.
+model WebsiteVersion {
+  id          String        @id @default(cuid())
+  websiteId   String        @map("website_id")
+  number      Int
+  snapshot    Json
+  checksum    String
+  message     String?
+  source      VersionSource @default(PUBLISH)
+  createdById String?       @map("created_by_id")
+  createdAt   DateTime      @default(now()) @map("created_at")
+
+  website       Website     @relation("WebsiteVersions", fields: [websiteId], references: [id], onDelete: Cascade)
+  publishedFor  Website?    @relation("PublishedVersion")
+  deployments   Deployment[]
+
+  @@unique([websiteId, number])
+  @@map("website_versions")
+}
+
+enum PageStatus {
+  DRAFT
+  PUBLISHED
+  SCHEDULED
+  ARCHIVED
+}
+
+enum PageKind {
+  PAGE
+  COLLECTION_TEMPLATE
+  NOT_FOUND
+}
+
+model Page {
+  id          String     @id @default(cuid())
+  websiteId   String     @map("website_id")
+  title       String
+  slug        String
+  kind        PageKind   @default(PAGE)
+  status      PageStatus @default(DRAFT)
+  isHomepage  Boolean    @default(false) @map("is_homepage")
+  position    Int        @default(0)
+  collection  String?
+  publishAt   DateTime?  @map("publish_at")
+  /// Draft page document: sections tree, seo, layout, customCss, scripts, translations.
+  document    Json
+  revision    Int        @default(1)
+  publishedAt DateTime?  @map("published_at")
+  archivedAt  DateTime?  @map("archived_at")
+  lockedById  String?    @map("locked_by_id")
+  lockedUntil DateTime?  @map("locked_until")
+  createdById String?    @map("created_by_id")
+  updatedById String?    @map("updated_by_id")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  website  Website       @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+  versions PageVersion[]
+
+  @@unique([websiteId, slug])
+  @@index([websiteId, status])
+  @@map("pages")
+}
+
+model PageVersion {
+  id          String        @id @default(cuid())
+  pageId      String        @map("page_id")
+  number      Int
+  document    Json
+  title       String
+  slug        String
+  message     String?
+  source      VersionSource @default(MANUAL)
+  aiGenerationId String?    @map("ai_generation_id")
+  createdById String?       @map("created_by_id")
+  createdAt   DateTime      @default(now()) @map("created_at")
+
+  page Page @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@unique([pageId, number])
+  @@map("page_versions")
+}
+
+model GlobalSection {
+  id        String   @id @default(cuid())
+  websiteId String   @map("website_id")
+  name      String
+  node      Json
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  website Website @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+
+  @@index([websiteId])
+  @@map("global_sections")
+}
+
+enum TemplateKind {
+  SITE
+  PAGE
+  SECTION
+  COMPONENT_PRESET
+  THEME
+}
+
+/// Platform (organization_id null) or organization templates and blueprints.
+model Template {
+  id             String       @id @default(cuid())
+  organizationId String?      @map("organization_id")
+  kind           TemplateKind
+  key            String?      @unique
+  name           String
+  description    String?
+  category       String?
+  tags           String[]     @default([])
+  thumbnailUrl   String?      @map("thumbnail_url")
+  isBlueprint    Boolean      @default(false) @map("is_blueprint")
+  data           Json
+  createdById    String?      @map("created_by_id")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, kind])
+  @@map("templates")
+}
+
+model Redirect {
+  id          String   @id @default(cuid())
+  websiteId   String   @map("website_id")
+  source      String
+  destination String
+  statusCode  Int      @default(301) @map("status_code")
+  enabled     Boolean  @default(true)
+  hits        Int      @default(0)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  website Website @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+
+  @@unique([websiteId, source])
+  @@map("redirects")
+}
+
+model PreviewToken {
+  id           String    @id @default(cuid())
+  websiteId    String    @map("website_id")
+  tokenHash    String    @unique @map("token_hash")
+  passwordHash String?   @map("password_hash")
+  label        String?
+  expiresAt    DateTime  @map("expires_at")
+  revokedAt    DateTime? @map("revoked_at")
+  createdById  String?   @map("created_by_id")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  website Website @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+
+  @@map("preview_tokens")
+}
+
+// ───────────────────────────── CMS ─────────────────────────────
+
+model Collection {
+  id           String   @id @default(cuid())
+  websiteId    String   @map("website_id")
+  slug         String
+  name         String
+  singularName String?  @map("singular_name")
+  description  String?
+  titleField   String   @default("name") @map("title_field")
+  routePrefix  String?  @map("route_prefix")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  website Website           @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+  fields  CollectionField[]
+  items   CollectionItem[]
+
+  @@unique([websiteId, slug])
+  @@map("collections")
+}
+
+model CollectionField {
+  id           String  @id @default(cuid())
+  collectionId String  @map("collection_id")
+  key          String
+  label        String
+  type         String
+  required     Boolean @default(false)
+  position     Int     @default(0)
+  config       Json    @default("{}")
+
+  collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  @@unique([collectionId, key])
+  @@map("collection_fields")
+}
+
+model CollectionItem {
+  id           String    @id @default(cuid())
+  collectionId String    @map("collection_id")
+  slug         String
+  status       String    @default("published")
+  data         Json
+  translations Json?
+  position     Int       @default(0)
+  publishedAt  DateTime? @map("published_at")
+  createdById  String?   @map("created_by_id")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  @@unique([collectionId, slug])
+  @@index([collectionId, status, position])
+  @@map("collection_items")
+}
+
+// ───────────────────────────── Media ─────────────────────────────
+
+model MediaFolder {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  websiteId      String?  @map("website_id")
+  parentId       String?  @map("parent_id")
+  name           String
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  parent       MediaFolder?  @relation("FolderTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children     MediaFolder[] @relation("FolderTree")
+  media        Media[]
+
+  @@index([organizationId, websiteId])
+  @@map("media_folders")
+}
+
+enum MediaStatus {
+  UPLOADING
+  PROCESSING
+  READY
+  FAILED
+}
+
+model Media {
+  id                String      @id @default(cuid())
+  organizationId    String      @map("organization_id")
+  websiteId         String?     @map("website_id")
+  folderId          String?     @map("folder_id")
+  storageProviderId String?     @map("storage_provider_id")
+  key               String
+  filename          String
+  mimeType          String      @map("mime_type")
+  size              Int
+  width             Int?
+  height            Int?
+  durationSec       Float?      @map("duration_sec")
+  alt               String?
+  title             String?
+  caption           String?
+  tags              String[]    @default([])
+  checksum          String
+  status            MediaStatus @default(READY)
+  /// Responsive variants: [{ width, format, key, url, size }]
+  variants          Json        @default("[]")
+  blurDataUrl       String?     @map("blur_data_url")
+  dominantColor     String?     @map("dominant_color")
+  metadata          Json        @default("{}")
+  source            String      @default("upload")
+  uploadedById      String?     @map("uploaded_by_id")
+  createdAt         DateTime    @default(now()) @map("created_at")
+  updatedAt         DateTime    @updatedAt @map("updated_at")
+  deletedAt         DateTime?   @map("deleted_at")
+
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  website         Website?         @relation(fields: [websiteId], references: [id], onDelete: SetNull)
+  folder          MediaFolder?     @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  storageProvider StorageProvider? @relation(fields: [storageProviderId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, websiteId, folderId])
+  @@index([organizationId, checksum])
+  @@map("media")
+}
+
+// ───────────────────────────── Forms ─────────────────────────────
+
+model Form {
+  id        String   @id @default(cuid())
+  websiteId String   @map("website_id")
+  name      String
+  slug      String
+  settings  Json
+  revision  Int      @default(1)
+  archivedAt DateTime? @map("archived_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  website     Website          @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+  fields      FormField[]
+  rules       FormRule[]
+  submissions FormSubmission[]
+
+  @@unique([websiteId, slug])
+  @@map("forms")
+}
+
+model FormField {
+  id       String @id @default(cuid())
+  formId   String @map("form_id")
+  /// Stable id used inside the schema (FormField.id).
+  fieldId  String @map("field_id")
+  name     String
+  type     String
+  label    String
+  position Int    @default(0)
+  /// placeholder, helpText, required, options, validation, showIf, width…
+  config   Json
+
+  form Form @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  @@unique([formId, name])
+  @@map("form_fields")
+}
+
+model FormRule {
+  id        String  @id @default(cuid())
+  formId    String  @map("form_id")
+  ruleId    String  @map("rule_id")
+  name      String
+  enabled   Boolean @default(true)
+  position  Int     @default(0)
+  when      Json?
+  then      Json
+  otherwise Json    @default("[]")
+  stopProcessing Boolean @default(false) @map("stop_processing")
+
+  form Form @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  @@map("form_rules")
+}
+
+enum SubmissionStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  CONVERTED
+  REJECTED
+  SPAM
+  ARCHIVED
+}
+
+model FormSubmission {
+  id           String           @id @default(cuid())
+  formId       String           @map("form_id")
+  websiteId    String           @map("website_id")
+  status       SubmissionStatus @default(NEW)
+  read         Boolean          @default(false)
+  tags         String[]         @default([])
+  assignedToId String?          @map("assigned_to_id")
+  spamScore    Float            @default(0) @map("spam_score")
+  captchaScore Float?           @map("captcha_score")
+  ipHash       String?          @map("ip_hash")
+  userAgent    String?          @map("user_agent")
+  referrer     String?
+  pageUrl      String?          @map("page_url")
+  locale       String?
+  /// Denormalized copy for fast listing/search; submission_values is the normalized source.
+  summary      Json             @default("{}")
+  actionsLog   Json             @default("[]") @map("actions_log")
+  createdAt    DateTime         @default(now()) @map("created_at")
+  updatedAt    DateTime         @updatedAt @map("updated_at")
+
+  form    Form              @relation(fields: [formId], references: [id], onDelete: Cascade)
+  website Website           @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+  values  SubmissionValue[]
+  notes   SubmissionNote[]
+
+  @@index([websiteId, status, createdAt])
+  @@index([formId, createdAt])
+  @@map("form_submissions")
+}
+
+model SubmissionValue {
+  id           String @id @default(cuid())
+  submissionId String @map("submission_id")
+  fieldName    String @map("field_name")
+  fieldLabel   String @map("field_label")
+  fieldType    String @map("field_type")
+  value        String?
+  valueJson    Json?  @map("value_json")
+
+  submission FormSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([submissionId])
+  @@map("submission_values")
+}
+
+model SubmissionNote {
+  id           String   @id @default(cuid())
+  submissionId String   @map("submission_id")
+  authorId     String   @map("author_id")
+  body         String
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  submission FormSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@map("submission_notes")
+}
+
+// ───────────────────────────── Providers & integrations ─────────────────────────────
+// `config` holds non-secret settings; `secrets_enc` holds AES-256-GCM encrypted JSON.
+
+model EmailProvider {
+  id             String    @id @default(cuid())
+  organizationId String    @map("organization_id")
+  websiteId      String?   @map("website_id")
+  name           String
+  driver         String
+  config         Json
+  secretsEnc     String?   @map("secrets_enc")
+  fromEmail      String    @map("from_email")
+  fromName       String?   @map("from_name")
+  isDefault      Boolean   @default(false) @map("is_default")
+  lastTestedAt   DateTime? @map("last_tested_at")
+  lastTestOk     Boolean?  @map("last_test_ok")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, websiteId])
+  @@map("email_providers")
+}
+
+model SmsProvider {
+  id             String    @id @default(cuid())
+  organizationId String    @map("organization_id")
+  websiteId      String?   @map("website_id")
+  name           String
+  driver         String
+  config         Json
+  secretsEnc     String?   @map("secrets_enc")
+  isDefault      Boolean   @default(false) @map("is_default")
+  lastTestedAt   DateTime? @map("last_tested_at")
+  lastTestOk     Boolean?  @map("last_test_ok")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, websiteId])
+  @@map("sms_providers")
+}
+
+model StorageProvider {
+  id             String    @id @default(cuid())
+  organizationId String    @map("organization_id")
+  name           String
+  driver         String
+  config         Json
+  secretsEnc     String?   @map("secrets_enc")
+  isDefault      Boolean   @default(false) @map("is_default")
+  lastTestedAt   DateTime? @map("last_tested_at")
+  lastTestOk     Boolean?  @map("last_test_ok")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  media        Media[]
+
+  @@index([organizationId])
+  @@map("storage_providers")
+}
+
+enum IntegrationKind {
+  AI
+  DEPLOYMENT
+  CAPTCHA
+  ANALYTICS
+  GIT
+  SEARCH
+  OTHER
+}
+
+model Integration {
+  id             String          @id @default(cuid())
+  organizationId String          @map("organization_id")
+  websiteId      String?         @map("website_id")
+  kind           IntegrationKind
+  driver         String
+  name           String
+  config         Json
+  secretsEnc     String?         @map("secrets_enc")
+  isDefault      Boolean         @default(false) @map("is_default")
+  enabled        Boolean         @default(true)
+  lastTestedAt   DateTime?       @map("last_tested_at")
+  lastTestOk     Boolean?        @map("last_test_ok")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, kind])
+  @@map("integrations")
+}
+
+model Webhook {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  websiteId      String?  @map("website_id")
+  name           String
+  url            String
+  events         String[]
+  secretEnc      String   @map("secret_enc")
+  enabled        Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  deliveries   WebhookDelivery[]
+
+  @@index([organizationId])
+  @@map("webhooks")
+}
+
+enum DeliveryStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  RETRYING
+}
+
+model WebhookDelivery {
+  id             String         @id @default(cuid())
+  webhookId      String         @map("webhook_id")
+  event          String
+  payload        Json
+  status         DeliveryStatus @default(PENDING)
+  attempts       Int            @default(0)
+  responseStatus Int?           @map("response_status")
+  responseBody   String?        @map("response_body")
+  error          String?
+  durationMs     Int?           @map("duration_ms")
+  nextAttemptAt  DateTime?      @map("next_attempt_at")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  webhook Webhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@index([webhookId, createdAt])
+  @@map("webhook_deliveries")
+}
+
+// ───────────────────────────── Domains & deployments ─────────────────────────────
+
+model Domain {
+  id                String    @id @default(cuid())
+  websiteId         String    @map("website_id")
+  hostname          String    @unique
+  isPrimary         Boolean   @default(false) @map("is_primary")
+  redirectToPrimary Boolean   @default(true) @map("redirect_to_primary")
+  environment       String    @default("production")
+  provider          String    @default("platform")
+  status            String    @default("pending")
+  dnsStatus         String    @default("unverified") @map("dns_status")
+  sslStatus         String    @default("pending") @map("ssl_status")
+  verificationToken String    @map("verification_token")
+  dnsRecords        Json      @default("[]") @map("dns_records")
+  verifiedAt        DateTime? @map("verified_at")
+  lastCheckedAt     DateTime? @map("last_checked_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+
+  website Website @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+
+  @@index([websiteId])
+  @@map("domains")
+}
+
+enum DeploymentStatus {
+  QUEUED
+  BUILDING
+  READY
+  FAILED
+  CANCELLED
+}
+
+enum DeploymentTarget {
+  PREVIEW
+  PRODUCTION
+}
+
+model Deployment {
+  id           String           @id @default(cuid())
+  websiteId    String           @map("website_id")
+  versionId    String?          @map("version_id")
+  provider     String
+  target       DeploymentTarget
+  status       DeploymentStatus @default(QUEUED)
+  externalId   String?          @map("external_id")
+  url          String?
+  inspectorUrl String?          @map("inspector_url")
+  error        String?
+  logs         Json             @default("[]")
+  meta         Json             @default("{}")
+  rollbackOfId String?          @map("rollback_of_id")
+  triggeredById String?         @map("triggered_by_id")
+  startedAt    DateTime?        @map("started_at")
+  finishedAt   DateTime?        @map("finished_at")
+  createdAt    DateTime         @default(now()) @map("created_at")
+
+  website Website         @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+  version WebsiteVersion? @relation(fields: [versionId], references: [id], onDelete: SetNull)
+
+  @@index([websiteId, createdAt])
+  @@map("deployments")
+}
+
+// ───────────────────────────── AI ─────────────────────────────
+
+enum AiGenerationStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+  REVERTED
+}
+
+model AiGeneration {
+  id             String             @id @default(cuid())
+  organizationId String             @map("organization_id")
+  websiteId      String?            @map("website_id")
+  pageId         String?            @map("page_id")
+  userId         String             @map("user_id")
+  kind           String
+  prompt         String
+  provider       String
+  model          String
+  status         AiGenerationStatus @default(PENDING)
+  progress       Json               @default("[]")
+  inputTokens    Int                @default(0) @map("input_tokens")
+  outputTokens   Int                @default(0) @map("output_tokens")
+  costUsd        Decimal            @default(0) @map("cost_usd") @db.Decimal(12, 6)
+  /// Ordered tool calls / schema operations applied.
+  operations     Json               @default("[]")
+  result         Json?
+  /// Pre-change references used to revert: { pageVersions: [], settingsRevision, themeTokens }
+  rollback       Json?
+  error          String?
+  revertedAt     DateTime?          @map("reverted_at")
+  createdAt      DateTime           @default(now()) @map("created_at")
+  finishedAt     DateTime?          @map("finished_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([websiteId, createdAt])
+  @@map("ai_generations")
+}
+
+model AiUsage {
+  id               String  @id @default(cuid())
+  organizationId   String  @map("organization_id")
+  period           String
+  requests         Int     @default(0)
+  inputTokens      Int     @default(0) @map("input_tokens")
+  outputTokens     Int     @default(0) @map("output_tokens")
+  imageGenerations Int     @default(0) @map("image_generations")
+  costUsd          Decimal @default(0) @map("cost_usd") @db.Decimal(12, 6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, period])
+  @@map("ai_usage")
+}
+
+// ───────────────────────────── Analytics & audit ─────────────────────────────
+
+model AnalyticsEvent {
+  id          String   @id @default(cuid())
+  websiteId   String   @map("website_id")
+  type        String
+  path        String
+  referrer    String?
+  country     String?
+  device      String?
+  browser     String?
+  /// Daily-rotating salted hash; no cookies or raw IPs stored.
+  visitorHash String   @map("visitor_hash")
+  sessionHash String   @map("session_hash")
+  name        String?
+  props       Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  website Website @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+
+  @@index([websiteId, createdAt])
+  @@map("analytics_events")
+}
+
+model AnalyticsDaily {
+  websiteId   String   @map("website_id")
+  date        DateTime @db.Date
+  pageviews   Int      @default(0)
+  visitors    Int      @default(0)
+  sessions    Int      @default(0)
+  conversions Int      @default(0)
+  breakdown   Json     @default("{}")
+
+  website Website @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+
+  @@id([websiteId, date])
+  @@map("analytics_daily")
+}
+
+enum ActorType {
+  USER
+  AI
+  SYSTEM
+  API
+}
+
+model AuditLog {
+  id             String    @id @default(cuid())
+  organizationId String?   @map("organization_id")
+  websiteId      String?   @map("website_id")
+  actorId        String?   @map("actor_id")
+  actorType      ActorType @default(USER) @map("actor_type")
+  actorName      String?   @map("actor_name")
+  action         String
+  resourceType   String    @map("resource_type")
+  resourceId     String?   @map("resource_id")
+  summary        String?
+  ip             String?
+  userAgent      String?   @map("user_agent")
+  metadata       Json      @default("{}")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([websiteId, createdAt])
+  @@map("audit_logs")
+}
+
+// ───────────────────────────── Platform ─────────────────────────────
+
+model FeatureFlag {
+  key         String   @id
+  description String
+  enabled     Boolean  @default(false)
+  /// { organizations: string[], plans: string[], percentage: number }
+  rules       Json     @default("{}")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("feature_flags")
+}
+
+model AbuseReport {
+  id         String    @id @default(cuid())
+  websiteId  String?   @map("website_id")
+  url        String
+  reason     String
+  details    String?
+  reporter   String?
+  status     String    @default("open")
+  resolvedAt DateTime? @map("resolved_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@map("abuse_reports")
+}

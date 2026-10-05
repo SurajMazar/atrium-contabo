@@ -1,0 +1,37 @@
+{
+  "name": "@atrium/worker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Background workers (BullMQ): email, SMS, webhooks, form workflows, media processing, deployments, AI jobs, analytics rollups",
+  "type": "module",
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@atrium/db": "workspace:*",
+    "@atrium/server-kit": "workspace:*",
+    "@atrium/providers": "workspace:*",
+    "@atrium/schema": "workspace:*",
+    "@atrium/exporter": "workspace:*",
+    "@atrium/agent": "workspace:*",
+    "@atrium/builder-core": "workspace:*",
+    "@atrium/component-registry": "workspace:*",
+    "bullmq": "^5.61.0",
+    "ioredis": "^5.11.1",
+    "pino": "^9.7.0",
+    "sharp": "^0.34.4",
+    "dotenv": "^17.2.0"
+  },
+  "devDependencies": {
+    "@atrium/typescript-config": "workspace:*",
+    "tsup": "^8.5.1",
+    "typescript": "5.9.3",
+    "vitest": "^5.0.3",
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.0"
+  }
+}

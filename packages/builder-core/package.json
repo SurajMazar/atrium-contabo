@@ -1,0 +1,20 @@
+{
+  "name": "@atrium/builder-core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Framework-agnostic document engine: tree operations, serializable site operations, normalization, validation, SEO analysis, link scanning and diffing. Shared by the visual builder, API and AI agents.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js", "require": "./dist/index.cjs" } },
+  "files": ["dist", "src"],
+  "scripts": { "build": "tsup", "dev": "tsup --watch", "typecheck": "tsc --noEmit", "test": "vitest run" },
+  "dependencies": {
+    "@atrium/component-registry": "workspace:*",
+    "@atrium/schema": "workspace:*",
+    "immer": "^10.1.3",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": { "@atrium/typescript-config": "workspace:*", "tsup": "^8.5.1", "typescript": "5.9.3", "vitest": "^5.0.3" }
+}

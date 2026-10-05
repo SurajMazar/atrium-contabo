@@ -1,0 +1,47 @@
+{
+  "name": "@atrium/providers",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Provider/driver abstractions and adapters: storage, email, SMS, AI, deployment, captcha, search",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@atrium/schema": "workspace:*",
+    "zod": "^4.6.5",
+    "@aws-sdk/client-s3": "^3.1146.0",
+    "@aws-sdk/s3-request-presigner": "^3.1146.0",
+    "@aws-sdk/client-sns": "^3.1146.0",
+    "@azure/storage-blob": "^12.34.0",
+    "nodemailer": "^7.0.10",
+    "@anthropic-ai/sdk": "^0.131.0",
+    "openai": "^7.28.0",
+    "@google/genai": "^2.27.0"
+  },
+  "devDependencies": {
+    "@atrium/typescript-config": "workspace:*",
+    "@types/node": "^24.0.0",
+    "tsup": "^8.5.1",
+    "typescript": "5.9.3",
+    "vitest": "^5.0.3",
+    "@types/nodemailer": "^7.0.2"
+  }
+}

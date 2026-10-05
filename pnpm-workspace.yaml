@@ -1,0 +1,14 @@
+packages:
+  - apps/*
+  - packages/*
+  - tests/*
+onlyBuiltDependencies:
+  - "@prisma/client"
+  - "@prisma/engines"
+  - prisma
+  - argon2
+  - sharp
+  - esbuild
+  - "@nestjs/core"
+  - "@swc/core"
+  - protobufjs

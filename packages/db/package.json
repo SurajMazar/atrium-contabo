@@ -1,0 +1,38 @@
+{
+  "name": "@atrium/db",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Prisma schema, migrations and client factory shared by API, worker and CLI",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" }
+  },
+  "files": ["dist", "prisma", "prisma.config.ts"],
+  "scripts": {
+    "build": "prisma generate && tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
+    "typecheck": "tsc --noEmit -p tsconfig.build.json",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:reset": "prisma migrate reset --force",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:studio": "prisma studio",
+    "postinstall": "prisma generate"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "^7.10.0",
+    "@prisma/client": "^7.10.0",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@atrium/typescript-config": "workspace:*",
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.15.0",
+    "dotenv": "^17.2.0",
+    "prisma": "^7.10.0",
+    "tsx": "^4.20.0",
+    "typescript": "5.9.3"
+  }
+}

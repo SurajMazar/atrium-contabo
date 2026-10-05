@@ -1,0 +1,34 @@
+{
+  "name": "@atrium/cli",
+  "version": "0.1.0",
+  "private": true,
+  "description": "`atrium` \u2014 bench-style CLI to install, configure, run, migrate, back up and deploy the Atrium platform",
+  "type": "module",
+  "bin": {
+    "atrium": "./bin/atrium.mjs"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "templates"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "commander": "^14.0.0",
+    "@clack/prompts": "^1.8.1",
+    "picocolors": "^1.1.1",
+    "dotenv": "^17.2.0"
+  },
+  "devDependencies": {
+    "@atrium/typescript-config": "workspace:*",
+    "tsup": "^8.5.1",
+    "typescript": "5.9.3",
+    "vitest": "^5.0.3",
+    "@types/node": "^24.0.0"
+  }
+}

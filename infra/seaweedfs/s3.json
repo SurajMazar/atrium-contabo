@@ -1,0 +1,10 @@
+{
+  "identities": [
+    {
+      "name": "atrium",
+      "credentials": [{ "accessKey": "atrium", "secretKey": "atrium-secret" }],
+      "actions": ["Admin", "Read", "List", "Tagging", "Write"]
+    },
+    { "name": "anonymous", "actions": ["Read"] }
+  ]
+}
