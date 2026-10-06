@@ -26,7 +26,7 @@ import { useApi } from '@/lib/api';
 import { useSession } from '@/lib/session';
 
 export function OrgSwitcher() {
-  const { memberships, currentOrg, setCurrentOrg, websiteScoped } = useSession();
+  const { memberships, currentOrg, setCurrentOrg, websiteScoped, user } = useSession();
   const router = useRouter();
   const [createOpen, setCreateOpen] = useState(false);
 
@@ -67,7 +67,8 @@ export function OrgSwitcher() {
               Organization settings
             </DropdownMenuItem>
           )}
-          {!websiteScoped && (
+          {/* Only platform administrators create organizations. */}
+          {user?.isSuperAdmin && (
             <DropdownMenuItem icon={<Plus />} onSelect={() => setCreateOpen(true)}>
               Create organization
             </DropdownMenuItem>

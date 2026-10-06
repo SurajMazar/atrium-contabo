@@ -4,6 +4,7 @@ import cookieParser from 'cookie-parser';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AppModule } from '../src/app.module';
+import { OrganizationsService } from '../src/modules/organizations/organizations.service';
 import { resetThrottles } from './reset-throttle';
 
 /**
@@ -45,6 +46,10 @@ describe('Atrium API', () => {
     const email = `e2e+${Date.now()}@atrium.test`;
     const reg = await http.post('/v1/auth/register').send({ name: 'E2E', email, password: 'E2e!Password#1', organizationName: 'E2E Org' }).expect(201);
     state.token = reg.body.accessToken;
+    // Signing up never creates an organization (only platform administrators do).
+    expect((await http.get('/v1/auth/me').set(auth()).expect(200)).body.memberships).toEqual([]);
+    await http.post('/v1/organizations').set(auth()).send({ name: 'Mine' }).expect(403);
+    await app.get(OrganizationsService).createWithOwner('E2E Org', reg.body.user.id);
     const cookie = reg.headers['set-cookie']![0]!.split(';')[0]!;
     const refreshed = await http.post('/v1/auth/refresh').set('Cookie', cookie).expect(200);
     expect(refreshed.body.accessToken).toBeTruthy();

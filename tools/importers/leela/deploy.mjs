@@ -1,5 +1,5 @@
 // Import a bundle into the local Atrium API, publish it, and delete the copy it supersedes.
-// Usage: node deploy.mjs <leela-garden|vilasa-by-leela> [--keep]
+// Usage: [ATRIUM_ORG=<slug>] node deploy.mjs <leela-garden|vilasa-by-leela> [--keep]
 // Local dev only: signs in with the seeded super-admin (admin@atrium.localhost) from apps/api/scripts/seed.ts.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -34,9 +34,11 @@ async function call(method, url, { token, json, form } = {}, tries = 6) {
 const { accessToken: token } = await call('POST', '/auth/login', { json: { email: 'admin@atrium.localhost', password: process.env.ATRIUM_PASSWORD ?? 'Atrium!2026' } });
 const me = await call('GET', '/auth/me', { token });
 const memberships = me.memberships ?? me.organizations ?? [];
-const org = memberships.find((m) => (m.organization?.slug ?? m.slug) === 'atrium-demo');
+// ATRIUM_ORG=<slug> picks the organization; otherwise the first one the admin belongs to.
+const wanted = process.env.ATRIUM_ORG;
+const org = wanted ? memberships.find((m) => (m.organization?.slug ?? m.slug) === wanted) : memberships[0];
 const orgId = org?.organization?.id ?? org?.organizationId ?? org?.id;
-if (!orgId) throw new Error(`atrium-demo org not found in ${JSON.stringify(memberships).slice(0, 500)}`);
+if (!orgId) throw new Error(wanted ? `organization "${wanted}" not found` : 'The admin has no organization yet: create one in the admin first.');
 
 const zip = fs.readFileSync(path.join(HERE, 'out', `${key}.zip`));
 const form = new FormData();

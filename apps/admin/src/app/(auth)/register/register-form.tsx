@@ -19,7 +19,6 @@ const schema = z.object({
   name: z.string().trim().min(1, 'Enter your name').max(120),
   email: z.string().trim().email('Enter a valid email'),
   password: passwordSchema,
-  organizationName: z.string().trim().max(80).optional(),
 });
 type Values = z.infer<typeof schema>;
 
@@ -31,13 +30,13 @@ export function RegisterForm() {
   const next = params.get('next');
   const invited = !!next?.startsWith('/invite/');
   const [error, setError] = useState<string | null>(null);
-  const form = useForm<Values>({ resolver: zodResolver(schema), defaultValues: { name: '', email: params.get('email') ?? '', password: '', organizationName: '' } });
+  const form = useForm<Values>({ resolver: zodResolver(schema), defaultValues: { name: '', email: params.get('email') ?? '', password: '' } });
   const password = form.watch('password');
 
   const onSubmit = form.handleSubmit(async (v) => {
     setError(null);
     try {
-      const r = await api.auth.register({ ...v, organizationName: invited ? undefined : v.organizationName || `${v.name.split(' ')[0]}’s workspace` });
+      const r = await api.auth.register(v);
       await signIn(r);
       router.replace(next ? safeNext(next) : '/onboarding');
     } catch (e) {
@@ -75,11 +74,6 @@ export function RegisterForm() {
           <Input type="password" autoComplete="new-password" {...form.register('password')} />
         </Field>
         <PasswordStrength value={password} />
-        {!invited && (
-          <Field label="Organization name" optional help="You can invite teammates and create more organizations later." error={form.formState.errors.organizationName?.message}>
-            <Input autoComplete="organization" placeholder="Acme Studio" {...form.register('organizationName')} />
-          </Field>
-        )}
         <Button type="submit" variant="primary" className="w-full" loading={form.formState.isSubmitting}>
           Create account
         </Button>

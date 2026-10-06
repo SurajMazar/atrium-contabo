@@ -230,6 +230,9 @@ export function createAtriumClient(opts: AtriumClientOptions) {
       organizations: (query: { search?: string; cursor?: string } = {}) => http.get<T.List<Record<string, unknown>>>('/admin/organizations', q(query)),
       organization: (id: string) => http.get<Record<string, unknown>>(`/admin/organizations/${id}`),
       user: (id: string) => http.get<Record<string, unknown>>(`/admin/users/${id}`),
+      /** Create an organization; with `owner`, that person owns it (new accounts get a password, returned once when generated). */
+      createOrganization: (body: { name: string; planKey?: string; owner?: { email: string; name: string; password?: string } }) =>
+        http.post<{ id: string; name: string; slug: string; planKey: string; owner: { email: string; created: boolean; password?: string } | null }>('/admin/organizations', body),
       updateOrganization: (id: string, body: { planKey?: string; suspended?: boolean; featureFlags?: Record<string, boolean> }) => http.patch<Record<string, unknown>>(`/admin/organizations/${id}`, body),
       users: (query: { search?: string; cursor?: string } = {}) => http.get<T.List<Record<string, unknown>>>('/admin/users', q(query)),
       updateUser: (id: string, body: { disabled?: boolean; isSuperAdmin?: boolean }) => http.patch<Record<string, unknown>>(`/admin/users/${id}`, body),

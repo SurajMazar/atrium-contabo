@@ -128,7 +128,7 @@ Every target also writes `NEXT-STEPS.md`. Env files are mode 0600 and contain ge
 | `migrate`                                  | `prisma migrate deploy` with before/after status                                                                                                        |
 | `migrate --dev [--name x] [--create-only]` | `prisma migrate dev` after editing `schema.prisma` (refused with `NODE_ENV=production`)                                                                 |
 | `migrate --status` / `db status`           | applied/pending/failed migrations                                                                                                                       |
-| `seed [--demo]`                            | `pnpm db:seed` (plans, permissions, templates, super-admin; `--demo` sets `SEED_DEMO=1`)                                                                |
+| `seed [--demo]`                            | `pnpm db:seed` (plans, permissions, super-admin; `--demo` adds demo content via `seed:demo`, local only)                                                                |
 | `db reset --force [--no-seed]`             | drop, re-migrate, re-seed; asks you to type the database name; refused in production                                                                    |
 | `db console [-c "sql"]`                    | psql in the postgres container (or local psql)                                                                                                          |
 | `db studio`                                | Prisma Studio                                                                                                                                           |

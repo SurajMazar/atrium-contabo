@@ -133,7 +133,8 @@ Rules:
 
 `pnpm db:seed` (`atrium seed`) runs `apps/api/scripts/seed.ts`: plans, the permission catalog, platform
 templates/blueprints and the super-admin from `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`. It is meant to
-be idempotent. `atrium seed --demo` sets `SEED_DEMO=1` for demo content.
+be idempotent. The seed creates only reference data and the super admin; `atrium seed --demo` also runs
+`apps/api/scripts/seed-demo.ts` (demo organization and websites, local development only).
 
 ## Backups and restore
 

@@ -4,6 +4,7 @@ import { PERMISSIONS } from '@atrium/schema';
 import { z } from 'zod';
 import { AccessService } from '../../common/access.service';
 import { Access, CurrentAccess, CurrentUser, type AccessContext, type AuthUser } from '../../common/decorators';
+import { forbidden } from '../../common/errors';
 import { limitOf } from '../../common/http';
 import { ZodBody } from '../../common/zod.pipe';
 import { OrganizationsService } from './organizations.service';
@@ -20,8 +21,10 @@ export class OrganizationsController {
     return this.orgs.list(user.id);
   }
 
+  /** Only platform administrators create organizations; everyone else works inside theirs. */
   @Post('organizations')
   async create(@CurrentUser() user: AuthUser, @Body(new ZodBody(Name)) body: { name: string }) {
+    if (!user.isSuperAdmin) throw forbidden('Only platform administrators can create organizations');
     const org = await this.orgs.createWithOwner(body.name, user.id);
     return { id: org.id, name: org.name, slug: org.slug, planKey: org.planKey };
   }

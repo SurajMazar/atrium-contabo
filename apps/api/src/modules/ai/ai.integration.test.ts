@@ -5,6 +5,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma.service';
+import { OrganizationsService } from '../organizations/organizations.service';
 
 /**
  * AI routes against real Postgres + Redis with the offline demo provider (never a real model).
@@ -46,6 +47,8 @@ describe('AI module (demo provider)', () => {
     if (!ready) return;
     const reg = await http.post('/v1/auth/register').send({ name: 'AI Sec', email: `ai-sec+${Date.now()}@atrium.test`, password: 'Ai!Security#Test1', organizationName: 'AI Sec Org' }).expect(201);
     s.token = reg.body.accessToken;
+    // Organizations are created by platform administrators, not by signing up.
+    await app.get(OrganizationsService).createWithOwner('AI Sec Org', reg.body.user.id);
     const me = await http.get('/v1/auth/me').set(auth()).expect(200);
     s.org = me.body.memberships[0].organization.id;
     const site = await http.post(`/v1/organizations/${s.org}/websites`).set(auth()).send({ name: 'AI Sec Site', source: { type: 'blank' } }).expect(201);

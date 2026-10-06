@@ -152,6 +152,28 @@ describe('add member without an invitation', () => {
   });
 });
 
+describe('organizations are created by super admins only', () => {
+  it('lets a super admin create an organization for a new owner, and nobody else', async () => {
+    if (!ready) return;
+    const admin = await register('platform');
+    await db.user.update({ where: { id: admin.id }, data: { isSuperAdmin: true } });
+    const res = await http.post('/v1/admin/organizations').set(bearer(admin.token)).send({ name: `Client Co ${RUN}`, owner: { email: `client-owner-${RUN}@example.test`, name: 'Client Owner' } }).expect(201);
+    expect(res.body.owner.created).toBe(true);
+    expect(res.body.owner.password).toBeTruthy();
+    // The super admin is not added as a member; the client is the owner.
+    const members = await db.organizationMember.findMany({ where: { organizationId: res.body.id }, include: { role: true, user: true } });
+    expect(members.map((m) => [m.user.email, m.role.key])).toEqual([[`client-owner-${RUN}@example.test`, 'owner']]);
+
+    const login = await http.post('/v1/auth/login').send({ email: `client-owner-${RUN}@example.test`, password: res.body.owner.password }).expect(200);
+    const o = bearer(login.body.accessToken);
+    await http.get(`/v1/organizations/${res.body.id}/members`).set(o).expect(200); // manages their own organization
+    await http.post('/v1/organizations').set(o).send({ name: 'Second org' }).expect(403); // but cannot create another
+    await http.post('/v1/admin/organizations').set(o).send({ name: 'Sneaky' }).expect(403);
+    await http.post('/v1/auth/register').send({ name: 'Signup', email: `signup-${RUN}@example.test`, password: PASSWORD, organizationName: 'Self serve' }).expect(201);
+    expect(await db.organizationMember.count({ where: { user: { email: `signup-${RUN}@example.test` } } })).toBe(0);
+  });
+});
+
 describe('dashboard branding per website', () => {
   it('layers website overrides over the organization branding', async () => {
     if (!ready) return;

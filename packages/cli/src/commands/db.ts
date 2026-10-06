@@ -149,7 +149,7 @@ export function registerDb(program: Command) {
   program
     .command('seed')
     .description('Seed plans, permissions, platform templates and the super-admin (idempotent)')
-    .option('--demo', 'also create the demo organization and websites (SEED_DEMO=1)')
+    .option('--demo', 'also create the demo organization and websites (local development only)')
     .option(
       '--env-file <file>',
       'seed with a deploy env file (e.g. deploy/podman/.env: NODE_ENV=production, SEED_ADMIN_*) instead of the checkout .env',

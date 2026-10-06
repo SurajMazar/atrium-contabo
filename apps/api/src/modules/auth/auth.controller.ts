@@ -28,7 +28,9 @@ export class AuthController {
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('register')
   async register(@Body(new ZodBody(Register)) body: z.infer<typeof Register>, @Req() req: AppRequest, @Res({ passthrough: true }) res: Response) {
-    const r = await this.auth.register(body, sessionMeta(req));
+    // Signing up never creates an organization: only platform administrators create them
+    // (`organizationName` is accepted for older clients and ignored).
+    const r = await this.auth.register({ ...body, organizationName: undefined }, sessionMeta(req));
     setRefreshCookie(res, r.refreshToken);
     return { accessToken: r.accessToken, user: r.user };
   }

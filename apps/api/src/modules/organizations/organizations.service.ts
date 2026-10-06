@@ -27,9 +27,9 @@ export class OrganizationsService {
   }
 
   /** Create an organization with default roles, a default workspace and the user as owner. */
-  async createWithOwner(name: string, userId: string) {
+  async createWithOwner(name: string, userId: string, planKey = 'starter') {
     return this.db.$transaction(async (tx) => {
-      const org = await tx.organization.create({ data: { name, slug: await this.uniqueSlug(name), planKey: 'starter' } });
+      const org = await tx.organization.create({ data: { name, slug: await this.uniqueSlug(name), planKey } });
       let ownerRoleId = '';
       for (const r of DEFAULT_ROLES) {
         const role = await tx.role.create({ data: { organizationId: org.id, key: r.key, name: r.name, description: r.description, isSystem: true, permissions: { create: r.permissions.map((p) => ({ permissionKey: p })) } } });

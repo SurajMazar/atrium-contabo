@@ -43,10 +43,11 @@ export async function migrateDeploy(ctx: Ctx, opts: RunOptions = {}) {
   await pnpm(ctx, ['--filter', '@atrium/db', 'db:deploy'], opts);
 }
 
-/** Run the root `db:seed` script (apps/api/scripts/seed.ts). `demo` also sets SEED_DEMO=1. */
+/**
+ * Run the root `db:seed` script (apps/api/scripts/seed.ts: reference data + super admin). `demo`
+ * also adds the demo organization and websites (apps/api/scripts/seed-demo.ts, local development only).
+ */
 export async function seed(ctx: Ctx, demo: boolean, opts: RunOptions = {}) {
-  await pnpm(ctx, ['db:seed'], {
-    ...opts,
-    env: { ...opts.env, ...(demo ? { SEED_DEMO: '1' } : {}) },
-  });
+  await pnpm(ctx, ['db:seed'], opts);
+  if (demo) await pnpm(ctx, ['--filter', '@atrium/api', 'seed:demo'], opts);
 }

@@ -107,6 +107,21 @@ export function Onboarding() {
     },
   ];
 
+  // Organizations are created by platform administrators; everyone else joins one.
+  if (!hasOrg && !user?.isSuperAdmin) {
+    return (
+      <div className="mx-auto w-full max-w-xl px-4 py-12 sm:px-6">
+        <h1 className="text-xl font-semibold tracking-tight text-fg">Welcome{user ? `, ${user.name.split(' ')[0]}` : ''}</h1>
+        <div className="mt-8 rounded-lg border border-border bg-surface p-5">
+          <p className="text-sm font-medium text-fg">You’re not part of an organization yet</p>
+          <p className="mt-1 text-sm text-fg-muted">
+            Ask your administrator to add you or send you an invitation{user ? ` for ${user.email}` : ''}. Invitations arrive by email — open the link while signed in with this address.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto w-full max-w-xl px-4 py-12 sm:px-6">
       <h1 className="text-xl font-semibold tracking-tight text-fg">Welcome{user ? `, ${user.name.split(' ')[0]}` : ''}</h1>

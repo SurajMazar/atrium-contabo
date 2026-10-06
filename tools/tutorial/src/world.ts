@@ -26,11 +26,13 @@ const TUTORIAL_SITES = /^(Himalaya Lodge|Lakeside Café|Aranya Lake Retreat)$/;
 export async function resetWorld(): Promise<World> {
   const login = await api<{ accessToken: string }>('POST', '/auth/login', undefined, { email: EMAIL, password: PASSWORD });
   const me = await api<{ memberships: Array<{ organization: { id: string; slug: string } }> }>('GET', '/auth/me', login.accessToken);
-  const org = me.memberships.find((m) => m.organization.slug === 'atrium-demo')!.organization;
-  const sites = await api<Array<{ id: string; name: string; slug: string }>>('GET', `/organizations/${org.id}/websites`, login.accessToken);
-  for (const s of sites) if (TUTORIAL_SITES.test(s.name)) await api('DELETE', `/websites/${s.id}`, login.accessToken);
-  await clearTutorialUploads(org.id, login.accessToken);
-  execSync('pnpm db:seed', { cwd: REPO, stdio: 'ignore', env: { ...process.env, SEED_DEMO_SITES: '1' } });
+  const org = me.memberships.find((m) => m.organization.slug === 'atrium-demo')?.organization;
+  if (org) {
+    const sites = await api<Array<{ id: string; name: string; slug: string }>>('GET', `/organizations/${org.id}/websites`, login.accessToken);
+    for (const s of sites) if (TUTORIAL_SITES.test(s.name)) await api('DELETE', `/websites/${s.id}`, login.accessToken);
+    await clearTutorialUploads(org.id, login.accessToken);
+  }
+  execSync('pnpm db:seed && pnpm --filter @atrium/api seed:demo', { cwd: REPO, stdio: 'ignore', env: process.env });
   return getWorld(true);
 }
 

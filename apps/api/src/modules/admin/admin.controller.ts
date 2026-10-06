@@ -1,6 +1,9 @@
 import { Body, Controller, Get, HttpCode, Param, Patch, Post, Put, Query, Req } from '@nestjs/common';
 import { z } from 'zod';
+import * as argon2 from 'argon2';
 import { AuditService } from '../../common/audit.service';
+import { assertPasswordStrength, generatePassword } from '../../common/passwords';
+import { OrganizationsService } from '../organizations/organizations.service';
 import { CurrentUser, SuperAdminOnly, type AppRequest, type AuthUser } from '../../common/decorators';
 import { badRequest, notFound } from '../../common/errors';
 import { limitOf } from '../../common/http';
@@ -12,7 +15,7 @@ import { ZodBody } from '../../common/zod.pipe';
 @SuperAdminOnly()
 @Controller('admin')
 export class AdminController {
-  constructor(private readonly prisma: PrismaService, private readonly queues: QueueService, private readonly audit: AuditService) {}
+  constructor(private readonly prisma: PrismaService, private readonly queues: QueueService, private readonly audit: AuditService, private readonly orgs: OrganizationsService) {}
 
   private get db() {
     return this.prisma.client;
@@ -44,6 +47,40 @@ export class AdminController {
     });
     const items = rows.slice(0, limit).map((o) => ({ id: o.id, name: o.name, slug: o.slug, planKey: o.planKey, suspended: !!o.suspendedAt, featureFlags: o.featureFlags, members: o._count.members, websites: o._count.websites, createdAt: o.createdAt.toISOString() }));
     return { items, nextCursor: rows.length > limit ? items[items.length - 1]!.id : null };
+  }
+
+  /**
+   * Create an organization for a client. With `owner`, that person owns it (an existing account,
+   * or a new one with a chosen or generated password, returned once) and the super admin is not
+   * added as a member; without it, the super admin is the owner.
+   */
+  @Post('organizations')
+  async createOrganization(
+    @Req() req: AppRequest,
+    @Body(new ZodBody(z.object({ name: z.string().trim().min(1).max(120), planKey: z.string().optional(), owner: z.object({ email: z.string().trim().email().max(254), name: z.string().trim().min(1).max(120), password: z.string().min(1).max(200).optional() }).optional() })))
+    b: { name: string; planKey?: string; owner?: { email: string; name: string; password?: string } },
+    @CurrentUser() user: AuthUser,
+  ) {
+    if (b.planKey && !(await this.db.plan.findUnique({ where: { key: b.planKey } }))) throw badRequest('Unknown plan');
+    let ownerId = user.id;
+    let password: string | undefined;
+    let createdOwner = false;
+    if (b.owner) {
+      const email = b.owner.email.toLowerCase();
+      const existing = await this.db.user.findUnique({ where: { email }, select: { id: true } });
+      if (existing) ownerId = existing.id;
+      else {
+        password = b.owner.password ?? generatePassword();
+        assertPasswordStrength(password);
+        const u = await this.db.user.create({ data: { email, name: b.owner.name, passwordHash: await argon2.hash(password, { type: argon2.argon2id }) } });
+        ownerId = u.id;
+        createdOwner = true;
+        if (b.owner.password) password = undefined; // never echo a password the admin typed
+      }
+    }
+    const org = await this.orgs.createWithOwner(b.name, ownerId, b.planKey ?? 'starter');
+    await this.audit.log({ organizationId: org.id, actor: user, action: 'platform.organization_created', resourceType: 'organization', resourceId: org.id, summary: `Super admin ${user.name} created organization ${org.name}${b.owner ? ` owned by ${b.owner.email}` : ''}`, req });
+    return { id: org.id, name: org.name, slug: org.slug, planKey: org.planKey, owner: b.owner ? { email: b.owner.email.toLowerCase(), created: createdOwner, ...(password ? { password } : {}) } : null };
   }
 
   @Patch('organizations/:id')

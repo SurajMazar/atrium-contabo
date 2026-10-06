@@ -33,9 +33,10 @@ import {
 } from '@atrium/ui';
 import { FEATURE_FLAGS } from '@atrium/schema';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Ban, Building2, CircleCheck, CreditCard, Flag, MoreHorizontal } from 'lucide-react';
+import { Ban, Building2, CircleCheck, CreditCard, Flag, MoreHorizontal, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { Page } from '@/components/common/page';
+import { CreateOrganizationAdminDialog } from './create-organization';
 import { errorMessage, useApi } from '@/lib/api';
 import { formatDate, formatNumber, timeAgo } from '@/lib/format';
 import { qk } from '@/lib/query-keys';
@@ -72,6 +73,7 @@ function toOrg(r: Row): Org {
 }
 
 export function AdminOrganizations() {
+  const [createOpen, setCreateOpen] = useState(false);
   const api = useApi();
   const qc = useQueryClient();
   const [search, setSearch] = useState('');
@@ -106,7 +108,16 @@ export function AdminOrganizations() {
 
   return (
     <Page width="wide">
-      <PageHeader title="Organizations" description="Every tenant on the platform. Change plans, suspend access or override feature flags." />
+      <PageHeader
+        title="Organizations"
+        description="Every tenant on the platform. Create organizations for clients, change plans, suspend access or override feature flags."
+        actions={
+          <Button size="sm" variant="primary" leadingIcon={<Plus />} onClick={() => setCreateOpen(true)}>
+            New organization
+          </Button>
+        }
+      />
+      <CreateOrganizationAdminDialog open={createOpen} onOpenChange={setCreateOpen} />
       <div className="mb-4">
         <AdminSearch value={search} onChange={setSearch} placeholder="Search by name or slug" />
       </div>
