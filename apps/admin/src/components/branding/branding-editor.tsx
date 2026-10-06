@@ -25,7 +25,7 @@ import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from
 import { Page } from '@/components/common/page';
 import { MediaField } from '@/components/media/media-field';
 import { SaveBar, useBeforeUnload } from '@/components/settings/save-bar';
-import { AtriumMark } from '@/components/shell/brand';
+import { AtriumMark, LogoLockup } from '@/components/shell/brand';
 import { errorMessage } from '@/lib/api';
 import { accents, compactBranding, contrastReport, DEFAULT_PRODUCT_NAME, previewVars } from '@/lib/branding-core';
 import { useTheme } from '@/lib/theme';
@@ -185,6 +185,20 @@ export function BrandingEditor({ scope, queryKey, load, save, mediaOrgId, canEdi
                 <ImageSetting label="Logo" help="Light theme, ~24px tall" value={draft.logoUrl} inherited={inherited.logoUrl} hint={hint('logoUrl')} orgId={mediaOrgId} disabled={dis} onChange={(v) => set({ logoUrl: v })} />
                 <ImageSetting label="Logo (dark)" help="Falls back to the light logo" value={draft.logoDarkUrl} inherited={inherited.logoDarkUrl} hint={hint('logoDarkUrl')} orgId={mediaOrgId} disabled={dis} onChange={(v) => set({ logoDarkUrl: v })} />
                 <ImageSetting label="App icon" help="Square, used as favicon" value={draft.iconUrl} inherited={inherited.iconUrl} hint={hint('iconUrl')} orgId={mediaOrgId} disabled={dis} square onChange={(v) => set({ iconUrl: v })} />
+              </div>
+              <div className="mt-5 border-t border-border pt-4">
+                <Field label="Product name next to the logo" hint={hint('logoName')} help="Automatic shows the name beside a symbol-style logo and hides it for a wide logo that already spells the name.">
+                  <SegmentedControl
+                    aria-label="Product name next to the logo"
+                    value={draft.logoName ?? inherited.logoName ?? 'auto'}
+                    onValueChange={(v) => !dis && set({ logoName: v as 'auto' | 'show' | 'hide' })}
+                    options={[
+                      { value: 'auto', label: 'Automatic' },
+                      { value: 'show', label: 'Always' },
+                      { value: 'hide', label: 'Never' },
+                    ]}
+                  />
+                </Field>
               </div>
             </FieldGroup>
 
@@ -376,8 +390,7 @@ function BrandPreview({ branding }: { branding: AdminBranding }) {
           <div className="w-[132px] shrink-0 border-r border-border bg-surface-2/60 p-2">
             <div className="flex h-7 items-center gap-1.5 px-1">
               {logo ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={logo} alt="" className="h-4 w-auto max-w-[110px] object-contain object-left" />
+                <LogoLockup key={logo} src={logo} name={name} mode={branding.logoName ?? 'auto'} className="gap-1.5" imgClassName="h-4 max-w-[110px]" nameClassName="text-xs" />
               ) : (
                 <>
                   {branding.iconUrl ? (

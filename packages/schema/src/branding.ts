@@ -13,6 +13,11 @@ export const AdminBrandingSchema = z
     logoUrl: url,
     logoDarkUrl: url,
     iconUrl: url,
+    /**
+     * Product name next to the logo. `auto`: shown when the logo is a symbol (roughly square) and
+     * hidden for a wide wordmark that already spells the name.
+     */
+    logoName: z.enum(['auto', 'show', 'hide']),
     accent: hex,
     accentDark: hex,
     radius: z.enum(['sharp', 'default', 'round']),

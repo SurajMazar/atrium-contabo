@@ -1,7 +1,35 @@
 'use client';
 
 import { cn } from '@atrium/ui';
+import { useState } from 'react';
 import { useBranding } from '@/lib/branding';
+
+/** Wider than this (width ÷ height) a logo counts as a wordmark that already contains the name. */
+const WORDMARK_RATIO = 2.2;
+
+/**
+ * Logo image plus, depending on `mode`, the product name next to it. In `auto` the name shows
+ * once the image has loaded and turns out to be a symbol rather than a wordmark.
+ */
+export function LogoLockup({ src, name, mode = 'auto', imgClassName, nameClassName, className }: { src: string; name: string; mode?: 'auto' | 'show' | 'hide'; imgClassName?: string; nameClassName?: string; className?: string }) {
+  const [ratio, setRatio] = useState<number | null>(null);
+  const showName = mode === 'show' || (mode === 'auto' && ratio !== null && ratio < WORDMARK_RATIO);
+  return (
+    <span className={cn('inline-flex min-w-0 items-center gap-2', className)}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt={showName ? '' : name}
+        className={cn('w-auto shrink-0 object-contain object-left', imgClassName)}
+        onLoad={(e) => {
+          const img = e.currentTarget;
+          if (img.naturalHeight > 0) setRatio(img.naturalWidth / img.naturalHeight);
+        }}
+      />
+      {showName && <span className={cn('truncate font-semibold tracking-tight text-fg', nameClassName)}>{name}</span>}
+    </span>
+  );
+}
 
 /** Default Atrium mark (used when no white-label icon/logo is configured). */
 export function AtriumMark({ className = 'size-6' }: { className?: string }) {
@@ -29,11 +57,20 @@ export function BrandIcon({ className = 'size-6' }: { className?: string }) {
  * name. `size` sets the logo height (sm 20px, md 24px, lg 28px).
  */
 export function BrandLogo({ size = 'md', className, showName = true }: { size?: 'sm' | 'md' | 'lg'; className?: string; showName?: boolean }) {
-  const { logoUrl, productName } = useBranding();
+  const { logoUrl, productName, branding } = useBranding();
   const h = size === 'sm' ? 'h-5' : size === 'md' ? 'h-6' : 'h-7';
   if (logoUrl) {
-    // eslint-disable-next-line @next/next/no-img-element
-    return <img src={logoUrl} alt={productName} className={cn(h, 'w-auto max-w-[160px] shrink-0 object-contain object-left', className)} />;
+    return (
+      <LogoLockup
+        key={logoUrl}
+        src={logoUrl}
+        name={productName}
+        mode={showName ? (branding.logoName ?? 'auto') : 'hide'}
+        className={className}
+        imgClassName={cn(h, 'max-w-[160px]')}
+        nameClassName={size === 'lg' ? 'text-base' : 'text-sm'}
+      />
+    );
   }
   return (
     <span className={cn('inline-flex min-w-0 items-center gap-2', className)}>
