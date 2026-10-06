@@ -33,9 +33,10 @@ export function createAtriumClient(opts: AtriumClientOptions) {
       updateMe: (body: Partial<Pick<T.User, 'name' | 'avatarUrl' | 'locale'>>) => http.patch<T.User>('/auth/me', body),
       sessions: () => http.get<{ items: T.SessionInfo[] }>('/auth/sessions'),
       revokeSession: (id: string) => http.delete(`/auth/sessions/${id}`),
-      setupMfa: () => http.post<{ secret: string; otpauthUrl: string; qrDataUrl: string }>('/auth/mfa/setup'),
+      /** Step-up: pass the current password when the session is older than a few minutes (403 REAUTH_REQUIRED). */
+      setupMfa: (currentPassword?: string) => http.post<{ secret: string; otpauthUrl: string; qrDataUrl: string }>('/auth/mfa/setup', currentPassword ? { currentPassword } : {}),
       enableMfa: (code: string) => http.post<{ recoveryCodes: string[] }>('/auth/mfa/enable', { code }),
-      disableMfa: (code: string) => http.post<void>('/auth/mfa/disable', { code }),
+      disableMfa: (code: string, currentPassword?: string) => http.post<void>('/auth/mfa/disable', currentPassword ? { code, currentPassword } : { code }),
     },
     organizations: {
       list: () => http.get<T.OrganizationSummary[]>('/organizations'),

@@ -354,41 +354,53 @@
     if (window.__lgAtmosphere) window.__lgAtmosphere.unmount();
   }
 
+  // The new page must be caught before the browser paints it: re-running the veil a frame late
+  // shows the page, blanks it and fades it in again (a visible "double refresh"). Mutation
+  // observers and microtasks both run in the same task as React's commit, so whichever sees the
+  // new route first takes over before paint.
   var lastPath = location.pathname;
-  function onRoute() {
+  var marker = null;
+  var fallback = 0;
+  function markPage() { var m = $('main'); marker = m && m.firstElementChild; }
+  function swapped() { var m = $('main'); var f = m && m.firstElementChild; return !!f && f !== marker; }
+  function onRoute(force) {
     if (location.pathname === lastPath) return;
+    if (!force && !swapped()) {
+      // URL first, DOM later: the observer picks it up; never wait forever.
+      clearTimeout(fallback);
+      fallback = setTimeout(function () { onRoute(true); }, 2000);
+      return;
+    }
+    clearTimeout(fallback);
     lastPath = location.pathname;
-    var before = $('main');
-    var marker = before && before.firstElementChild;
-    var frames = 0;
-    // Wait for the new page's DOM to replace the old one, then re-initialise.
-    (function wait() {
-      var main = $('main');
-      var first = main && main.firstElementChild;
-      if ((first && first !== marker) || frames++ > 120) {
-        teardown();
-        if (lenis) lenis.scrollTo(0, { immediate: true }); else window.scrollTo(0, 0);
-        transition();
-        init();
-        return;
-      }
-      requestAnimationFrame(wait);
-    })();
+    teardown();
+    if (lenis) lenis.scrollTo(0, { immediate: true }); else window.scrollTo(0, 0);
+    transition();
+    init();
+    markPage();
   }
   ['pushState', 'replaceState'].forEach(function (k) {
     var orig = history[k];
     history[k] = function () {
       var r = orig.apply(this, arguments);
-      setTimeout(onRoute, 0);
+      queueMicrotask(function () { onRoute(false); });
       return r;
     };
   });
-  window.addEventListener('popstate', function () { setTimeout(onRoute, 0); });
+  window.addEventListener('popstate', function () { onRoute(false); });
+  // Any change inside <main> once the URL has moved is the new page landing (React may keep the
+  // first section's node when both pages start with the same kind of section).
+  new MutationObserver(function (records) {
+    if (location.pathname === lastPath) return;
+    var main = $('main');
+    onRoute(records.some(function (r) { return main && (main === r.target || main.contains(r.target)) || r.addedNodes.length && Array.prototype.indexOf.call(r.addedNodes, main) >= 0; }));
+  }).observe(doc.body, { childList: true, subtree: true });
 
   function boot() {
     loadLenis();
     initCursor();
     init();
+    markPage();
   }
   // Atrium pages are server-rendered React that hydrates after this script runs. Mutating the
   // DOM before hydration makes React discard it, so wait until the tree is live.

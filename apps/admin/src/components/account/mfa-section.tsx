@@ -1,6 +1,6 @@
 'use client';
 
-import type { User } from '@atrium/sdk';
+import { AtriumApiError, type User } from '@atrium/sdk';
 import {
   Badge,
   Banner,
@@ -27,6 +27,8 @@ import { useSession } from '@/lib/session';
 
 const CODE = /^\d{6}$/;
 const cleanCode = (v: string) => v.replace(/\D/g, '').slice(0, 6);
+/** The API wants the current password: the session is older than its step-up window. */
+const needsReauth = (err: unknown) => err instanceof AtriumApiError && (err.details as { reason?: string } | undefined)?.reason === 'REAUTH_REQUIRED';
 
 export function MfaSection({ user }: { user: User }) {
   const [setupOpen, setSetupOpen] = useState(false);
@@ -79,8 +81,22 @@ function SetupDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: 
   const [codeError, setCodeError] = useState<string>();
   const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
+  const passwordRef = useRef<HTMLInputElement>(null);
+  const [password, setPassword] = useState('');
+  const [needPassword, setNeedPassword] = useState(false);
 
-  const setup = useMutation({ mutationFn: () => api.auth.setupMfa() });
+  const setup = useMutation({
+    mutationFn: (currentPassword?: string) => api.auth.setupMfa(currentPassword),
+    onSuccess: () => setPassword(''),
+    onError: (err) => {
+      if (!needsReauth(err)) return;
+      setNeedPassword(true);
+      requestAnimationFrame(() => passwordRef.current?.focus());
+    },
+  });
+  // Asking for the password is part of the flow, not a failure.
+  const askPassword = needPassword && !setup.data;
+  const passwordError = askPassword && setup.isError && !needsReauth(setup.error) ? errorMessage(setup.error, 'Could not start setup') : undefined;
   const enable = useMutation({
     mutationFn: (c: string) => api.auth.enableMfa(c),
     onSuccess: (res) => {
@@ -108,12 +124,18 @@ function SetupDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: 
     setCodeError(undefined);
     setRecoveryCodes(null);
     setAcknowledged(false);
+    setPassword('');
+    setNeedPassword(false);
     resetSetup();
     startSetup();
   }, [open, startSetup, resetSetup]);
 
   const verify = (e: FormEvent) => {
     e.preventDefault();
+    if (askPassword) {
+      if (password) setup.mutate(password);
+      return;
+    }
     if (!CODE.test(code)) {
       setCodeError('Enter the 6-digit code from your authenticator app');
       return;
@@ -204,9 +226,23 @@ function SetupDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: 
           </>
         ) : (
           <form onSubmit={verify} className="flex min-h-0 flex-col">
-            <DialogHeader title="Set up two-factor authentication" description="Scan the QR code with your authenticator app, then enter the code it shows." />
+            <DialogHeader
+              title="Set up two-factor authentication"
+              description={askPassword ? 'Confirm your password to continue.' : 'Scan the QR code with your authenticator app, then enter the code it shows.'}
+            />
             <DialogBody className="space-y-5">
-              {setup.isError ? (
+              {askPassword ? (
+                <Field label="Current password" error={passwordError} help="You signed in a while ago, so we need to check it’s you.">
+                  <Input
+                    ref={passwordRef}
+                    type="password"
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    disabled={setup.isPending}
+                  />
+                </Field>
+              ) : setup.isError ? (
                 <Banner
                   tone="danger"
                   action={
@@ -255,9 +291,15 @@ function SetupDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: 
               <Button size="sm" variant="ghost" onClick={() => handleOpenChange(false)}>
                 Cancel
               </Button>
-              <Button type="submit" size="sm" variant="primary" loading={enable.isPending} disabled={!setup.data || code.length !== 6}>
-                Verify and enable
-              </Button>
+              {askPassword ? (
+                <Button type="submit" size="sm" variant="primary" loading={setup.isPending} disabled={!password}>
+                  Continue
+                </Button>
+              ) : (
+                <Button type="submit" size="sm" variant="primary" loading={enable.isPending} disabled={!setup.data || code.length !== 6}>
+                  Verify and enable
+                </Button>
+              )}
             </DialogFooter>
           </form>
         )}
@@ -272,23 +314,42 @@ function DisableDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o
   const [code, setCode] = useState('');
   const [error, setError] = useState<string>();
   const ref = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
+  const [password, setPassword] = useState('');
+  const [needPassword, setNeedPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState<string>();
 
   useEffect(() => {
     if (open) {
       setCode('');
       setError(undefined);
+      setPassword('');
+      setNeedPassword(false);
+      setPasswordError(undefined);
     }
   }, [open]);
 
   const disable = useMutation({
-    mutationFn: (c: string) => api.auth.disableMfa(c),
+    mutationFn: (c: string) => api.auth.disableMfa(c, needPassword ? password : undefined),
     onSuccess: async () => {
       onOpenChange(false);
       await reload();
       toast.success('Two-factor authentication disabled');
     },
     onError: (err) => {
-      setError(errorMessage(err, 'That code didn’t work'));
+      if (needsReauth(err)) {
+        setNeedPassword(true);
+        setPasswordError('Confirm your password to continue');
+        requestAnimationFrame(() => passwordRef.current?.focus());
+        return;
+      }
+      const message = errorMessage(err, 'That code didn’t work');
+      if (needPassword && /password/i.test(message)) {
+        setPasswordError(message);
+        passwordRef.current?.focus();
+        return;
+      }
+      setError(message);
       ref.current?.focus();
     },
   });
@@ -297,6 +358,7 @@ function DisableDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o
     e.preventDefault();
     const c = code.trim();
     if (!c) return setError('Enter a code');
+    if (needPassword && !password) return setPasswordError('Enter your current password');
     disable.mutate(c);
   };
 
@@ -325,6 +387,20 @@ function DisableDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o
                 className="font-mono"
               />
             </Field>
+            {needPassword && (
+              <Field label="Current password" error={passwordError} className="mt-4">
+                <Input
+                  ref={passwordRef}
+                  type="password"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    setPasswordError(undefined);
+                  }}
+                />
+              </Field>
+            )}
           </DialogBody>
           <DialogFooter>
             <Button size="sm" variant="ghost" onClick={() => onOpenChange(false)}>

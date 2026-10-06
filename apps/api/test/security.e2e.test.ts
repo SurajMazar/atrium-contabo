@@ -405,7 +405,8 @@ describe('security: authentication', () => {
     if (!ready) return;
     const u = await user('stepup');
     await db.session.update({ where: { id: u.sessionId }, data: { createdAt: new Date(Date.now() - 60 * 60_000) } });
-    await http.post('/v1/auth/mfa/setup').set(bearer(u.token)).send({}).expect(401);
+    const stale = await http.post('/v1/auth/mfa/setup').set(bearer(u.token)).send({}).expect(403);
+    expect(stale.body.error.details.reason).toBe('REAUTH_REQUIRED');
     await http.post('/v1/auth/mfa/setup').set(bearer(u.token)).send({ currentPassword: 'wrong' }).expect(422);
     await http.post('/v1/auth/mfa/setup').set(bearer(u.token)).send({ currentPassword: PASSWORD }).expect(201);
   });

@@ -89,6 +89,8 @@ export function SiteRuntime({ motion, mode, websiteId, apiBaseUrl, analytics, co
         cleanup = initAnimations(doc, { gsap: gsap as never, ScrollTrigger: ScrollTrigger as never, motion, disabled, scroller: scroller ?? undefined });
       } catch (err) {
         console.warn('[atrium] animations unavailable', err);
+        // Pending elements are hidden while motion is ready: never leave them invisible.
+        doc.querySelectorAll('[data-a-anim]').forEach((el) => el.setAttribute('data-a-anim-done', ''));
       } finally {
         html.classList.add('a-anim-ready');
       }

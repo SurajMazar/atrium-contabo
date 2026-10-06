@@ -289,7 +289,7 @@ export class AuthService {
       return;
     }
     const s = await this.db.session.findUnique({ where: { id: sessionId }, select: { createdAt: true } });
-    if (!s || Date.now() - s.createdAt.getTime() > RECENT_AUTH_MS) throw new ApiError(401, 'UNAUTHORIZED', 'Confirm your password to continue', { reason: 'REAUTH_REQUIRED' });
+    if (!s || Date.now() - s.createdAt.getTime() > RECENT_AUTH_MS) throw new ApiError(403, 'FORBIDDEN', 'Confirm your password to continue', { reason: 'REAUTH_REQUIRED' }); // 403, not 401: the session is valid, refreshing it would not help
   }
 
   // ── email verification ──

@@ -11,12 +11,14 @@ export function animationAttrs(anim: Animation | undefined): Record<string, stri
 
 /**
  * Inline <head> script: marks the document as animation-capable so pending
- * elements start hidden (no flash), unless the user prefers reduced motion.
+ * elements start hidden (no flash), unless the user prefers reduced motion. Once GSAP is running
+ * (`a-motion-ready`), elements that arrive later — the next page after a client-side navigation —
+ * stay hidden until the runtime picks them up, instead of painting once and then animating in.
  * A failsafe reveals everything if the runtime never loads.
  */
 export const ANIMATION_BOOT_SCRIPT = `(function(){try{if(!window.matchMedia('(prefers-reduced-motion: reduce)').matches){var d=document.documentElement;d.classList.add('a-anim');setTimeout(function(){d.classList.add('a-anim-ready')},3500)}}catch(e){}})();`;
 
-export const ANIMATION_BASE_CSS = `html.a-anim:not(.a-anim-ready) [${ANIM_ATTR}]:not([data-a-anim-done]){visibility:hidden}.a-split-line{display:block;overflow:hidden}.a-split-word,.a-split-char{display:inline-block;will-change:transform}@media (prefers-reduced-motion: reduce){[${ANIM_ATTR}]{visibility:visible!important}}`;
+export const ANIMATION_BASE_CSS = `html.a-anim:not(.a-anim-ready) [${ANIM_ATTR}]:not([data-a-anim-done]),html.a-anim.a-motion-ready [${ANIM_ATTR}]:not([data-a-anim-done]){visibility:hidden}.a-split-line{display:block;overflow:hidden}.a-split-word,.a-split-char{display:inline-block;will-change:transform}@media (prefers-reduced-motion: reduce){[${ANIM_ATTR}]{visibility:visible!important}}`;
 
 function splitText(el: HTMLElement, mode: 'words' | 'chars' | 'lines'): Element[] {
   if (el.dataset.aSplit === mode) return Array.from(el.querySelectorAll(mode === 'chars' ? '.a-split-char' : mode === 'words' ? '.a-split-word' : '.a-split-line > span'));

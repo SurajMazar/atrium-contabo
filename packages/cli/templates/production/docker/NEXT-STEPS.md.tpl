@@ -54,6 +54,16 @@ cd "$DEPLOY" && docker compose -f compose.yaml up -d postgres && rm compose.seed
 ```
 Then sign in at https://{{adminHost}} as SEED_ADMIN_EMAIL with SEED_ADMIN_PASSWORD from `.env`, and change it.
 
+Users and super admins can also be managed from inside the running API container (no checkout needed):
+```bash
+docker compose exec api node dist/cli.js create-user --email you@example.com --name "You" --super-admin
+docker compose exec api node dist/cli.js super-admin --email you@example.com     # promote an existing account
+docker compose exec api node dist/cli.js set-password --email you@example.com
+docker compose exec api node dist/cli.js reset-mfa --email you@example.com       # lost authenticator
+docker compose exec api node dist/cli.js list-users --super-admins
+```
+Super admins must turn on two-factor authentication (Account → Security) before platform admin pages open.
+
 ## 6. Operate
 - Backups: `scripts/backup.sh --env-file .env --with-files` nightly (cron/systemd timer), copy off-site.
 - Upgrade: bump ATRIUM_IMAGE_TAG → `docker compose pull && docker compose up -d` (migrations run first).
