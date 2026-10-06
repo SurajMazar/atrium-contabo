@@ -79,7 +79,7 @@ export class PublicService {
   }
 
   async submit(formId: string, body: { values?: Record<string, unknown>; captchaToken?: string; _hp?: string; _ts?: number; pageUrl?: string; locale?: string } & Record<string, unknown>, meta: { ip?: string; userAgent?: string; referrer?: string; origin?: string }, files: UploadedPart[] = []) {
-    const row = await this.db.form.findFirst({ where: { id: formId, archivedAt: null }, include: { fields: true, rules: true, website: { select: { id: true, organizationId: true, status: true, deletedAt: true } } } });
+    const row = await this.db.form.findFirst({ where: { id: formId, archivedAt: null }, include: { fields: true, rules: true, website: { select: { id: true, organizationId: true, status: true, deletedAt: true, slug: true, domains: { where: { verifiedAt: { not: null } }, select: { hostname: true } } } } } });
     if (!row || row.website.deletedAt || row.website.status === 'SUSPENDED') throw notFound('Form');
     const form: FormDefinition = FormDefinitionSchema.parse(formFromRow(row));
     const ipHash = meta.ip ? sha(`${meta.ip}|${env().ANALYTICS_SALT}`) : undefined;
@@ -99,7 +99,10 @@ export class PublicService {
         this.logger.warn(`captcha not configured for form ${formId}: ${err.message}`);
         throw new ApiError(424, 'NOT_CONFIGURED', 'This form is temporarily unavailable. Please contact us another way.');
       });
-      const res = await verifier.verify({ token, remoteIp: meta.ip, action: c.provider === 'recaptcha-v3' ? c.action : undefined, minScore: c.minScore });
+      // In production a token must have been solved on this website (its platform subdomain or a
+      // verified custom domain), not harvested on another site using the same captcha keys.
+      const expectedHostnames = env().NODE_ENV === 'production' ? [`${row.website.slug}.${env().PLATFORM_SITES_DOMAIN.split(':')[0]}`, ...row.website.domains.map((d) => d.hostname)] : undefined;
+      const res = await verifier.verify({ token, remoteIp: meta.ip, action: c.provider === 'recaptcha-v3' ? c.action : undefined, minScore: c.minScore, expectedHostnames });
       if (!res.success) throw validation('Verification failed. Please try again.', [{ field: '_captcha', message: 'Verification failed', codes: res.errorCodes }]);
       captchaScore = res.score;
     }

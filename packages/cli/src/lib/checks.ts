@@ -124,6 +124,13 @@ export function productionChecks(env: Record<string, string | undefined>): Check
     true,
   );
   add(
+    'TRUST_PROXY is not "true"',
+    env.TRUST_PROXY?.trim().toLowerCase() !== 'true',
+    'TRUST_PROXY=true trusts the client-supplied X-Forwarded-For: anyone can spoof their IP and bypass rate limits',
+    'atrium config set TRUST_PROXY loopback,uniquelocal   # or the number of proxy hops',
+    false,
+  );
+  add(
     'TRUST_PROXY is set explicitly',
     !!env.TRUST_PROXY && env.TRUST_PROXY !== 'false',
     'TRUST_PROXY is unset/false behind a reverse proxy — client IPs (rate limits, audit log) will be the proxy',

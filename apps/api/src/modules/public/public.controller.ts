@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Headers, HttpCode, Param, Post, Query, Req, Res, UploadedFiles, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, Param, Post, Query, Req, Res, UploadedFiles, UseInterceptors, UseGuards } from '@nestjs/common';
 import { AnyFilesInterceptor } from '@nestjs/platform-express';
+import { FORM_FILE_HARD_LIMIT, FormUploadGate } from './form-upload.gate';
 import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { promises as fs } from 'node:fs';
@@ -63,7 +64,9 @@ export class PublicController {
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @HttpCode(200)
   @Post('public/forms/:formId/submit')
-  @UseInterceptors(AnyFilesInterceptor({ limits: { fileSize: 25 * 1024 * 1024, files: 5, fields: 200, fieldSize: 100_000, parts: 210 } }))
+  // Guards run before interceptors: the form is checked before any upload is buffered.
+  @UseGuards(FormUploadGate)
+  @UseInterceptors(AnyFilesInterceptor({ limits: { fileSize: FORM_FILE_HARD_LIMIT, files: 5, fields: 200, fieldSize: 100_000, parts: 210 } }))
   submit(@Param('formId') formId: string, @Body() body: Record<string, unknown>, @UploadedFiles() files: UploadedPart[] | undefined, @Req() req: AppRequest) {
     let parsed: Record<string, unknown> = body ?? {};
     if (typeof body?.values === 'string') {

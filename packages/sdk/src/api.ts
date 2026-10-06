@@ -33,6 +33,8 @@ export function createAtriumClient(opts: AtriumClientOptions) {
       updateMe: (body: Partial<Pick<T.User, 'name' | 'avatarUrl' | 'locale'>>) => http.patch<T.User>('/auth/me', body),
       sessions: () => http.get<{ items: T.SessionInfo[] }>('/auth/sessions'),
       revokeSession: (id: string) => http.delete(`/auth/sessions/${id}`),
+      /** Sign out every session except this one, atomically on the server. */
+      revokeOtherSessions: () => http.post<{ revoked: number }>('/auth/sessions/revoke-others'),
       /** Step-up: pass the current password when the session is older than a few minutes (403 REAUTH_REQUIRED). */
       setupMfa: (currentPassword?: string) => http.post<{ secret: string; otpauthUrl: string; qrDataUrl: string }>('/auth/mfa/setup', currentPassword ? { currentPassword } : {}),
       enableMfa: (code: string) => http.post<{ recoveryCodes: string[] }>('/auth/mfa/enable', { code }),
@@ -232,7 +234,7 @@ export function createAtriumClient(opts: AtriumClientOptions) {
       user: (id: string) => http.get<Record<string, unknown>>(`/admin/users/${id}`),
       /** Create an organization; with `owner`, that person owns it (new accounts get a password, returned once when generated). */
       createOrganization: (body: { name: string; planKey?: string; owner?: { email: string; name: string; password?: string } }) =>
-        http.post<{ id: string; name: string; slug: string; planKey: string; owner: { email: string; created: boolean; password?: string } | null }>('/admin/organizations', body),
+        http.post<{ id: string; name: string; slug: string; planKey: string; owner: { email: string; created: boolean; invited?: boolean; password?: string } | null }>('/admin/organizations', body),
       updateOrganization: (id: string, body: { planKey?: string; suspended?: boolean; featureFlags?: Record<string, boolean> }) => http.patch<Record<string, unknown>>(`/admin/organizations/${id}`, body),
       users: (query: { search?: string; cursor?: string } = {}) => http.get<T.List<Record<string, unknown>>>('/admin/users', q(query)),
       updateUser: (id: string, body: { disabled?: boolean; isSuperAdmin?: boolean }) => http.patch<Record<string, unknown>>(`/admin/users/${id}`, body),

@@ -70,21 +70,32 @@ export class BootstrapService implements OnApplicationBootstrap {
 
   /**
    * The first super admin. Only while no super admin exists at all, so revoking or replacing the
-   * seeded account later is respected. An existing account with that email is promoted (its
-   * password is left alone); otherwise it is created with SEED_ADMIN_PASSWORD.
+   * seeded account later is respected. Created with SEED_ADMIN_PASSWORD when the email is unused.
+   * An account that already exists with that email is promoted only when its password IS
+   * SEED_ADMIN_PASSWORD: sign-up is open, so anyone could have registered the address first, and
+   * an email match alone must never grant platform control.
    */
   private async superAdmin() {
     const db = this.prisma.client;
     const email = (process.env.SEED_ADMIN_EMAIL ?? '').trim().toLowerCase();
     if (!email || (await db.user.count({ where: { isSuperAdmin: true } })) > 0) return;
-    const existing = await db.user.findUnique({ where: { email }, select: { id: true } });
+    const password = process.env.SEED_ADMIN_PASSWORD ?? '';
+    const existing = await db.user.findUnique({ where: { email }, select: { id: true, passwordHash: true } });
     if (existing) {
-      await db.user.update({ where: { id: existing.id }, data: { isSuperAdmin: true } });
-      await this.audit(existing.id, `Promoted ${email} to super admin (SEED_ADMIN_EMAIL; the platform had none)`);
+      const proven = !!password && !!existing.passwordHash && (await argon2.verify(existing.passwordHash, password).catch(() => false));
+      if (!proven) {
+        this.logger.error(`no super admin: ${email} already has an account whose password is not SEED_ADMIN_PASSWORD — not promoting it. Use \`node dist/cli.js super-admin --email …\` for an account you control.`);
+        return;
+      }
+      await db.$transaction([
+        db.user.update({ where: { id: existing.id }, data: { isSuperAdmin: true } }),
+        // Whoever was signed in before the promotion signs in again.
+        db.session.updateMany({ where: { userId: existing.id, revokedAt: null }, data: { revokedAt: new Date() } }),
+      ]);
+      await this.audit(existing.id, `Promoted ${email} to super admin (SEED_ADMIN_EMAIL with SEED_ADMIN_PASSWORD; the platform had none)`);
       this.logger.log(`promoted ${email} to super admin`);
       return;
     }
-    const password = process.env.SEED_ADMIN_PASSWORD ?? '';
     const production = process.env.NODE_ENV === 'production';
     if (production && email.endsWith('.localhost')) {
       this.logger.warn(`no super admin yet: SEED_ADMIN_EMAIL is the local-development address (${email})`);

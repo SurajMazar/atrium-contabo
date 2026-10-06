@@ -3,8 +3,8 @@ import { assertPublicUrl, outboundAllowPrivate } from '@atrium/providers';
 import { WEBHOOK_EVENTS } from '@atrium/schema';
 import { z } from 'zod';
 import { AuditService } from '../../common/audit.service';
-import { Access, CurrentUser, type AuthUser } from '../../common/decorators';
-import { badRequest } from '../../common/errors';
+import { Access, CurrentAccess, CurrentUser, type AccessContext, type AuthUser } from '../../common/decorators';
+import { badRequest, forbidden } from '../../common/errors';
 import { limitOf } from '../../common/http';
 import { PrismaService } from '../../common/prisma.service';
 import { QueueService } from '../../common/queue.service';
@@ -31,6 +31,15 @@ async function assertSafeUrl(url: string) {
   }
 }
 
+/** Webhooks per organization: each subscription multiplies every event into deliveries on a shared queue. */
+const MAX_WEBHOOKS_PER_ORG = 50;
+/** Form submissions carry visitor data: subscribing to them (or reading their payloads) needs submission.read. */
+const carriesSubmissions = (events: string[] | undefined) => !!events?.some((e) => e === '*' || e.startsWith('form.'));
+const canReadSubmissions = (access: AccessContext) => access.permissions.has('*') || access.permissions.has('submission.read');
+function assertMaySubscribe(access: AccessContext, events: string[] | undefined) {
+  if (carriesSubmissions(events) && !canReadSubmissions(access)) throw forbidden('Subscribing to form submissions requires the submission.read permission');
+}
+
 @Controller()
 export class WebhooksController {
   constructor(private readonly prisma: PrismaService, private readonly secrets: SecretsService, private readonly queues: QueueService, private readonly audit: AuditService) {}
@@ -45,7 +54,9 @@ export class WebhooksController {
   }
 
   @Access('webhook.manage', 'organization', 'orgId') @Post('organizations/:orgId/webhooks')
-  async create(@Param('orgId') orgId: string, @Body(new ZodBody(Create)) b: z.infer<typeof Create>, @CurrentUser() user: AuthUser) {
+  async create(@Param('orgId') orgId: string, @Body(new ZodBody(Create)) b: z.infer<typeof Create>, @CurrentUser() user: AuthUser, @CurrentAccess() access: AccessContext) {
+    assertMaySubscribe(access, b.events);
+    if ((await this.prisma.client.webhook.count({ where: { organizationId: orgId } })) >= MAX_WEBHOOKS_PER_ORG) throw badRequest(`An organization can have at most ${MAX_WEBHOOKS_PER_ORG} webhooks`);
     await assertSafeUrl(b.url);
     if (b.websiteId && !(await this.prisma.client.website.findFirst({ where: { id: b.websiteId, organizationId: orgId } }))) throw badRequest('Unknown website');
     const secret = `whsec_${randomToken(24)}`;
@@ -55,7 +66,8 @@ export class WebhooksController {
   }
 
   @Access('webhook.manage', 'webhook', 'id') @Patch('webhooks/:id')
-  async update(@Param('id') id: string, @Body(new ZodBody(Create.partial().extend({ enabled: z.boolean().optional() }))) b: Partial<z.infer<typeof Create>> & { enabled?: boolean }) {
+  async update(@Param('id') id: string, @Body(new ZodBody(Create.partial().extend({ enabled: z.boolean().optional() }))) b: Partial<z.infer<typeof Create>> & { enabled?: boolean }, @CurrentAccess() access: AccessContext) {
+    assertMaySubscribe(access, b.events);
     if (b.url) await assertSafeUrl(b.url);
     return this.dto(await this.prisma.client.webhook.update({ where: { id }, data: { name: b.name, url: b.url, events: b.events, enabled: b.enabled } }));
   }
@@ -77,10 +89,11 @@ export class WebhooksController {
   }
 
   @Access('webhook.manage', 'webhook', 'id') @Get('webhooks/:id/deliveries')
-  async deliveries(@Param('id') id: string, @Query() q: Record<string, string>) {
+  async deliveries(@Param('id') id: string, @Query() q: Record<string, string>, @CurrentAccess() access: AccessContext) {
     const limit = limitOf(q.limit);
     const rows = await this.prisma.client.webhookDelivery.findMany({ where: { webhookId: id }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: limit + 1, ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}) });
-    const items = rows.slice(0, limit).map((d) => this.delivery(d));
+    const redact = !canReadSubmissions(access);
+    const items = rows.slice(0, limit).map((d) => this.delivery(redact && d.event.startsWith('form.') ? { ...d, payload: { redacted: 'Requires submission.read' } } : d));
     return { items, nextCursor: rows.length > limit ? items[items.length - 1]!.id : null };
   }
 

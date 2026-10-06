@@ -71,7 +71,10 @@ export function resolvePageForPath(definition: WebsiteDefinition, path: string, 
     if (!r.enabled) continue;
     const m = matchRedirect(r.source, p);
     if (m === undefined) continue;
-    const destination = m === null ? r.destination : r.destination.replace(/:splat|\*/g, m);
+    // The wildcard part comes from the visitor's URL: backslashes and control characters could turn
+    // a relative destination into `/\evil.com` (browsers read that as //evil.com) — encode them.
+    const splat = m === null ? null : m.replace(/\\/g, '%5C').replace(/[\u0000-\u001f\u007f]/g, '');
+    const destination = splat === null ? r.destination : r.destination.replace(/:splat|\*/g, () => splat);
     if (normalizePath(destination) === p) continue;
     return { redirect: { destination, statusCode: r.statusCode } };
   }

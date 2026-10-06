@@ -64,7 +64,7 @@ export class PublishingController {
 
   @Access('page.update', 'website', 'id')
   @Post('preview-tokens')
-  createToken(@Param('id') id: string, @Body(new ZodBody(z.object({ expiresInHours: z.number().min(1).max(24 * 90).optional(), password: z.string().min(4).max(100).optional(), label: z.string().max(80).optional() }))) body: { expiresInHours?: number; password?: string; label?: string }, @CurrentUser() user: AuthUser) {
+  createToken(@Param('id') id: string, @Body(new ZodBody(z.object({ expiresInHours: z.number().min(1).max(24 * 90).optional(), password: z.string().min(8).max(100).optional(), label: z.string().max(80).optional() }))) body: { expiresInHours?: number; password?: string; label?: string }, @CurrentUser() user: AuthUser) {
     return this.publishing.createPreviewToken(id, body, user);
   }
 

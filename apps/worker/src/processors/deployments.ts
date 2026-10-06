@@ -190,21 +190,27 @@ async function applyInfo(ctx: WorkerContext, d: LoadedDeployment, info: Deployme
   return { status, terminal };
 }
 
+/**
+ * Register the website's domains with the deployment provider and record DNS/SSL status. This
+ * NEVER proves ownership: a provider "verified" only means DNS points at it (a dangling record
+ * left by a previous owner would pass). `verifiedAt` is set exclusively by the platform's TXT
+ * check (DomainsService.verify), and a domain only becomes active once that proof exists.
+ */
 async function attachDomains(ctx: WorkerContext, d: LoadedDeployment, provider: DeploymentProvider, projectName: string) {
   const domains = await ctx.prisma.domain.findMany({ where: { websiteId: d.website.id, environment: 'production' } });
   for (const domain of domains) {
     try {
       const cfg = await provider.addDomain(projectName, domain.hostname);
+      const pointsHere = !!cfg.verified && !cfg.misconfigured;
       await ctx.prisma.domain.update({
         where: { id: domain.id },
         data: {
           provider: provider.driver,
           dnsRecords: cfg.records as unknown as object,
-          dnsStatus: cfg.verified ? 'verified' : cfg.misconfigured ? 'misconfigured' : 'unverified',
-          sslStatus: cfg.ssl ?? (cfg.verified ? 'active' : 'pending'),
-          status: cfg.verified ? 'active' : 'pending',
+          dnsStatus: pointsHere ? 'verified' : cfg.misconfigured ? 'misconfigured' : 'unverified',
+          sslStatus: cfg.ssl ?? (pointsHere ? 'active' : 'pending'),
+          status: domain.verifiedAt && pointsHere ? 'active' : domain.verifiedAt ? domain.status : 'pending',
           lastCheckedAt: ctx.now(),
-          ...(cfg.verified && !domain.verifiedAt ? { verifiedAt: ctx.now() } : {}),
         },
       });
     } catch (err) {

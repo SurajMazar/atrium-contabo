@@ -70,8 +70,10 @@ deployment providers).
   caches hold pages until their TTL — keep HTML TTLs short or purge by host via the Cloudflare API.
 - WAF: enable the managed ruleset; add rate-limiting rules for `POST /v1/auth/login` and
   `POST /v1/public/forms/*/submit` on top of the API's own throttling.
-- Visitor IPs: the API honours `X-Forwarded-For` from the first proxy hop (`TRUST_PROXY=true`, the
-  default), so rate limits and spam scoring see the client address behind Cloudflare.
+- Visitor IPs: set `TRUST_PROXY` to the number of proxy hops in front of the API (e.g. `2` for
+  Cloudflare → nginx → API) or to your proxies' addresses (`loopback,uniquelocal` plus
+  [Cloudflare's ranges](https://www.cloudflare.com/ips/)). Never `true`: it trusts the left-most
+  `X-Forwarded-For` value, which any client can set, and would let anyone dodge rate limits.
 
 ## Cloudflare for SaaS (tenant custom domains)
 

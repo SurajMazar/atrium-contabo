@@ -201,6 +201,33 @@ describe('analytics + deployments + net helpers', () => {
   });
 });
 
+describe('deployment domains', () => {
+  it('a provider saying DNS points here never verifies ownership or activates an unproven domain', async () => {
+    const deployment = {
+      id: 'dep_2', status: 'QUEUED', target: 'PRODUCTION', provider: 'self-hosted', versionId: 'v1', externalId: null, url: null, inspectorUrl: null, logs: [], meta: {},
+      version: { id: 'v1', number: 4, snapshot: {} },
+      website: { id: 'w1', organizationId: 'org1', slug: 'aranya', name: 'Aranya', deploymentMode: 'PLATFORM', deploymentProvider: null, deploymentIntegrationId: null, externalProject: null, publishedVersionId: null },
+    };
+    const domains = [
+      { id: 'd_claimed', hostname: 'dangling.example.com', status: 'pending', verifiedAt: null },
+      { id: 'd_proven', hostname: 'www.example.com', status: 'pending', verifiedAt: new Date('2026-01-01') },
+    ];
+    const domainUpdate = vi.fn(async () => ({}));
+    const deploy = vi.fn(async () => ({ id: 'self-aranya-2', status: 'ready', target: 'production', url: 'http://aranya.sites.localhost:3001' }));
+    const addDomain = vi.fn(async () => ({ verified: true, misconfigured: false, records: [] }));
+    const { ctx } = makeCtx({
+      prisma: { deployment: { findUnique: vi.fn(async () => deployment), update: vi.fn(async () => ({})), updateMany: vi.fn(async () => ({ count: 1 })) }, website: { update: vi.fn(async () => ({})) }, domain: { findMany: vi.fn(async () => domains), update: domainUpdate }, auditLog: { create: vi.fn(async () => ({})) } },
+      resolver: { platformDeployment: () => ({ deploy, driver: 'self-hosted', addDomain }) },
+    });
+    await processDeploymentRun(ctx, { deploymentId: 'dep_2' }, job());
+    const byId = Object.fromEntries((domainUpdate.mock.calls as unknown as Array<[{ where: { id: string }; data: Record<string, unknown> }]>).map(([a]) => [a.where.id, a.data]));
+    expect(byId.d_claimed).toMatchObject({ status: 'pending', dnsStatus: 'verified' });
+    expect(byId.d_claimed).not.toHaveProperty('verifiedAt');
+    expect(byId.d_proven).toMatchObject({ status: 'active' });
+    expect(byId.d_proven).not.toHaveProperty('verifiedAt');
+  });
+});
+
 describe('ai.generate-site', () => {
   it('delegates to runSiteGeneration and forwards progress', async () => {
     const run = vi.fn(async (opts: { onProgress?: (p: unknown) => void }) => {

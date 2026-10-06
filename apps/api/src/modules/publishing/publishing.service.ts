@@ -13,6 +13,10 @@ import { hashToken, randomToken } from '../../common/tokens';
 import { DraftService } from '../websites/draft.service';
 import { DeploymentsService } from '../deployments/deployments.service';
 import { SecretsService } from '../../common/secrets.service';
+import { RedisService } from '../../common/redis.service';
+
+const PREVIEW_MAX_FAILURES = 10;
+const PREVIEW_FAIL_WINDOW_S = 15 * 60;
 
 @Injectable()
 export class PublishingService {
@@ -24,6 +28,7 @@ export class PublishingService {
     private readonly audit: AuditService,
     private readonly deployments: DeploymentsService,
     private readonly secrets: SecretsService,
+    private readonly redis: RedisService,
   ) {}
 
   private get db() {
@@ -207,10 +212,33 @@ export class PublishingService {
   }
 
   /** Resolve a preview token for the renderer (draft content, never cached). */
+  /**
+   * Draft snapshot for a preview link. Password-protected links are guarded against guessing:
+   * failures are counted per link (10 per 15 minutes, then locked), and a correct password is
+   * remembered briefly so every page render does not re-run argon2 (which would also make the
+   * endpoint a cheap CPU/memory lever).
+   */
   async resolvePreview(token: string, password?: string) {
-    const row = await this.db.previewToken.findUnique({ where: { tokenHash: hashToken(token) } });
+    const tokenHash = hashToken(token);
+    const row = await this.db.previewToken.findUnique({ where: { tokenHash } });
     if (!row || row.revokedAt || row.expiresAt < new Date()) throw notFound('Preview');
-    if (row.passwordHash && !(password && (await argon2.verify(row.passwordHash, password)))) throw unauthorized('PASSWORD_REQUIRED');
+    if (row.passwordHash) {
+      if (!password) throw unauthorized('PASSWORD_REQUIRED');
+      const redis = this.redis.client;
+      const failKey = `preview:fail:${tokenHash}`;
+      const okKey = `preview:ok:${tokenHash}:${hashToken(`${row.passwordHash}:${password}`)}`;
+      const known = await redis.get(okKey).catch(() => null);
+      if (!known) {
+        const fails = Number(await redis.get(failKey).catch(() => 0)) || 0;
+        if (fails >= PREVIEW_MAX_FAILURES) throw new ApiError(429, 'RATE_LIMITED', 'Too many wrong passwords for this preview. Try again in 15 minutes.');
+        if (!(await argon2.verify(row.passwordHash, password).catch(() => false))) {
+          const n = await redis.incr(failKey).catch(() => 0);
+          if (n === 1) await redis.expire(failKey, PREVIEW_FAIL_WINDOW_S).catch(() => undefined);
+          throw unauthorized('PASSWORD_REQUIRED');
+        }
+        await redis.set(okKey, '1', 'EX', 600).catch(() => undefined);
+      }
+    }
     return this.buildSnapshot(row.websiteId, { preview: true, fromDraft: true });
   }
 }

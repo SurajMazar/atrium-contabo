@@ -233,6 +233,20 @@ export interface ValidateSubmissionOptions {
 }
 
 /** Hard limits for public submissions (independent of field configuration). */
+/**
+ * Rules run on a queue shared by every tenant (actions run one after another), so their size is
+ * capped. Enforced when forms are saved; the worker also only runs this many.
+ */
+export const FORM_RULE_LIMITS = { rules: 20, actionsPerRule: 10 } as const;
+
+/** Why a form exceeds FORM_RULE_LIMITS (undefined when it is within them). */
+export function formRuleLimitIssue(form: { rules?: Array<{ then?: unknown[]; otherwise?: unknown[] }> }): string | undefined {
+  const rules = form.rules ?? [];
+  if (rules.length > FORM_RULE_LIMITS.rules) return `A form can have at most ${FORM_RULE_LIMITS.rules} rules`;
+  if (rules.some((r) => (r.then?.length ?? 0) > FORM_RULE_LIMITS.actionsPerRule || (r.otherwise?.length ?? 0) > FORM_RULE_LIMITS.actionsPerRule)) return `A rule can have at most ${FORM_RULE_LIMITS.actionsPerRule} actions`;
+  return undefined;
+}
+
 export const SUBMISSION_LIMITS = { maxStringLength: 10_000, maxArrayItems: 100, maxFiles: 20 } as const;
 
 const FILE_KEY = /^[A-Za-z0-9/_.-]{1,512}$/;

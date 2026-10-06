@@ -358,11 +358,23 @@ export async function buildNextProject(opts: BuildNextProjectOptions): Promise<P
     ...Object.entries(opts.env ?? {}).map(([k, v]) => `${k}=${/[\s#"']/.test(v) ? JSON.stringify(v) : v}`),
   ];
   files.set('.env.production', `${envLines.join('\n')}\n`);
-  files.set('site.json', `${JSON.stringify(opts.snapshot, null, 2)}\n`);
+  files.set('site.json', `${JSON.stringify(publicSnapshot(opts.snapshot), null, 2)}\n`);
   files.set('vercel.json', `${JSON.stringify({ $schema: 'https://openapi.vercel.sh/vercel.json', framework: 'nextjs', installCommand: 'npm install', buildCommand: 'npm run build' }, null, 2)}\n`);
   files.set('.gitignore', ['node_modules', '.next', 'out', '.vercel', '*.tsbuildinfo', '.env*.local', ''].join('\n'));
   files.set('README.md', readme(name, opts.snapshot, staticExport));
   return files;
+}
+
+/**
+ * The snapshot shipped in an exported project (pushed to Vercel/Netlify/Git, possibly a public
+ * repository). Form rules hold recipient emails, phone numbers and webhook URLs — often secret
+ * capability URLs — and the exported site never needs them: submissions go back to the API,
+ * which runs the rules from its own copy.
+ */
+function publicSnapshot<T>(snapshot: T): T {
+  const s = snapshot as unknown as { definition?: { forms?: Array<Record<string, unknown>> } };
+  if (!s?.definition?.forms) return snapshot;
+  return { ...s, definition: { ...s.definition, forms: s.definition.forms.map(({ rules: _rules, ...form }) => ({ ...form, rules: [] })) } } as unknown as T;
 }
 
 /** Convert a project file map to DeploymentProvider files. */

@@ -124,7 +124,10 @@ export class WebsitesController {
 
   @Access('website.export', 'website', 'id')
   @Post('websites/:id/clone')
-  clone(@Param('id') id: string, @Body(new ZodBody(CloneBody)) body: z.infer<typeof CloneBody>, @CurrentUser() user: AuthUser) {
+  async clone(@Param('id') id: string, @Body(new ZodBody(CloneBody)) body: z.infer<typeof CloneBody>, @CurrentUser() user: AuthUser, @CurrentAccess() access: AccessContext) {
+    // A clone is a new website: it needs website.create in the organization (website-scoped
+    // members such as Website Managers cannot create websites this way).
+    await this.access.check(user, 'organization', access.organizationId, 'website.create');
     return this.websites.clone(id, body, user);
   }
 

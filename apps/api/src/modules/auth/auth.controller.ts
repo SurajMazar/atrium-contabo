@@ -95,6 +95,7 @@ export class AuthController {
   }
 
   @HttpCode(204)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('password/change')
   async change(@CurrentUser() user: AuthUser, @Body(new ZodBody(z.object({ currentPassword: z.string().max(200), newPassword: z.string().max(200) }))) body: { currentPassword: string; newPassword: string }, @Req() req: AppRequest) {
     await this.auth.changePassword(user.id, user.sessionId, body.currentPassword, body.newPassword, sessionMeta(req));
@@ -129,6 +130,13 @@ export class AuthController {
   @Get('sessions')
   sessions(@CurrentUser() user: AuthUser) {
     return this.auth.sessions(user.id, user.sessionId);
+  }
+
+  /** Sign out every other session in one step (sessions created meanwhile included). */
+  @HttpCode(200)
+  @Post('sessions/revoke-others')
+  revokeOthers(@CurrentUser() user: AuthUser) {
+    return this.auth.revokeOtherSessions(user.id, user.sessionId);
   }
 
   @HttpCode(204)

@@ -79,7 +79,9 @@ export function resolveRequest(req: SiteRequest): Resolution {
   const res = resolvePageForPath(def, path, undefined, { includeDrafts: req.mode === 'preview' });
   if (res && isRedirect(res)) {
     const dest = res.redirect.destination;
-    const destination = dest.startsWith('/') && !dest.startsWith('//') ? `${req.basePath}${dest}` || '/' : dest;
+    // Relative destinations stay on this site; `//host` and `/\host` would leave it.
+    const relative = dest.startsWith('/') && !dest.startsWith('//') && !dest.startsWith('/\\');
+    const destination = relative ? `${req.basePath}${dest}` || '/' : dest.startsWith('/') ? `${req.basePath}/` : dest;
     return { kind: 'redirect', destination, statusCode: res.redirect.statusCode };
   }
   if (res) return { kind: 'page', page: res.page, locale: res.locale, ctx: ctxFor(req, res.page, res.locale, res.collectionItem) };

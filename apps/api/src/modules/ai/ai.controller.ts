@@ -7,11 +7,13 @@ import { z } from 'zod';
 import { env } from '../../config/env';
 import { AccessService } from '../../common/access.service';
 import { Access, CurrentAccess, CurrentUser, Public, type AccessContext, type AppRequest, type AuthUser } from '../../common/decorators';
-import { unauthorized } from '../../common/errors';
+import { superAdminNeedsMfa } from '../../common/auth.guard';
+import { forbidden, unauthorized } from '../../common/errors';
 import { PrismaService } from '../../common/prisma.service';
 import { ZodBody } from '../../common/zod.pipe';
 import { AiLimiter, AI_LIMITS, tooManyAiRequests } from './ai-limits';
 import { AiService } from './ai.service';
+import { JWT_AUDIENCE, JWT_ISSUER } from '../auth/jwt';
 
 const id = z.string().max(64).optional();
 const GenerateSite = z.object({ brief: SiteBriefSchema, prompt: z.string().max(4000).optional(), provider: z.string().max(40).optional(), model: z.string().max(100).optional(), integrationId: id });
@@ -55,7 +57,9 @@ export class AiController {
 
   @Access('ai.use', 'organization', 'orgId')
   @Get('organizations/:orgId/ai/usage')
-  usage(@Param('orgId') orgId: string) {
+  usage(@Param('orgId') orgId: string, @CurrentAccess() access: AccessContext) {
+    // Organization-wide AI spend is not for members limited to specific websites.
+    this.access.assertOrganizationWide(access);
     return this.ai.usage(orgId);
   }
 
@@ -86,7 +90,9 @@ export class AiController {
   @Get('ai/generations/:id/events')
   async events(@Param('id') id: string, @Query('ticket') ticket: string | undefined, @Req() req: AppRequest, @Res() res: Response) {
     const user = await this.streamUser(id, ticket, req);
-    await this.access.check(user, 'aiGeneration', id, 'page.read');
+    const access = await this.access.check(user, 'aiGeneration', id, 'page.read');
+    // Same rule as the auth guard: a super admin reaching into another tenant needs an MFA-verified session.
+    if (access.superAdminOverride && superAdminNeedsMfa() && !user.mfaVerified) throw forbidden('Platform administration requires a session signed in with two-factor authentication');
     const release = await this.limiter.acquire(`stream:${user.id}`, AI_LIMITS.streamsPerUser(), AI_LIMITS.streamTtlMs);
     if (!release) throw tooManyAiRequests('Too many open progress streams');
     try {
@@ -118,30 +124,30 @@ export class AiController {
     }
   }
 
-  /** Ticket first; legacy bearer header / ?access_token= fallback (same checks as the auth guard). */
-  private async streamUser(generationId: string, ticket: string | undefined, req: AppRequest): Promise<AuthUser> {
+  /** Single-use ticket, or the bearer header with exactly the auth guard's checks (no tokens in URLs). */
+  private async streamUser(generationId: string, ticket: string | undefined, req: AppRequest): Promise<AuthUser & { mfaVerified?: boolean }> {
     if (ticket) {
       const userId = await this.limiter.consumeStreamTicket(ticket, generationId);
       if (!userId) throw unauthorized('Invalid or expired stream ticket');
       const u = await this.prisma.client.user.findUnique({ where: { id: userId }, select: { id: true, email: true, name: true, isSuperAdmin: true, disabledAt: true } });
       if (!u || u.disabledAt) throw unauthorized();
-      return { id: u.id, email: u.email, name: u.name, isSuperAdmin: u.isSuperAdmin, sessionId: 'stream-ticket' };
+      return { id: u.id, email: u.email, name: u.name, isSuperAdmin: u.isSuperAdmin, sessionId: 'stream-ticket', mfaVerified: false };
     }
     const header = req.headers.authorization;
-    const token = header?.startsWith('Bearer ') ? header.slice(7) : typeof req.query.access_token === 'string' ? req.query.access_token : undefined;
+    const token = header?.startsWith('Bearer ') ? header.slice(7) : undefined;
     if (!token) throw unauthorized();
     let payload: { sub: string; sid: string };
     try {
-      payload = await this.jwt.verifyAsync<{ sub: string; sid: string }>(token, { secret: env().JWT_ACCESS_SECRET });
+      payload = await this.jwt.verifyAsync<{ sub: string; sid: string }>(token, { secret: env().JWT_ACCESS_SECRET, algorithms: ['HS256'], issuer: JWT_ISSUER, audience: JWT_AUDIENCE });
     } catch {
       throw unauthorized('Session expired');
     }
     const session = await this.prisma.client.session.findUnique({
       where: { id: payload.sid },
-      select: { revokedAt: true, expiresAt: true, user: { select: { id: true, email: true, name: true, isSuperAdmin: true, disabledAt: true } } },
+      select: { revokedAt: true, expiresAt: true, mfaVerified: true, user: { select: { id: true, email: true, name: true, isSuperAdmin: true, disabledAt: true } } },
     });
     if (!session || session.revokedAt || session.expiresAt < new Date() || session.user.id !== payload.sub || session.user.disabledAt) throw unauthorized('Session expired');
-    return { id: session.user.id, email: session.user.email, name: session.user.name, isSuperAdmin: session.user.isSuperAdmin, sessionId: payload.sid };
+    return { id: session.user.id, email: session.user.email, name: session.user.name, isSuperAdmin: session.user.isSuperAdmin, sessionId: payload.sid, mfaVerified: session.mfaVerified };
   }
 
   @Throttle(AI_THROTTLE)

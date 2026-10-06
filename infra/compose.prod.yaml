@@ -251,6 +251,8 @@ services:
       ATRIUM_API_INTERNAL_URL: http://api:4000
       API_URL: ${API_URL:?set API_URL in .env}
       RENDERER_URL: ${RENDERER_URL:?set RENDERER_URL in .env}
+      # Draft previews (/_preview/…) are only served on this host.
+      PREVIEW_URL: ${PREVIEW_URL:-}
       PLATFORM_SITES_DOMAIN: ${PLATFORM_SITES_DOMAIN:?set PLATFORM_SITES_DOMAIN in .env}
       RENDERER_SECRET: ${RENDERER_SECRET:?set RENDERER_SECRET in .env}
     volumes: [renderer-cache:/app/apps/renderer/.next/cache]

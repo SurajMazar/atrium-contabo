@@ -63,12 +63,16 @@ function submission(over: Record<string, unknown> = {}) {
   };
 }
 
-function setup(sub = submission()) {
+function setup(sub = submission(), opts: { ownEmailProvider?: boolean; members?: string[] } = {}) {
   const update = vi.fn(async () => ({}));
   const del = vi.fn(async () => ({}));
   const storage = { getSignedUrl: vi.fn(async (key: string) => `https://signed.example/${key}?sig=1`) };
   const { ctx, enqueued } = makeCtx({
-    prisma: { formSubmission: { findUnique: vi.fn(async () => sub), update, delete: del } },
+    prisma: {
+      formSubmission: { findUnique: vi.fn(async () => sub), update, delete: del },
+      emailProvider: { count: vi.fn(async () => (opts.ownEmailProvider === false ? 0 : 1)) },
+      organizationMember: { findMany: vi.fn(async () => (opts.members ?? []).map((email) => ({ user: { email } }))) },
+    },
     resolver: { storage: vi.fn(async () => storage) },
   });
   return { ctx, enqueued, update, del, storage };
@@ -109,6 +113,16 @@ describe('rulesFromRows', () => {
     const { rules, invalid } = rulesFromRows(ruleRows, undefined);
     expect(rules.map((r) => r.id)).toEqual(['big-wedding', 'nepal-routing', 'disabled', 'hook']);
     expect(invalid.map((i) => i.ruleId)).toEqual(['broken']);
+  });
+});
+
+describe('form.process without an email provider of its own', () => {
+  it('sends tenant-written mail through the platform account only to the organization team', async () => {
+    const { ctx, enqueued } = setup(submission(), { ownEmailProvider: false, members: ['Events@Venue.com'] });
+    await processFormSubmission(ctx, { submissionId: 'sub_1' }, job());
+    // Notifications (tenant-written, to any address) are restricted; the auto-reply to the submitter is not.
+    const notifications = enqueued.filter((e) => e.name === 'email.send' && (e.data as { context?: { actionType?: string } }).context?.actionType === 'email');
+    expect(notifications.map((e) => (e.data as { message: { to: Array<{ email: string }> } }).message.to.map((t) => t.email)).flat()).toEqual(['events@venue.com']);
   });
 });
 

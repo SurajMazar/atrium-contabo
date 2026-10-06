@@ -1,4 +1,4 @@
-import { FormRuleSchema, planFormRules, SUBMISSION_STATUSES, type FormAction, type FormRule, type PlannedRuleActions } from '@atrium/schema';
+import { FormRuleSchema, planFormRules, SUBMISSION_STATUSES, type FormAction, type FormRule, type PlannedRuleActions, FORM_RULE_LIMITS } from '@atrium/schema';
 import type { JobPayload } from '@atrium/server-kit';
 import type { JobInfo, WorkerContext } from '../context';
 import { appendActionsLog, type ActionLogEntry } from '../lib/actions-log';
@@ -32,7 +32,15 @@ export function rulesFromRows(rows: RuleRow[], fallback: unknown): { rules: Form
   const invalid: Array<{ ruleId: string; error: string }> = [];
   for (const raw of source) {
     const parsed = FormRuleSchema.safeParse(raw);
-    if (parsed.success) rules.push(parsed.data);
+    if (parsed.success && rules.length >= FORM_RULE_LIMITS.rules) {
+      invalid.push({ ruleId: parsed.data.id, error: `Skipped: more than ${FORM_RULE_LIMITS.rules} rules` });
+      continue;
+    }
+    if (parsed.success) {
+      // Actions run one after another on a shared queue: never more than the limit per rule.
+      const cap = FORM_RULE_LIMITS.actionsPerRule;
+      rules.push({ ...parsed.data, then: parsed.data.then.slice(0, cap), otherwise: (parsed.data.otherwise ?? []).slice(0, cap) });
+    }
     else invalid.push({ ruleId: String((raw as { id?: unknown })?.id ?? '?'), error: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') });
   }
   return { rules, invalid };
@@ -120,6 +128,16 @@ export async function processFormSubmission(ctx: WorkerContext, data: JobPayload
     }
   };
 
+  let teamEmails: Promise<Set<string> | null> | undefined;
+  /** Member emails when the organization has no email provider of its own (else null: no restriction). */
+  const platformOnlyRecipients = () =>
+    (teamEmails ??= (async () => {
+      const own = await ctx.prisma.emailProvider.count({ where: { organizationId } });
+      if (own > 0) return null;
+      const members = await ctx.prisma.organizationMember.findMany({ where: { organizationId }, select: { user: { select: { email: true } } } });
+      return new Set(members.map((m: { user: { email: string } }) => m.user.email.toLowerCase()));
+    })());
+
   for (const planned of plan) {
     for (const [index, action] of planned.actions.entries()) {
       const base = { at: now(), ruleId: planned.ruleId, branch: planned.branch, type: action.type } as const;
@@ -138,10 +156,20 @@ export async function processFormSubmission(ctx: WorkerContext, data: JobPayload
       async function executeAction(a: FormAction): Promise<Omit<ActionLogEntry, 'at' | 'type'>> {
         switch (a.type) {
           case 'email': {
-            const to = renderRecipients(a.to, scope);
+            let to = renderRecipients(a.to, scope);
             if (!to.length) return { status: 'skipped', detail: 'No valid recipients' };
-            const cc = renderRecipients(a.cc, scope);
-            const bcc = renderRecipients(a.bcc, scope);
+            let cc = renderRecipients(a.cc, scope);
+            let bcc = renderRecipients(a.bcc, scope);
+            // Without its own email provider an organization sends through the platform's account:
+            // then only its own team may receive tenant-written mail (no phishing from our domain).
+            const team = await platformOnlyRecipients();
+            if (team) {
+              const keep = (list: typeof to) => list.filter((r) => team.has(r.email.toLowerCase()));
+              to = keep(to);
+              cc = keep(cc);
+              bcc = keep(bcc);
+              if (!to.length) return { status: 'skipped', detail: 'Connect an email provider (Integrations) to send to addresses outside your team' };
+            }
             const q = await checkEmailQuota(quota, { organizationId, recipients: to.length + cc.length + bcc.length, nowMs: ctx.now().getTime() });
             if (!q.allowed) return { status: 'skipped', target: to.map((t) => t.email).join(', '), detail: q.reason };
             if (a.html === undefined && files.length && !filesSigned) {
@@ -240,6 +268,9 @@ export async function processFormSubmission(ctx: WorkerContext, data: JobPayload
             return { status: 'done', detail: a.tags.join(', ') };
           }
           case 'assign': {
+            // Only someone in this organization can be assigned a submission (and see its visitor data).
+            const member = await ctx.prisma.organizationMember.findFirst({ where: { organizationId, userId: a.userId }, select: { id: true } });
+            if (!member) return { status: 'skipped', detail: 'Assignee is not a member of this organization' };
             await ctx.prisma.formSubmission.update({ where: { id: sub!.id }, data: { assignedToId: a.userId } });
             return { status: 'done', target: a.userId };
           }

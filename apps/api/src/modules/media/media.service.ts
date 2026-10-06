@@ -154,6 +154,10 @@ export class MediaService {
   }
 
   // folders
+  folderOwner(id: string) {
+    return this.db.mediaFolder.findUnique({ where: { id }, select: { organizationId: true, websiteId: true } });
+  }
+
   async folders(orgId: string, websiteId?: string, websiteIds?: string[]) {
     const scope = websiteId ? { OR: [{ websiteId }, { websiteId: null }] } : websiteIds ? { OR: [{ websiteId: { in: websiteIds } }, { websiteId: null }] } : {};
     const rows = await this.db.mediaFolder.findMany({ where: { organizationId: orgId, ...scope }, orderBy: { name: 'asc' } });

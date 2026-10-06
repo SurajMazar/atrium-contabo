@@ -40,6 +40,15 @@
 {$ADMIN_HOST} {
 	import common
 	header X-Frame-Options "DENY"
+	# Large uploads (site imports up to 300 MB, media) stream through the admin; everything else is small.
+	@bigUpload path_regexp ^/api/v1/organizations/[^/]+/(websites/import|media/upload)$
+	request_body @bigUpload {
+		max_size 310MB
+	}
+	@regular not path_regexp ^/api/v1/organizations/[^/]+/(websites/import|media/upload)$
+	request_body @regular {
+		max_size 25MB
+	}
 	reverse_proxy admin:3000
 }
 

@@ -21,6 +21,13 @@ describe('resolvePageForPath', () => {
     const r = resolvePageForPath(aranya, '/suites');
     expect(r && isRedirect(r) && r.redirect).toEqual({ destination: '/rooms', statusCode: 301 });
   });
+  it('wildcard redirects cannot be bent into an open redirect with backslashes', () => {
+    const def = { ...aranya, redirects: [{ id: 'r1', source: '/old/*', destination: '/*', statusCode: 301 as const, enabled: true }] };
+    const r = resolvePageForPath(def, '/old/\\evil.com');
+    const dest = r && isRedirect(r) ? r.redirect.destination : '';
+    expect(dest.startsWith('/\\')).toBe(false);
+    expect(dest.startsWith('//')).toBe(false);
+  });
   it('does not route template pages or unknown paths directly', () => {
     const tpl = aranya.pages.find((p) => p.kind === 'collection-template')!;
     expect(resolvePageForPath(aranya, `/${tpl.slug}`)).toBeNull();

@@ -142,6 +142,11 @@ describe('next project builder', () => {
     );
     const pkg = JSON.parse(files.get('package.json') as string);
     expect(pkg.name).toBe('aranya-lake-retreat');
+    // Form rules (recipients, phone numbers, webhook URLs) never leave the platform.
+    const shipped = JSON.parse(files.get('site.json') as string) as { definition: { forms: Array<{ rules: unknown[] }> } };
+    expect(shipped.definition.forms.length).toBeGreaterThan(0);
+    expect(shipped.definition.forms.every((f) => f.rules.length === 0)).toBe(true);
+    expect(files.get('site.json')).not.toContain('secret-capability');
     expect(pkg.dependencies).toEqual({ gsap: '^3.15.0', 'lucide-react': '^1.52.0', next: '^16.3.8', react: '^19.3.0', 'react-dom': '^19.3.0', zod: '^4.6.5' });
     expect(pkg.devDependencies).toMatchObject({ typescript: '5.9.3', '@types/react': '^19.3.0' });
     expect(pkg.scripts).toMatchObject({ dev: 'next dev', build: 'next build', start: 'next start' });

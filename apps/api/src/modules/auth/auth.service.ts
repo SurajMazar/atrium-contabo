@@ -64,8 +64,8 @@ export class AuthService {
     return this.prisma.client;
   }
 
-  publicUser(u: { id: string; email: string; name: string; avatarUrl: string | null; isSuperAdmin: boolean; mfaEnabled: boolean; locale: string; emailVerifiedAt?: Date | null }) {
-    return { id: u.id, email: u.email, name: u.name, avatarUrl: u.avatarUrl, isSuperAdmin: u.isSuperAdmin, mfaEnabled: u.mfaEnabled, locale: u.locale, emailVerified: !!u.emailVerifiedAt };
+  publicUser(u: { id: string; email: string; name: string; avatarUrl: string | null; isSuperAdmin: boolean; mfaEnabled: boolean; locale: string; emailVerifiedAt?: Date | null; passwordChangeRequired?: boolean }) {
+    return { id: u.id, email: u.email, name: u.name, avatarUrl: u.avatarUrl, isSuperAdmin: u.isSuperAdmin, mfaEnabled: u.mfaEnabled, locale: u.locale, emailVerified: !!u.emailVerifiedAt, passwordChangeRequired: !!u.passwordChangeRequired };
   }
 
   // ── brute-force counters ──
@@ -254,7 +254,7 @@ export class AuthService {
       // Single use, even under concurrent requests.
       const consumed = await tx.userToken.updateMany({ where: { id: row.id, usedAt: null }, data: { usedAt: new Date() } });
       if (consumed.count !== 1) throw badRequest('This reset link is invalid or has expired');
-      await tx.user.update({ where: { id: row.userId }, data: { passwordHash } });
+      await tx.user.update({ where: { id: row.userId }, data: { passwordHash, passwordChangeRequired: false } });
       await tx.userToken.updateMany({ where: { userId: row.userId, type: { in: ['PASSWORD_RESET', 'MFA_CHALLENGE'] }, usedAt: null }, data: { usedAt: new Date() } });
       await tx.session.updateMany({ where: { userId: row.userId, revokedAt: null }, data: { revokedAt: new Date() } });
     });
@@ -265,9 +265,16 @@ export class AuthService {
   async changePassword(userId: string, sessionId: string, current: string, next: string, meta: SessionMeta = {}) {
     assertPasswordStrength(next);
     const user = await this.db.user.findUniqueOrThrow({ where: { id: userId } });
-    if (!user.passwordHash || !(await argon2.verify(user.passwordHash, current))) throw validation('Current password is incorrect');
+    // Same per-account counter as sign-in: a stolen access token must not allow guessing the password.
+    const key = this.loginKey(user.email);
+    await this.assertNotLocked(key);
+    if (!user.passwordHash || !(await argon2.verify(user.passwordHash, current).catch(() => false))) {
+      await this.recordFailure(key);
+      throw validation('Current password is incorrect');
+    }
+    await this.clearFailures(key);
     await this.db.$transaction([
-      this.db.user.update({ where: { id: userId }, data: { passwordHash: await argon2.hash(next, { type: argon2.argon2id }) } }),
+      this.db.user.update({ where: { id: userId }, data: { passwordHash: await argon2.hash(next, { type: argon2.argon2id }), passwordChangeRequired: false } }),
       this.db.userToken.updateMany({ where: { userId, type: 'PASSWORD_RESET', usedAt: null }, data: { usedAt: new Date() } }),
       this.db.session.updateMany({ where: { userId, id: { not: sessionId }, revokedAt: null }, data: { revokedAt: new Date() } }),
     ]);
@@ -280,8 +287,14 @@ export class AuthService {
    */
   async assertRecentAuth(userId: string, sessionId: string, password?: string) {
     if (password !== undefined) {
-      const user = await this.db.user.findUniqueOrThrow({ where: { id: userId }, select: { passwordHash: true } });
-      if (!user.passwordHash || !(await argon2.verify(user.passwordHash, password).catch(() => false))) throw validation('Current password is incorrect');
+      const user = await this.db.user.findUniqueOrThrow({ where: { id: userId }, select: { passwordHash: true, email: true } });
+      const key = this.loginKey(user.email);
+      await this.assertNotLocked(key);
+      if (!user.passwordHash || !(await argon2.verify(user.passwordHash, password).catch(() => false))) {
+        await this.recordFailure(key);
+        throw validation('Current password is incorrect');
+      }
+      await this.clearFailures(key);
       return;
     }
     const s = await this.db.session.findUnique({ where: { id: sessionId }, select: { createdAt: true } });
@@ -352,6 +365,12 @@ export class AuthService {
   async revokeSession(userId: string, id: string) {
     const res = await this.db.session.updateMany({ where: { id, userId, revokedAt: null }, data: { revokedAt: new Date() } });
     if (res.count) await this.audit.log({ actor: { id: userId, name: 'User' }, action: 'auth.session_revoked', resourceType: 'session', resourceId: id, summary: 'A session was signed out' });
+  }
+
+  async revokeOtherSessions(userId: string, currentId: string) {
+    const res = await this.db.session.updateMany({ where: { userId, id: { not: currentId }, revokedAt: null }, data: { revokedAt: new Date() } });
+    if (res.count) await this.audit.log({ actor: { id: userId, name: 'User' }, action: 'auth.sessions_revoked', resourceType: 'user', resourceId: userId, summary: `Signed out ${res.count} other session(s)` });
+    return { revoked: res.count };
   }
 
   // ── MFA management (step-up required) ──

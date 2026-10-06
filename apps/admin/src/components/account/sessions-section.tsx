@@ -38,9 +38,9 @@ export function SessionsSection() {
 
   const revokeAll = useMutation({
     mutationFn: async () => {
-      const results = await Promise.allSettled(others.map((s) => api.auth.revokeSession(s.id)));
-      const done = others.filter((_, i) => results[i]?.status === 'fulfilled').map((s) => s.id);
-      return { done, failed: results.length - done.length };
+      // One server-side step: also covers sessions created after this list was loaded.
+      await api.auth.revokeOtherSessions();
+      return { done: others.map((s) => s.id), failed: 0 };
     },
     onSuccess: ({ done, failed }) => {
       dropFromCache(done);

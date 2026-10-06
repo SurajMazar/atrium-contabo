@@ -26,8 +26,11 @@ export class OrganizationsService {
     return slug;
   }
 
-  /** Create an organization with default roles, a default workspace and the user as owner. */
-  async createWithOwner(name: string, userId: string, planKey = 'starter') {
+  /**
+   * Create an organization with default roles, a default workspace and, when `userId` is given,
+   * that user as owner (`null`: no members yet, e.g. a super admin set it up and invited the owner).
+   */
+  async createWithOwner(name: string, userId: string | null, planKey = 'starter') {
     return this.db.$transaction(async (tx) => {
       const org = await tx.organization.create({ data: { name, slug: await this.uniqueSlug(name), planKey } });
       let ownerRoleId = '';
@@ -35,7 +38,7 @@ export class OrganizationsService {
         const role = await tx.role.create({ data: { organizationId: org.id, key: r.key, name: r.name, description: r.description, isSystem: true, permissions: { create: r.permissions.map((p) => ({ permissionKey: p })) } } });
         if (r.key === 'owner') ownerRoleId = role.id;
       }
-      await tx.organizationMember.create({ data: { organizationId: org.id, userId, roleId: ownerRoleId } });
+      if (userId) await tx.organizationMember.create({ data: { organizationId: org.id, userId, roleId: ownerRoleId } });
       await tx.workspace.create({ data: { organizationId: org.id, name: 'Default' } });
       return org;
     });
@@ -138,6 +141,12 @@ export class OrganizationsService {
       await this.assertCanGrantRole(access, role, 'assign');
       if (member.role.key === 'owner' && role.key !== 'owner') await this.assertAnotherOwner(orgId, memberId);
     }
+    // Owners always see every website (a scoped owner could lock the organization out of member management).
+    const resultingRoleKey = body.roleId ? (await this.db.role.findUniqueOrThrow({ where: { id: body.roleId }, select: { key: true } })).key : member.role.key;
+    if (resultingRoleKey === 'owner') {
+      if (body.websiteIds?.length) throw badRequest('Owners always have access to every website');
+      body = { ...body, websiteIds: [] };
+    }
     if (body.websiteIds) await this.assertWebsiteAccessList(orgId, body.websiteIds, access);
     await this.db.organizationMember.update({ where: { id: memberId }, data: { roleId: body.roleId, websiteIds: body.websiteIds } });
     await this.audit.log({ organizationId: orgId, actor: user, action: 'member.updated', resourceType: 'member', resourceId: memberId, summary: `${user.name} changed access for a member`, metadata: { roleId: body.roleId, previousRoleId: member.roleId, websiteIds: body.websiteIds } });
@@ -199,7 +208,8 @@ export class OrganizationsService {
     assertPasswordStrength(password);
     const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
     const created = await this.db.$transaction(async (tx) => {
-      const u = await tx.user.create({ data: { email, name: body.name.trim(), passwordHash } });
+      // The admin knows this password: the person must choose their own at first sign-in.
+      const u = await tx.user.create({ data: { email, name: body.name.trim(), passwordHash, passwordChangeRequired: true } });
       const m = await tx.organizationMember.create({ data: { organizationId: orgId, userId: u.id, roleId: role.id, websiteIds } });
       // A pending invitation for the same address is superseded.
       await tx.invitation.deleteMany({ where: { organizationId: orgId, email, acceptedAt: null } });
@@ -262,6 +272,8 @@ export class OrganizationsService {
       const u = await this.db.user.findUniqueOrThrow({ where: { id: user.id }, select: { emailVerifiedAt: true } });
       if (!u.emailVerifiedAt) throw forbidden('Confirm your email address before joining an organization. Check your inbox for the confirmation link.');
     }
+    // Seats are re-checked at acceptance: limits may have changed since the invitation was sent.
+    await this.assertLimit(inv.organizationId, 'members', 1);
     await this.db.$transaction(async (tx) => {
       // Single use under concurrency.
       const claimed = await tx.invitation.updateMany({ where: { id: inv.id, acceptedAt: null }, data: { acceptedAt: new Date() } });

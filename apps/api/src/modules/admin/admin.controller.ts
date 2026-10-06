@@ -50,9 +50,11 @@ export class AdminController {
   }
 
   /**
-   * Create an organization for a client. With `owner`, that person owns it (an existing account,
-   * or a new one with a chosen or generated password, returned once) and the super admin is not
-   * added as a member; without it, the super admin is the owner.
+   * Create an organization for a client. With `owner`: a new account is created as owner (chosen
+   * or generated password, the latter returned once); an EXISTING account is only invited as owner
+   * — whoever registered that address must prove it (verified email) and accept, so a squatted
+   * account can never be handed a client's organization. The super admin is not added as a member.
+   * Without `owner`, the super admin is the owner.
    */
   @Post('organizations')
   async createOrganization(
@@ -62,25 +64,33 @@ export class AdminController {
     @CurrentUser() user: AuthUser,
   ) {
     if (b.planKey && !(await this.db.plan.findUnique({ where: { key: b.planKey } }))) throw badRequest('Unknown plan');
-    let ownerId = user.id;
+    let ownerId: string | null = user.id;
     let password: string | undefined;
     let createdOwner = false;
+    let inviteEmail: string | undefined;
     if (b.owner) {
       const email = b.owner.email.toLowerCase();
       const existing = await this.db.user.findUnique({ where: { email }, select: { id: true } });
-      if (existing) ownerId = existing.id;
-      else {
+      if (existing) {
+        ownerId = null;
+        inviteEmail = email;
+      } else {
         password = b.owner.password ?? generatePassword();
         assertPasswordStrength(password);
-        const u = await this.db.user.create({ data: { email, name: b.owner.name, passwordHash: await argon2.hash(password, { type: argon2.argon2id }) } });
+        // The super admin knows this password: the owner must choose their own at first sign-in.
+        const u = await this.db.user.create({ data: { email, name: b.owner.name, passwordHash: await argon2.hash(password, { type: argon2.argon2id }), passwordChangeRequired: true } });
         ownerId = u.id;
         createdOwner = true;
         if (b.owner.password) password = undefined; // never echo a password the admin typed
       }
     }
     const org = await this.orgs.createWithOwner(b.name, ownerId, b.planKey ?? 'starter');
+    if (inviteEmail) {
+      const ownerRole = await this.db.role.findFirstOrThrow({ where: { organizationId: org.id, key: 'owner' }, select: { id: true } });
+      await this.orgs.invite(org.id, { email: inviteEmail, roleId: ownerRole.id }, user, { organizationId: org.id, permissions: new Set(['*']), websiteIds: [], superAdminOverride: true });
+    }
     await this.audit.log({ organizationId: org.id, actor: user, action: 'platform.organization_created', resourceType: 'organization', resourceId: org.id, summary: `Super admin ${user.name} created organization ${org.name}${b.owner ? ` owned by ${b.owner.email}` : ''}`, req });
-    return { id: org.id, name: org.name, slug: org.slug, planKey: org.planKey, owner: b.owner ? { email: b.owner.email.toLowerCase(), created: createdOwner, ...(password ? { password } : {}) } : null };
+    return { id: org.id, name: org.name, slug: org.slug, planKey: org.planKey, owner: b.owner ? { email: b.owner.email.toLowerCase(), created: createdOwner, invited: !!inviteEmail, ...(password ? { password } : {}) } : null };
   }
 
   @Patch('organizations/:id')

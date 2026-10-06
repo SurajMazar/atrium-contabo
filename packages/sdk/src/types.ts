@@ -18,6 +18,8 @@ export interface User {
   isSuperAdmin: boolean;
   mfaEnabled: boolean;
   locale: string;
+  /** Someone else set this account's password: the user must choose their own before continuing. */
+  passwordChangeRequired?: boolean;
 }
 export interface AuthResult {
   accessToken: string;

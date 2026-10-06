@@ -51,11 +51,16 @@ export class AuthGuard implements CanActivate {
     if (typeof payload.sid !== 'string' || typeof payload.sub !== 'string') throw unauthorized('Session expired');
     const session = await this.prisma.client.session.findUnique({
       where: { id: payload.sid },
-      select: { revokedAt: true, expiresAt: true, mfaVerified: true, user: { select: { id: true, email: true, name: true, isSuperAdmin: true, disabledAt: true, mfaEnabled: true } } },
+      select: { revokedAt: true, expiresAt: true, mfaVerified: true, user: { select: { id: true, email: true, name: true, isSuperAdmin: true, disabledAt: true, mfaEnabled: true, passwordChangeRequired: true } } },
     });
     if (!session || session.revokedAt || session.expiresAt < new Date() || session.user.id !== payload.sub || session.user.disabledAt) throw unauthorized('Session expired');
     const mfaVerified = session.user.mfaEnabled && session.mfaVerified;
     req.user = { id: session.user.id, email: session.user.email, name: session.user.name, isSuperAdmin: session.user.isSuperAdmin, sessionId: payload.sid, mfaVerified };
+    // An account someone else created (they know its password) works only for /auth/* — sign out,
+    // `me`, and choosing a new password — until its owner sets their own password.
+    if (session.user.passwordChangeRequired && !/^\/v1\/auth\//.test(req.path ?? '')) {
+      throw new ApiError(403, 'FORBIDDEN', 'Choose a new password to continue', { reason: 'PASSWORD_CHANGE_REQUIRED' });
+    }
 
     const superAdminRoute = this.reflector.getAllAndOverride<boolean>(SUPER_ADMIN, [ctx.getHandler(), ctx.getClass()]);
     if (superAdminRoute) {

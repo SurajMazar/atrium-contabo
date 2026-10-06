@@ -47,10 +47,11 @@ const nextConfig: NextConfig = {
   ...(process.env.NEXT_DIST_DIR ? { distDir: process.env.NEXT_DIST_DIR } : {}),
   reactStrictMode: true,
   experimental: {
-    // Uploads reach the API through the /api/v1 rewrite. Next buffers a proxied body only up to
-    // this size (default 10 MB — larger site imports were cut off and hung), so match the API's
-    // largest upload: site bundle imports (300 MB). Big imports also need longer than the 30 s default.
-    proxyClientMaxBodySize: '310mb',
+    // The /api/v1 rewrite buffers a copy of each proxied body in memory up to this size, before
+    // the API has authenticated anything. Large uploads (site imports, media) therefore use the
+    // streaming route handlers in src/app/api/v1/organizations/[orgId]/…; everything else is JSON.
+    proxyClientMaxBodySize: '25mb',
+    // Long AI generation progress streams and slow API responses.
     proxyTimeout: 10 * 60_000,
   },
   poweredByHeader: false,

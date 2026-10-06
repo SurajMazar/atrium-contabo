@@ -11,7 +11,7 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 interface Result {
   name: string;
-  owner: { email: string; created: boolean; password?: string } | null;
+  owner: { email: string; created: boolean; invited?: boolean; password?: string } | null;
 }
 
 /** Super admin: create an organization, optionally for a client who becomes its owner. */
@@ -72,7 +72,10 @@ export function CreateOrganizationAdminDialog({ open, onOpenChange }: { open: bo
       >
         {result ? (
           <>
-            <DialogHeader title={`${result.name} is ready`} description={result.owner ? `${result.owner.email} owns it and can manage its websites and team.` : 'You are its owner.'} />
+            <DialogHeader
+              title={`${result.name} is ready`}
+              description={result.owner?.invited ? `${result.owner.email} is invited as owner.` : result.owner ? `${result.owner.email} owns it and can manage its websites and team.` : 'You are its owner.'}
+            />
             <DialogBody className="space-y-4">
               {result.owner?.created && result.owner.password ? (
                 <>
@@ -87,8 +90,10 @@ export function CreateOrganizationAdminDialog({ open, onOpenChange }: { open: bo
                   </Field>
                   <Banner tone="warning">This password is shown only once. Share it securely and ask them to change it after signing in.</Banner>
                 </>
-              ) : result.owner ? (
-                <p className="text-sm text-fg-muted">{result.owner.email} already had an account — they’ll see the organization next time they sign in.</p>
+              ) : result.owner?.invited ? (
+                <p className="text-sm text-fg-muted">
+                  {result.owner.email} already has an account, so they get an owner invitation by email instead of being added directly — they become owner once they accept it while signed in with that (verified) address. You can manage the organization from Super admin until then.
+                </p>
               ) : null}
             </DialogBody>
             <DialogFooter>

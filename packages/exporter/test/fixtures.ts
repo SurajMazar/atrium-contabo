@@ -20,7 +20,7 @@ export function sampleInput(): WebsiteInput {
       { title: 'Rooms', slug: 'rooms', sections: [{ type: 'section', props: {}, customCss: '& { background: url("/media/bg.png") }' } as never] },
       { title: 'Deluxe', slug: 'rooms/deluxe', sections: [] },
     ],
-    forms: [{ name: 'Contact', slug: 'contact', fields: [{ id: 'f1', type: 'email', name: 'email', label: 'Email', required: true }] } as never],
+    forms: [{ name: 'Contact', slug: 'contact', fields: [{ id: 'f1', type: 'email', name: 'email', label: 'Email', required: true }], rules: [{ id: 'notify', name: 'Notify', then: [{ type: 'webhook', url: 'https://hooks.example.com/secret-capability' }] }] } as never],
     collections: [{ slug: 'rooms', name: 'Rooms', fields: [{ key: 'name', label: 'Name', type: 'text' }, { key: 'photo', label: 'Photo', type: 'image' }], items: [{ id: 'i1', slug: 'suite', data: { name: 'Suite', photo: 'https://cdn.example.com/media/suite.jpg' } }] } as never],
   };
 }

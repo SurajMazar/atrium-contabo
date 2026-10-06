@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { env } from '../../config/env';
 import { AccessService, isWebsiteScoped } from '../../common/access.service';
 import { Access, CurrentAccess, CurrentUser, type AccessContext, type AuthUser } from '../../common/decorators';
-import { badRequest } from '../../common/errors';
+import { badRequest, forbidden } from '../../common/errors';
 import { limitOf } from '../../common/http';
 import { ZodBody } from '../../common/zod.pipe';
 import { MediaService, type UploadFile } from './media.service';
@@ -16,6 +16,14 @@ const upload = () => FileInterceptor('file', { limits: { fileSize: env().UPLOAD_
 export class MediaController {
   constructor(private readonly media: MediaService, private readonly access: AccessService) {}
 
+  /** Website-scoped members may only file media into folders of their own websites. */
+  private async assertFolderInScope(access: AccessContext, folderId: string | null | undefined) {
+    if (!folderId || !isWebsiteScoped(access)) return;
+    const folder = await this.media.folderOwner(folderId);
+    if (!folder || folder.organizationId !== access.organizationId) throw badRequest('Unknown folder');
+    if (!folder.websiteId || !access.websiteIds.includes(folder.websiteId)) throw forbidden('You can only use folders of your websites');
+  }
+
   @Access('media.read', 'organization', 'orgId') @Get('organizations/:orgId/media')
   async list(@Param('orgId') orgId: string, @Query() q: Record<string, string>, @CurrentAccess() access: AccessContext) {
     await this.access.assertWebsiteInScope(access, q.websiteId);
@@ -26,11 +34,15 @@ export class MediaController {
   async upload(@Param('orgId') orgId: string, @UploadedFile() file: UploadFile | undefined, @Body() body: Record<string, string>, @CurrentUser() user: AuthUser, @CurrentAccess() access: AccessContext) {
     if (!file) throw badRequest('Attach a file in the "file" field');
     const websiteId = await this.access.websiteForWrite(access, body.websiteId || undefined);
+    await this.assertFolderInScope(access, body.folderId || undefined);
     return this.media.upload(orgId, file, { folderId: body.folderId || undefined, websiteId, alt: body.alt, allowDuplicate: body.allowDuplicate === 'true' }, user);
   }
 
   @Access('media.upload', 'media', 'id') @Patch('media/:id')
-  update(@Param('id') id: string, @Body(new ZodBody(Patch_)) body: z.infer<typeof Patch_>) { return this.media.update(id, body); }
+  async update(@Param('id') id: string, @Body(new ZodBody(Patch_)) body: z.infer<typeof Patch_>, @CurrentAccess() access: AccessContext) {
+    await this.assertFolderInScope(access, body.folderId);
+    return this.media.update(id, body);
+  }
 
   @Access('media.upload', 'media', 'id') @Post('media/:id/replace') @UseInterceptors(upload())
   replace(@Param('id') id: string, @UploadedFile() file: UploadFile | undefined) {
@@ -49,11 +61,15 @@ export class MediaController {
 
   @Access('media.upload', 'organization', 'orgId') @Post('organizations/:orgId/media-folders')
   async createFolder(@Param('orgId') orgId: string, @Body(new ZodBody(z.object({ name: z.string().trim().min(1).max(80), parentId: z.string().optional(), websiteId: z.string().optional() }))) body: { name: string; parentId?: string; websiteId?: string }, @CurrentAccess() access: AccessContext) {
+    await this.assertFolderInScope(access, body.parentId);
     return this.media.createFolder(orgId, { ...body, websiteId: await this.access.websiteForWrite(access, body.websiteId) });
   }
 
   @Access('media.upload', 'mediaFolder', 'id') @Patch('media-folders/:id')
-  updateFolder(@Param('id') id: string, @Body(new ZodBody(z.object({ name: z.string().trim().min(1).max(80).optional(), parentId: z.string().nullable().optional() }))) body: { name?: string; parentId?: string | null }) { return this.media.updateFolder(id, body); }
+  async updateFolder(@Param('id') id: string, @Body(new ZodBody(z.object({ name: z.string().trim().min(1).max(80).optional(), parentId: z.string().nullable().optional() }))) body: { name?: string; parentId?: string | null }, @CurrentAccess() access: AccessContext) {
+    await this.assertFolderInScope(access, body.parentId);
+    return this.media.updateFolder(id, body);
+  }
 
   @Access('media.delete', 'mediaFolder', 'id') @HttpCode(204) @Delete('media-folders/:id')
   removeFolder(@Param('id') id: string) { return this.media.removeFolder(id); }

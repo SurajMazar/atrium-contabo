@@ -74,7 +74,12 @@ export function resolveSeedAdmin(env: NodeJS.ProcessEnv = process.env): { email:
 }
 
 async function admin({ email, password, generated }: ReturnType<typeof resolveSeedAdmin>) {
-  const existing = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+  const existing = await prisma.user.findUnique({ where: { email }, select: { id: true, passwordHash: true, isSuperAdmin: true } });
+  // Sign-up is open: an account someone registered with this address is only promoted when its
+  // password is SEED_ADMIN_PASSWORD (an email match alone must never grant platform control).
+  if (existing && !existing.isSuperAdmin && !(generated ? false : existing.passwordHash && (await argon2.verify(existing.passwordHash, password).catch(() => false)))) {
+    throw new Error(`Refusing to promote ${email}: the account already exists and its password is not SEED_ADMIN_PASSWORD. Promote an account you control with \`node dist/cli.js super-admin --email …\` instead.`);
+  }
   const user = await prisma.user.upsert({
     where: { email },
     create: { email, name: 'Atrium Admin', isSuperAdmin: true, emailVerifiedAt: new Date(), passwordHash: await argon2.hash(password, { type: argon2.argon2id }) },

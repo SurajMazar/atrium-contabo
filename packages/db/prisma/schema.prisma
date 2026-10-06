@@ -31,6 +31,9 @@ model User {
   mfaRecoveryEnc  String?   @map("mfa_recovery_enc")
   /// Last accepted TOTP time-step (replay protection).
   mfaLastStep     Int?      @map("mfa_last_step")
+  /// Account created by someone else with a password they know: the user must choose their own
+  /// before anything else works (cleared by a password change or reset).
+  passwordChangeRequired Boolean @default(false) @map("password_change_required")
   locale          String    @default("en")
   lastLoginAt     DateTime? @map("last_login_at")
   disabledAt      DateTime? @map("disabled_at")

@@ -494,7 +494,7 @@ describe('security: route inventory', () => {
    * "any signed-in user" routes that only touch the caller's own data or public catalog data.
    */
   const SELF_OR_CATALOG = new Set([
-    'GET /auth/me', 'PATCH /auth/me', 'POST /auth/logout', 'POST /auth/password/change', 'GET /auth/sessions', 'DELETE /auth/sessions/:id',
+    'GET /auth/me', 'PATCH /auth/me', 'POST /auth/logout', 'POST /auth/password/change', 'GET /auth/sessions', 'DELETE /auth/sessions/:id', 'POST /auth/sessions/revoke-others',
     'POST /auth/mfa/setup', 'POST /auth/mfa/enable', 'POST /auth/mfa/disable', 'POST /auth/email/resend',
     'GET /organizations', 'POST /organizations', 'GET /permissions', 'POST /invitations/accept',
     'GET /templates', 'GET /templates/:id', 'GET /ai/models', 'GET /providers/drivers',

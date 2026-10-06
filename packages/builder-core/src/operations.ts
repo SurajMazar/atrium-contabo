@@ -1,6 +1,6 @@
 import type { ComponentRegistry } from '@atrium/component-registry';
 import {
-  AnimationSchema, FormDefinitionSchema, NavItemSchema, NodeInputSchema, PageInputSchema, PageSeoSchema, RedirectSchema,
+  AnimationSchema, FormDefinitionSchema, formRuleLimitIssue, NavItemSchema, NodeInputSchema, PageInputSchema, PageSeoSchema, RedirectSchema,
   StyleSchema, createId, setResponsive, slugify, type Breakpoint, type WebsiteDefinition,
 } from '@atrium/schema';
 import { z } from 'zod';
@@ -241,6 +241,8 @@ export function applyOperation(def: WebsiteDefinition, rawOp: SiteOperation, reg
     case 'createForm': {
       const form = FormDefinitionSchema.parse({ ...op.form, id: op.form.id ?? createId('form'), fields: op.form.fields.map((f) => ({ ...f, id: f.id || createId() })) });
       if (def.forms.some((f) => f.slug === form.slug)) throw new OperationError(`Form slug "${form.slug}" exists`);
+      const tooBig = formRuleLimitIssue(form);
+      if (tooBig) throw new OperationError(tooBig);
       def.forms.push(form);
       return { createdId: form.id, warnings };
     }
@@ -248,7 +250,10 @@ export function applyOperation(def: WebsiteDefinition, rawOp: SiteOperation, reg
       const idx = def.forms.findIndex((f) => f.id === op.formId);
       if (idx < 0) throw new OperationError(`Form ${op.formId} not found`);
       const merged = deepMerge(jsonClone(def.forms[idx]!) as unknown as Record<string, unknown>, op.patch);
-      def.forms[idx] = FormDefinitionSchema.parse(merged);
+      const next = FormDefinitionSchema.parse(merged);
+      const tooBig = formRuleLimitIssue(next);
+      if (tooBig) throw new OperationError(tooBig);
+      def.forms[idx] = next;
       return { warnings };
     }
     case 'deleteForm':

@@ -16,7 +16,12 @@ export const REFRESH_COOKIE = LEGACY_REFRESH_COOKIE;
 
 export function readRefreshCookie(req: AppRequest): string | undefined {
   const cookies = (req as { cookies?: Record<string, string> }).cookies ?? {};
-  return cookies[refreshCookieName()] ?? cookies[LEGACY_REFRESH_COOKIE];
+  const name = refreshCookieName();
+  // With a __Host- cookie the legacy name is never read: any sibling subdomain (a customer site)
+  // can set `atrium_rt` for the parent domain, and reading it would sign the victim into the
+  // attacker's session (login CSRF / session fixation). Legacy cookies are only cleared.
+  if (name.startsWith('__Host-')) return cookies[name];
+  return cookies[name] ?? cookies[LEGACY_REFRESH_COOKIE];
 }
 
 function cookieDomain(): string | undefined {

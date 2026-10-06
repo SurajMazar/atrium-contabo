@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { FormDefinitionSchema, createId, slugify, type FormDefinition } from '@atrium/schema';
+import { FormDefinitionSchema, createId, slugify, type FormDefinition, formRuleLimitIssue } from '@atrium/schema';
 import { formFromRow, upsertForm } from '@atrium/site-store';
 import ExcelJS from 'exceljs';
 import { AuditService } from '../../common/audit.service';
@@ -62,6 +62,8 @@ export class FormsService {
     const parsed = FormDefinitionSchema.safeParse({ ...raw, id: raw.id ?? createId('form'), slug: raw.slug ?? slugify(raw.name ?? 'form'), fields: (raw.fields ?? []).map((f) => ({ ...f, id: f.id || createId() })), rules: (raw.rules ?? []).map((r) => ({ ...r, id: r.id || createId() })) });
     if (!parsed.success) throw validation('Invalid form', parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })));
     this.assertPatterns(parsed.data);
+    const tooBig = formRuleLimitIssue(parsed.data);
+    if (tooBig) throw validation(tooBig);
     if (await this.db.form.findFirst({ where: { websiteId, slug: parsed.data.slug, archivedAt: null } })) throw conflict(`A form with slug "${parsed.data.slug}" exists`);
     await upsertForm(this.db, websiteId, parsed.data, true);
     const site = await this.db.website.findUniqueOrThrow({ where: { id: websiteId }, select: { organizationId: true } });
@@ -76,6 +78,8 @@ export class FormsService {
     const parsed = FormDefinitionSchema.safeParse({ ...raw, id: formId, fields: (raw.fields ?? []).map((f) => ({ ...f, id: f.id || createId() })), rules: (raw.rules ?? []).map((r) => ({ ...r, id: r.id || createId() })) });
     if (!parsed.success) throw validation('Invalid form', parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })));
     this.assertPatterns(parsed.data);
+    const tooBig = formRuleLimitIssue(parsed.data);
+    if (tooBig) throw validation(tooBig);
     if (await this.db.form.findFirst({ where: { websiteId: current.websiteId, slug: parsed.data.slug, archivedAt: null, id: { not: formId } } })) throw conflict(`A form with slug "${parsed.data.slug}" exists`);
     await this.db.$transaction((tx) => upsertForm(tx, current.websiteId, parsed.data, false));
     const site = await this.db.website.findUniqueOrThrow({ where: { id: current.websiteId }, select: { organizationId: true } });

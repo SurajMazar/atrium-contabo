@@ -3,8 +3,8 @@ import { Throttle } from '@nestjs/throttler';
 import { PERMISSIONS } from '@atrium/schema';
 import { z } from 'zod';
 import { AccessService } from '../../common/access.service';
-import { Access, CurrentAccess, CurrentUser, type AccessContext, type AuthUser } from '../../common/decorators';
-import { forbidden } from '../../common/errors';
+import { AuditService } from '../../common/audit.service';
+import { Access, CurrentAccess, SuperAdminOnly, CurrentUser, type AccessContext, type AuthUser } from '../../common/decorators';
 import { limitOf } from '../../common/http';
 import { ZodBody } from '../../common/zod.pipe';
 import { OrganizationsService } from './organizations.service';
@@ -14,18 +14,19 @@ const RoleBody = z.object({ name: z.string().trim().min(1).max(80), description:
 
 @Controller()
 export class OrganizationsController {
-  constructor(private readonly orgs: OrganizationsService, private readonly access: AccessService) {}
+  constructor(private readonly orgs: OrganizationsService, private readonly access: AccessService, private readonly audit: AuditService) {}
 
   @Get('organizations')
   list(@CurrentUser() user: AuthUser) {
     return this.orgs.list(user.id);
   }
 
-  /** Only platform administrators create organizations; everyone else works inside theirs. */
+  /** Only platform administrators create organizations (MFA-gated in production); everyone else works inside theirs. */
+  @SuperAdminOnly()
   @Post('organizations')
   async create(@CurrentUser() user: AuthUser, @Body(new ZodBody(Name)) body: { name: string }) {
-    if (!user.isSuperAdmin) throw forbidden('Only platform administrators can create organizations');
     const org = await this.orgs.createWithOwner(body.name, user.id);
+    await this.audit.log({ organizationId: org.id, actor: user, action: 'platform.organization_created', resourceType: 'organization', resourceId: org.id, summary: `Super admin ${user.name} created organization ${org.name}` });
     return { id: org.id, name: org.name, slug: org.slug, planKey: org.planKey };
   }
 
@@ -114,7 +115,8 @@ export class OrganizationsController {
 
   @Access('organization.read', 'organization', 'orgId')
   @Get('organizations/:orgId/roles')
-  roles(@Param('orgId') orgId: string) {
+  roles(@Param('orgId') orgId: string, @CurrentAccess() access: AccessContext) {
+    this.access.assertOrganizationWide(access);
     return this.orgs.roles(orgId);
   }
 

@@ -133,15 +133,21 @@ describe('add member without an invitation', () => {
     expect(res.body.member.websiteIds).toEqual([site.body.id]);
     expect(JSON.stringify(await db.user.findUniqueOrThrow({ where: { email } }))).not.toContain(res.body.password); // only the hash is stored
 
-    // They can sign in with it and see only their website.
+    // They can sign in with it, but must choose their own password before anything else works.
     const login = await http.post('/v1/auth/login').send({ email, password: res.body.password }).expect(200);
+    expect(login.body.user.passwordChangeRequired).toBe(true);
+    const blocked = await http.get(`/v1/organizations/${orgId}/websites`).set(bearer(login.body.accessToken)).expect(403);
+    expect(blocked.body.error.details.reason).toBe('PASSWORD_CHANGE_REQUIRED');
+    await http.post('/v1/auth/password/change').set(bearer(login.body.accessToken)).send({ currentPassword: res.body.password, newPassword: 'Own-Passw0rd!2026' }).expect(204);
+    // …then they see only their website.
     const list = await http.get(`/v1/organizations/${orgId}/websites`).set(bearer(login.body.accessToken)).expect(200);
     expect((list.body as Array<{ id: string }>).map((w) => w.id)).toEqual([site.body.id]);
 
     // A chosen password is used as-is and never echoed back; weak ones are refused.
     const chosen = await http.post(`/v1/organizations/${orgId}/members`).set(t).send({ email: `chosen-${RUN}@example.test`, name: 'Chosen', roleId: wm.id, websiteIds: [site.body.id], password: 'Chosen-Passw0rd!' }).expect(201);
     expect(chosen.body.password).toBeUndefined();
-    await http.post('/v1/auth/login').send({ email: `chosen-${RUN}@example.test`, password: 'Chosen-Passw0rd!' }).expect(200);
+    const chosenLogin = await http.post('/v1/auth/login').send({ email: `chosen-${RUN}@example.test`, password: 'Chosen-Passw0rd!' }).expect(200);
+    expect(chosenLogin.body.user.passwordChangeRequired).toBe(true); // the admin knows it too
     await http.post(`/v1/organizations/${orgId}/members`).set(t).send({ email: `weak-${RUN}@example.test`, name: 'Weak', roleId: wm.id, password: 'short' }).expect(422);
 
     // Existing accounts are never pulled in without an invitation.
@@ -166,11 +172,19 @@ describe('organizations are created by super admins only', () => {
 
     const login = await http.post('/v1/auth/login').send({ email: `client-owner-${RUN}@example.test`, password: res.body.owner.password }).expect(200);
     const o = bearer(login.body.accessToken);
+    await http.post('/v1/auth/password/change').set(o).send({ currentPassword: res.body.owner.password, newPassword: 'Owner-Passw0rd!2026' }).expect(204);
     await http.get(`/v1/organizations/${res.body.id}/members`).set(o).expect(200); // manages their own organization
     await http.post('/v1/organizations').set(o).send({ name: 'Second org' }).expect(403); // but cannot create another
     await http.post('/v1/admin/organizations').set(o).send({ name: 'Sneaky' }).expect(403);
     await http.post('/v1/auth/register').send({ name: 'Signup', email: `signup-${RUN}@example.test`, password: PASSWORD, organizationName: 'Self serve' }).expect(201);
     expect(await db.organizationMember.count({ where: { user: { email: `signup-${RUN}@example.test` } } })).toBe(0);
+
+    // A pre-registered (possibly squatted) account is never made owner directly: it gets an invitation.
+    const squat = await register('squatter');
+    const forExisting = await http.post('/v1/admin/organizations').set(bearer(admin.token)).send({ name: `Client Two ${RUN}`, owner: { email: squat.email, name: 'Whoever' } }).expect(201);
+    expect(forExisting.body.owner).toMatchObject({ created: false, invited: true });
+    expect(await db.organizationMember.count({ where: { organizationId: forExisting.body.id } })).toBe(0);
+    expect(await db.invitation.count({ where: { organizationId: forExisting.body.id, email: squat.email, acceptedAt: null } })).toBe(1);
   });
 });
 
@@ -217,5 +231,86 @@ describe('startup bootstrap', () => {
     const after = await db.rolePermission.findMany({ where: { roleId: editor.id } });
     expect(after.some((p) => p.permissionKey === 'page.publish')).toBe(false);
     expect(after.length).toBe(editor.permissions.length - 1);
+  });
+});
+
+describe('audit fixes (2026-10-06)', () => {
+  const RENDERER_SECRET = process.env.RENDERER_SECRET ?? 'change-me-renderer-secret';
+
+  it('bootstrap never promotes an account it cannot prove belongs to the operator', async () => {
+    if (!ready) return;
+    const email = `seed-squat-${RUN}@example.test`;
+    await register('seedsquat-' + RUN); // unrelated account
+    const squatter = await app.get(AuthService).register({ name: 'Squatter', email, password: 'Squatter-Passw0rd!', organizationName: undefined }, {});
+    const supers = await db.user.findMany({ where: { isSuperAdmin: true }, select: { id: true } });
+    await db.user.updateMany({ where: { id: { in: supers.map((u) => u.id) } }, data: { isSuperAdmin: false } });
+    const env = { email: process.env.SEED_ADMIN_EMAIL, pw: process.env.SEED_ADMIN_PASSWORD };
+    try {
+      process.env.SEED_ADMIN_EMAIL = email;
+      process.env.SEED_ADMIN_PASSWORD = 'Operator-Secret-2026!';
+      await app.get(BootstrapService).onApplicationBootstrap();
+      expect((await db.user.findUniqueOrThrow({ where: { id: squatter.user.id } })).isSuperAdmin).toBe(false);
+      // With the operator's password it is promoted (and signed out).
+      process.env.SEED_ADMIN_PASSWORD = 'Squatter-Passw0rd!';
+      await app.get(BootstrapService).onApplicationBootstrap();
+      expect((await db.user.findUniqueOrThrow({ where: { id: squatter.user.id } })).isSuperAdmin).toBe(true);
+    } finally {
+      process.env.SEED_ADMIN_EMAIL = env.email;
+      process.env.SEED_ADMIN_PASSWORD = env.pw;
+      await db.user.update({ where: { id: squatter.user.id }, data: { isSuperAdmin: false } });
+      await db.user.updateMany({ where: { id: { in: supers.map((u) => u.id) } }, data: { isSuperAdmin: true } });
+    }
+  });
+
+  it('website managers cannot clone, owners cannot be scoped, previews resist guessing, forms refuse unwanted uploads', async () => {
+    if (!ready) return;
+    const owner = await register('fix-owner', `Fix Org ${RUN}`);
+    const orgId = (await db.organizationMember.findFirstOrThrow({ where: { userId: owner.id } })).organizationId;
+    await db.organization.update({ where: { id: orgId }, data: { limits: { websites: 10, members: 10 } } });
+    const t = bearer(owner.token);
+    const site = await http.post(`/v1/organizations/${orgId}/websites`).set(t).send({ name: `Fix ${RUN}`, source: { type: 'blank' } }).expect(201);
+    const roles = (await http.get(`/v1/organizations/${orgId}/roles`).set(t).expect(200)).body as Array<{ id: string; key: string }>;
+    const wm = roles.find((r) => r.key === 'website_manager')!;
+    const ownerRole = roles.find((r) => r.key === 'owner')!;
+
+    // Website Manager: no clone (it would create websites without website.create).
+    const mgr = await register('fix-mgr');
+    const inv = await http.post(`/v1/organizations/${orgId}/invitations`).set(t).send({ email: mgr.email, roleId: wm.id, websiteIds: [site.body.id] }).expect(201);
+    await http.post('/v1/invitations/accept').set(bearer(mgr.token)).send({ token: String(inv.body.devAcceptUrl).split('/invite/')[1] }).expect(200);
+    await http.post(`/v1/websites/${site.body.id}/clone`).set(bearer(mgr.token)).send({ name: 'Clone' }).expect(403);
+    await http.get(`/v1/organizations/${orgId}/roles`).set(bearer(mgr.token)).expect(403);
+
+    // Owners always see every website.
+    const member = await db.organizationMember.findFirstOrThrow({ where: { organizationId: orgId, user: { email: mgr.email } } });
+    await http.patch(`/v1/organizations/${orgId}/members/${member.id}`).set(t).send({ roleId: ownerRole.id, websiteIds: [site.body.id] }).expect(400);
+    await http.patch(`/v1/organizations/${orgId}/members/${member.id}`).set(t).send({ roleId: ownerRole.id }).expect(200);
+    expect((await db.organizationMember.findUniqueOrThrow({ where: { id: member.id } })).websiteIds).toEqual([]);
+
+    // Preview passwords: at least 8 characters, and locked after repeated wrong guesses.
+    await http.post(`/v1/websites/${site.body.id}/preview-tokens`).set(t).send({ password: 'short' }).expect(422);
+    const preview = await http.post(`/v1/websites/${site.body.id}/preview-tokens`).set(t).send({ password: 'Preview-Pass-1' }).expect(201);
+    const resolve = (password: string) => http.get(`/v1/public/preview?token=${preview.body.token}&password=${encodeURIComponent(password)}`).set('X-Renderer-Secret', RENDERER_SECRET);
+    for (let i = 0; i < 10; i++) await resolve(`wrong-${i}`).expect(401);
+    await resolve('Preview-Pass-1').expect(429);
+
+    // Public form submit: unknown forms and file uploads to forms without file fields are refused before parsing.
+    await http.post('/v1/public/forms/does-not-exist/submit').attach('file', Buffer.from('x'), 'x.txt').expect(404);
+    const form = await http.post(`/v1/websites/${site.body.id}/forms`).set(t).send({ name: 'No files', fields: [{ type: 'email', name: 'email', label: 'Email' }] }).expect(201);
+    await http.post(`/v1/public/forms/${form.body.id}/submit`).field('email', 'a@b.co').attach('file', Buffer.from('x'), 'x.txt').expect(400);
+  });
+
+  it('webhooks carrying form submissions need submission.read', async () => {
+    if (!ready) return;
+    const owner = await register('hook-owner', `Hook Org ${RUN}`);
+    const orgId = (await db.organizationMember.findFirstOrThrow({ where: { userId: owner.id } })).organizationId;
+    await db.organization.update({ where: { id: orgId }, data: { limits: { members: 10 } } });
+    const roles = (await http.get(`/v1/organizations/${orgId}/roles`).set(bearer(owner.token)).expect(200)).body as Array<{ id: string; key: string }>;
+    const dev = await register('hook-dev');
+    const inv = await http.post(`/v1/organizations/${orgId}/invitations`).set(bearer(owner.token)).send({ email: dev.email, roleId: roles.find((r) => r.key === 'developer')!.id }).expect(201);
+    await http.post('/v1/invitations/accept').set(bearer(dev.token)).send({ token: String(inv.body.devAcceptUrl).split('/invite/')[1] }).expect(200);
+    const d = bearer(dev.token);
+    await http.post(`/v1/organizations/${orgId}/webhooks`).set(d).send({ name: 'All', url: 'https://hooks.example.com/x', events: ['*'] }).expect(403);
+    await http.post(`/v1/organizations/${orgId}/webhooks`).set(d).send({ name: 'Forms', url: 'https://hooks.example.com/x', events: ['form.submitted'] }).expect(403);
+    await http.post(`/v1/organizations/${orgId}/webhooks`).set(d).send({ name: 'Deploys', url: 'https://hooks.example.com/x', events: ['deployment.completed'] }).expect(201);
   });
 });

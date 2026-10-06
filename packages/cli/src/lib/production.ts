@@ -372,6 +372,7 @@ export function serviceEnvFiles(env: EnvFile, mode: EnvMode): Record<string, str
       ...line('API_URL'),
       ...line('ATRIUM_API_INTERNAL_URL', internalApi),
       ...line('RENDERER_URL'),
+      ...line('PREVIEW_URL'),
       ...line('PLATFORM_SITES_DOMAIN'),
       ...line('RENDERER_SECRET'),
     ],
