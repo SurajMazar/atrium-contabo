@@ -267,7 +267,8 @@ services:
       dockerfile: infra/containers/admin.Containerfile
       args: { ATRIUM_API_INTERNAL_URL: 'http://api:4000' }
     restart: unless-stopped
-    mem_limit: 768m
+    # Room to buffer a proxied upload (site imports up to 300 MB) on top of Next.js itself.
+    mem_limit: 1280m
     # Public URLs only — the admin holds no secrets (it proxies /api/* to the API).
     environment:
       NODE_ENV: production

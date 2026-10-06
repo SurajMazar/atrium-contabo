@@ -45,8 +45,9 @@
 
 {$API_HOST} {
 	import common
+	# Site bundle imports go up to 300 MB (media uploads: UPLOAD_MAX_MB, default 100).
 	request_body {
-		max_size 100MB
+		max_size 310MB
 	}
 	# flush_interval -1 streams Server-Sent Events (AI generation progress) without buffering.
 	reverse_proxy api:4000 {
