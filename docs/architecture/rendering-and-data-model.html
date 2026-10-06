@@ -1,0 +1,573 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Atrium — Data model and rendering pipeline</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm 20mm; }
+  :root { --ink:#1c1b19; --muted:#5f5e5a; --line:#d8d6cf; --soft:#f4f3ef; --accent:#2b4fd8; --purple:#534AB7; --teal:#0F6E56; --amber:#854F0B; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", Inter, Helvetica, Arial, sans-serif; color: var(--ink); font-size: 10.5pt; line-height: 1.55; margin: 0; }
+  h1 { font-size: 24pt; line-height: 1.15; margin: 0 0 6pt; letter-spacing: -0.01em; }
+  h2 { font-size: 15pt; margin: 22pt 0 6pt; padding-top: 6pt; border-top: 1px solid var(--line); break-after: avoid; }
+  h3 { font-size: 11.5pt; margin: 14pt 0 4pt; break-after: avoid; }
+  p { margin: 0 0 7pt; }
+  ul, ol { margin: 0 0 8pt; padding-left: 16pt; }
+  li { margin: 0 0 3pt; }
+  code, pre, .mono { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 8.8pt; }
+  code { background: var(--soft); padding: 0 3px; border-radius: 3px; }
+  pre { background: var(--soft); border: 1px solid var(--line); border-radius: 6px; padding: 8pt 10pt; white-space: pre-wrap; break-inside: avoid; margin: 4pt 0 10pt; line-height: 1.45; }
+  table { width: 100%; border-collapse: collapse; margin: 4pt 0 10pt; font-size: 9.3pt; break-inside: auto; }
+  th, td { text-align: left; vertical-align: top; padding: 4pt 6pt; border-bottom: 1px solid var(--line); }
+  th { background: var(--soft); font-weight: 600; }
+  tr { break-inside: avoid; }
+  .lede { font-size: 11.5pt; color: var(--muted); margin-bottom: 12pt; }
+  .meta { color: var(--muted); font-size: 9pt; margin-bottom: 18pt; }
+  .figure { break-inside: avoid; margin: 8pt 0 12pt; }
+  .figure svg { width: 100%; height: auto; display: block; }
+  .caption { font-size: 8.8pt; color: var(--muted); margin-top: 3pt; }
+  .note { border-left: 3px solid var(--accent); background: #f2f5ff; padding: 6pt 9pt; margin: 6pt 0 10pt; font-size: 9.6pt; break-inside: avoid; }
+  .toc { columns: 2; column-gap: 20pt; font-size: 9.8pt; margin: 0 0 6pt; padding-left: 14pt; }
+  .toc li { margin-bottom: 2pt; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12pt; }
+  .pb { break-before: page; }
+  svg text { font-family: -apple-system, "Segoe UI", Inter, Helvetica, Arial, sans-serif; }
+</style>
+</head>
+<body>
+
+<h1>Atrium: data model and rendering pipeline</h1>
+<p class="lede">How a website is represented, stored, validated, published and turned into HTML: the data structures, the parsing at every boundary and the caching that makes it fast.</p>
+<p class="meta">Technical reference · generated from the source in this repository (packages <code>schema</code>, <code>builder-core</code>, <code>site-store</code>, <code>component-registry</code>, <code>renderer-core</code>, <code>design-tokens</code>; apps <code>api</code>, <code>renderer</code>, <code>admin</code>).</p>
+
+<ol class="toc">
+  <li>System overview</li>
+  <li>The data model</li>
+  <li>The node tree</li>
+  <li>Styles, breakpoints and theme tokens</li>
+  <li>The component registry</li>
+  <li>Storage in PostgreSQL</li>
+  <li>Parsing and validation</li>
+  <li>Editing: operations and revisions</li>
+  <li>Publishing: freezing a snapshot</li>
+  <li>Serving a request</li>
+  <li>Rendering a page</li>
+  <li>In the browser</li>
+  <li>Site bundles (export / import)</li>
+  <li>Security at the boundaries</li>
+  <li>Source map</li>
+</ol>
+
+<h2>1. System overview</h2>
+<p>Atrium separates <strong>writing</strong> from <strong>reading</strong>. The admin and visual editor only ever change <em>drafts</em> through the API. Publishing freezes the drafts into one immutable JSON document, the <em>snapshot</em>. The renderer, a separate Next.js app, only reads published snapshots. It never touches drafts or the database directly.</p>
+
+<div class="figure">
+<svg viewBox="0 0 680 345" xmlns="http://www.w3.org/2000/svg">
+  <defs><marker id="a1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#5f5e5a" stroke-width="1.5"/></marker></defs>
+  <rect x="30" y="20" width="200" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.8"/>
+  <text x="130" y="43" text-anchor="middle" font-size="13" font-weight="600" fill="#3C3489">Admin and editor</text>
+  <text x="130" y="61" text-anchor="middle" font-size="11" fill="#534AB7">Next.js app · port 3000</text>
+  <rect x="450" y="20" width="200" height="56" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.8"/>
+  <text x="550" y="43" text-anchor="middle" font-size="13" font-weight="600" fill="#085041">Visitor browser</text>
+  <text x="550" y="61" text-anchor="middle" font-size="11" fill="#0F6E56">Any site or custom domain</text>
+  <rect x="30" y="130" width="200" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.8"/>
+  <text x="130" y="153" text-anchor="middle" font-size="13" font-weight="600" fill="#3C3489">API (NestJS)</text>
+  <text x="130" y="171" text-anchor="middle" font-size="11" fill="#534AB7">Drafts, publish · port 4000</text>
+  <rect x="450" y="130" width="200" height="56" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.8"/>
+  <text x="550" y="153" text-anchor="middle" font-size="13" font-weight="600" fill="#085041">Renderer (Next.js)</text>
+  <text x="550" y="171" text-anchor="middle" font-size="11" fill="#0F6E56">HTML + page cache · port 3001</text>
+  <rect x="30" y="245" width="200" height="56" rx="8" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.8"/>
+  <text x="130" y="268" text-anchor="middle" font-size="13" font-weight="600" fill="#2C2C2A">PostgreSQL</text>
+  <text x="130" y="286" text-anchor="middle" font-size="11" fill="#5F5E5A">Drafts, versions, users</text>
+  <rect x="250" y="245" width="180" height="56" rx="8" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.8"/>
+  <text x="340" y="268" text-anchor="middle" font-size="13" font-weight="600" fill="#2C2C2A">Media storage</text>
+  <text x="340" y="286" text-anchor="middle" font-size="11" fill="#5F5E5A">Local disk or S3</text>
+  <rect x="450" y="245" width="200" height="56" rx="8" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.8"/>
+  <text x="550" y="268" text-anchor="middle" font-size="13" font-weight="600" fill="#2C2C2A">Worker + Redis</text>
+  <text x="550" y="286" text-anchor="middle" font-size="11" fill="#5F5E5A">Images, email, webhooks</text>
+  <line x1="130" y1="76" x2="130" y2="126" stroke="#5f5e5a" stroke-width="1.2" marker-end="url(#a1)"/>
+  <text x="138" y="105" font-size="10" fill="#5f5e5a">/api/v1 proxy</text>
+  <line x1="550" y1="76" x2="550" y2="126" stroke="#5f5e5a" stroke-width="1.2" marker-end="url(#a1)"/>
+  <line x1="448" y1="158" x2="234" y2="158" stroke="#0F6E56" stroke-width="1.2" marker-end="url(#a1)"/>
+  <text x="341" y="150" text-anchor="middle" font-size="10" fill="#0F6E56">GET /v1/public/sites/resolve</text>
+  <line x1="234" y1="176" x2="448" y2="176" stroke="#534AB7" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#a1)"/>
+  <text x="341" y="192" text-anchor="middle" font-size="10" fill="#534AB7">POST /api/revalidate (on publish)</text>
+  <line x1="130" y1="186" x2="130" y2="241" stroke="#5f5e5a" stroke-width="1.2" marker-end="url(#a1)"/>
+  <path d="M190 186 L190 215 L340 215 L340 241" fill="none" stroke="#5f5e5a" stroke-width="1.2" marker-end="url(#a1)"/>
+  <path d="M600 76 L600 100 L665 100 L665 322 L340 322 L340 306" fill="none" stroke="#5f5e5a" stroke-width="1" stroke-dasharray="2 3" marker-end="url(#a1)"/>
+  <text x="664" y="215" font-size="10" fill="#5f5e5a" transform="rotate(90 664 215)" text-anchor="middle">images load directly</text>
+</svg>
+<div class="caption">Figure 1. Purple: the write side (drafts). Teal: the read side (published sites). Media files are served straight from storage (<code>/v1/storage</code> on the API, or the S3 public URL), not through the renderer.</div>
+</div>
+
+<ul>
+  <li><strong>Admin</strong> talks to the API through its same-origin proxy <code>/api/v1/*</code>, so the httpOnly refresh cookie works. Uploads stream through that proxy (limit raised to 310 MB).</li>
+  <li><strong>API</strong> owns all writes: drafts, publishing, users, media. It is the only service with full database access.</li>
+  <li><strong>Renderer</strong> resolves a host to a published snapshot through one endpoint, authenticated with the shared <code>RENDERER_SECRET</code>, and caches the HTML it renders.</li>
+  <li><strong>Worker</strong> runs queued jobs (BullMQ on Redis): image variants, email, webhooks, scheduled publishing and deployments.</li>
+</ul>
+
+<h2>2. The data model</h2>
+<p>A website is one JSON-serialisable value, <code>WebsiteDefinition</code>, defined with Zod in <code>packages/schema</code>. The same schema is used by the editor, the API, the AI agent, import/export and the renderer, so every layer agrees on the shape. The renderer receives it wrapped in a <code>SiteSnapshot</code>.</p>
+
+<div class="figure">
+<svg viewBox="0 0 680 300" xmlns="http://www.w3.org/2000/svg">
+  <rect x="20" y="15" width="640" height="270" rx="16" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.8"/>
+  <text x="40" y="40" font-size="13" font-weight="600" fill="#2C2C2A">SiteSnapshot</text>
+  <text x="40" y="57" font-size="10.5" fill="#5F5E5A">websiteId · versionId · version · publishedAt · apiBaseUrl · primaryDomain · runtime (captcha site keys)</text>
+  <rect x="40" y="72" width="600" height="198" rx="12" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.8"/>
+  <text x="58" y="95" font-size="13" font-weight="600" fill="#3C3489">definition: WebsiteDefinition</text>
+  <text x="58" y="112" font-size="10.5" fill="#534AB7">schemaVersion · settings · theme · navigation · customCss</text>
+  <rect x="58" y="124" width="170" height="130" rx="8" fill="#ffffff" stroke="#534AB7" stroke-width="0.6"/>
+  <text x="143" y="145" text-anchor="middle" font-size="12" font-weight="600" fill="#3C3489">header · footer</text>
+  <text x="143" y="163" text-anchor="middle" font-size="10" fill="#534AB7">one Node tree each</text>
+  <text x="143" y="190" text-anchor="middle" font-size="12" font-weight="600" fill="#3C3489">globalSections[]</text>
+  <text x="143" y="208" text-anchor="middle" font-size="10" fill="#534AB7">reusable trees, by ref</text>
+  <rect x="244" y="124" width="200" height="130" rx="8" fill="#ffffff" stroke="#534AB7" stroke-width="0.6"/>
+  <text x="344" y="145" text-anchor="middle" font-size="12" font-weight="600" fill="#3C3489">pages[]: PageDocument</text>
+  <text x="344" y="163" text-anchor="middle" font-size="10" fill="#534AB7">id, title, slug, kind, status</text>
+  <text x="344" y="178" text-anchor="middle" font-size="10" fill="#534AB7">seo, layout, translations</text>
+  <rect x="268" y="192" width="152" height="46" rx="6" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.6"/>
+  <text x="344" y="211" text-anchor="middle" font-size="11.5" font-weight="600" fill="#085041">sections[]: Node</text>
+  <text x="344" y="227" text-anchor="middle" font-size="10" fill="#0F6E56">recursive tree</text>
+  <rect x="460" y="124" width="162" height="130" rx="8" fill="#ffffff" stroke="#534AB7" stroke-width="0.6"/>
+  <text x="541" y="145" text-anchor="middle" font-size="12" font-weight="600" fill="#3C3489">forms[]</text>
+  <text x="541" y="161" text-anchor="middle" font-size="10" fill="#534AB7">fields, workflows</text>
+  <text x="541" y="187" text-anchor="middle" font-size="12" font-weight="600" fill="#3C3489">collections[]</text>
+  <text x="541" y="203" text-anchor="middle" font-size="10" fill="#534AB7">CMS schemas + items</text>
+  <text x="541" y="229" text-anchor="middle" font-size="12" font-weight="600" fill="#3C3489">redirects[]</text>
+  <text x="541" y="245" text-anchor="middle" font-size="10" fill="#534AB7">source → destination</text>
+</svg>
+<div class="caption">Figure 2. The snapshot envelope and the website definition inside it.</div>
+</div>
+
+<table>
+  <tr><th style="width:24%">Field</th><th>Type</th><th>Purpose</th></tr>
+  <tr><td><code>schemaVersion</code></td><td>literal</td><td>Format version; lets old snapshots be migrated.</td></tr>
+  <tr><td><code>settings</code></td><td><code>SiteSettings</code></td><td>Name, business info (NAP), social links, logo/favicon, site SEO, localization (default locale, locales, URL strategy), scripts, cookie consent, analytics IDs, <code>performance</code> (page caching, loading bar), variables, 404 page.</td></tr>
+  <tr><td><code>theme</code></td><td><code>ThemeTokens</code></td><td>Design tokens: colours, typography, spacing, radius, shadows, borders, container widths, buttons, motion (section 4).</td></tr>
+  <tr><td><code>navigation</code></td><td><code>{ menus: Record&lt;name, NavItem[]&gt; }</code></td><td>Named menus (<code>primary</code>, <code>footer</code>, <code>legal</code>, <code>mobile</code>…) used by header and footer components.</td></tr>
+  <tr><td><code>header</code>, <code>footer</code></td><td><code>Node</code></td><td>Site chrome, one tree each; pages can hide or make them transparent through <code>layout</code>.</td></tr>
+  <tr><td><code>globalSections</code></td><td><code>{ id, name, node }[]</code></td><td>Reusable blocks; a page node with <code>ref</code> renders the shared tree.</td></tr>
+  <tr><td><code>pages</code></td><td><code>PageDocument[]</code></td><td>Every page: metadata plus <code>sections: Node[]</code>.</td></tr>
+  <tr><td><code>forms</code></td><td><code>FormDefinition[]</code></td><td>Field definitions, validation, spam settings and workflow actions (email, webhook, integrations).</td></tr>
+  <tr><td><code>collections</code></td><td><code>CollectionDefinition[]</code></td><td>CMS: field schema plus items; items are rendered by collection-template pages or bound into lists.</td></tr>
+  <tr><td><code>redirects</code></td><td><code>Redirect[]</code></td><td>Exact, wildcard (<code>*</code>) and splat (<code>:splat</code>) redirects with 301/302/307/308.</td></tr>
+  <tr><td><code>customCss</code></td><td>string ≤ 100 kB</td><td>Site-wide CSS, sanitised before output.</td></tr>
+</table>
+
+<h3>PageDocument</h3>
+<table>
+  <tr><th style="width:24%">Field</th><th>Notes</th></tr>
+  <tr><td><code>id</code>, <code>title</code></td><td>Stable id; title ≤ 200 chars.</td></tr>
+  <tr><td><code>slug</code></td><td>Path without leading slash, lowercase segments (<code>about</code>, <code>blog/news</code>); <code>""</code> is the homepage.</td></tr>
+  <tr><td><code>kind</code></td><td><code>page</code> · <code>collection-template</code> (rendered at <code>/{slug}/{item}</code> for a collection) · <code>not-found</code>.</td></tr>
+  <tr><td><code>status</code>, <code>publishAt</code></td><td><code>draft</code> · <code>published</code> · <code>scheduled</code> · <code>archived</code>; scheduled pages go live at <code>publishAt</code>.</td></tr>
+  <tr><td><code>seo</code></td><td>Title, description, canonical, robots, Open Graph, JSON-LD.</td></tr>
+  <tr><td><code>layout</code></td><td>Header <code>default | transparent | hidden</code>, footer <code>default | hidden</code>.</td></tr>
+  <tr><td><code>customCss</code>, <code>scripts</code></td><td>Page CSS (≤ 50 kB) and head/body code (requires <code>code.manage</code> to change).</td></tr>
+  <tr><td><code>translations</code></td><td>Per-locale title, slug and SEO overrides.</td></tr>
+  <tr><td><code>sections</code></td><td>The page content: an ordered list of root <code>Node</code>s.</td></tr>
+</table>
+
+<h2>3. The node tree</h2>
+<p>All visible content, from a whole section down to a single button, is a <code>Node</code>. A node names a registered component by <code>type</code>, carries that component's <code>props</code>, and may have <code>children</code>. A page is therefore a tree, and the whole site is a forest: header, footer, every page and every global section.</p>
+
+<div class="two">
+<div>
+<table>
+  <tr><th>Field</th><th>Meaning</th></tr>
+  <tr><td><code>id</code></td><td>Unique within the site; also the CSS hook <code>.a-n-&lt;id&gt;</code>.</td></tr>
+  <tr><td><code>type</code></td><td>Registered component (<code>section</code>, <code>heading</code>, <code>hero</code>…).</td></tr>
+  <tr><td><code>variant</code></td><td>Optional component variant (layout preset).</td></tr>
+  <tr><td><code>props</code></td><td>Content and settings, validated by the component's Zod schema.</td></tr>
+  <tr><td><code>style</code></td><td>Responsive style overrides (section 4).</td></tr>
+  <tr><td><code>animation</code></td><td>Preset, trigger (load/scroll), duration, delay, easing.</td></tr>
+  <tr><td><code>visibility</code></td><td>Hide per breakpoint, schedule, or rule.</td></tr>
+  <tr><td><code>binding</code></td><td>Bind a CMS collection into a list prop.</td></tr>
+  <tr><td><code>children</code></td><td><code>Node[]</code> (recursive).</td></tr>
+  <tr><td><code>ref</code></td><td>Points at a global section instead of inline content.</td></tr>
+  <tr><td><code>customCss</code>, <code>anchor</code></td><td>Node-scoped CSS; in-page link target.</td></tr>
+  <tr><td><code>locked</code>, <code>hidden</code>, <code>name</code></td><td>Editor-only conveniences.</td></tr>
+</table>
+</div>
+<div>
+<pre>{
+  "id": "home-11",
+  "type": "section",
+  "props": {
+    "tone": "default",
+    "containerWidth": "default",
+    "spacingTop": "lg"
+  },
+  "style": { "padding": { "base": "96px 0",
+                          "mobile": "56px 0" } },
+  "animation": { "preset": "fade-up",
+                 "trigger": "scroll" },
+  "children": [
+    { "id": "home-10", "type": "container",
+      "props": { "width": "auto" },
+      "children": [
+        { "id": "home-8", "type": "heading",
+          "props": { "text": "Leela Garden",
+                     "level": 1 } }
+      ] }
+  ]
+}</pre>
+<div class="caption">A section from the Leela Garden bundle (trimmed, style and animation added for illustration).</div>
+</div>
+</div>
+
+<div class="figure">
+<svg viewBox="0 0 680 190" xmlns="http://www.w3.org/2000/svg">
+  <defs><marker id="a3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#5f5e5a" stroke-width="1.5"/></marker></defs>
+  <rect x="260" y="10" width="160" height="40" rx="7" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.8"/>
+  <text x="340" y="35" text-anchor="middle" font-size="12" font-weight="600" fill="#3C3489">page.sections[]</text>
+  <rect x="60" y="80" width="150" height="40" rx="7" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.8"/>
+  <text x="135" y="105" text-anchor="middle" font-size="12" fill="#085041">section (hero)</text>
+  <rect x="265" y="80" width="150" height="40" rx="7" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.8"/>
+  <text x="340" y="105" text-anchor="middle" font-size="12" fill="#085041">section</text>
+  <rect x="470" y="80" width="150" height="40" rx="7" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.8"/>
+  <text x="545" y="105" text-anchor="middle" font-size="12" fill="#633806">ref → global section</text>
+  <rect x="195" y="145" width="130" height="36" rx="7" fill="#ffffff" stroke="#0F6E56" stroke-width="0.8"/>
+  <text x="260" y="168" text-anchor="middle" font-size="11.5" fill="#085041">container</text>
+  <rect x="355" y="145" width="130" height="36" rx="7" fill="#ffffff" stroke="#0F6E56" stroke-width="0.8"/>
+  <text x="420" y="168" text-anchor="middle" font-size="11.5" fill="#085041">heading · button…</text>
+  <path d="M300 50 L300 65 L135 65 L135 76" fill="none" stroke="#5f5e5a" stroke-width="1" marker-end="url(#a3)"/>
+  <line x1="340" y1="50" x2="340" y2="76" stroke="#5f5e5a" stroke-width="1" marker-end="url(#a3)"/>
+  <path d="M380 50 L380 65 L545 65 L545 76" fill="none" stroke="#5f5e5a" stroke-width="1" marker-end="url(#a3)"/>
+  <path d="M320 120 L320 132 L260 132 L260 141" fill="none" stroke="#5f5e5a" stroke-width="1" marker-end="url(#a3)"/>
+  <path d="M360 120 L360 132 L420 132 L420 141" fill="none" stroke="#5f5e5a" stroke-width="1" marker-end="url(#a3)"/>
+</svg>
+<div class="caption">Figure 3. A page is a tree of nodes; a node with <code>ref</code> renders a shared global section.</div>
+</div>
+
+<h2>4. Styles, breakpoints and theme tokens</h2>
+<h3>Responsive style values</h3>
+<p>Every style key (spacing, sizing, layout, flex/grid, text alignment, background, colour, border, radius, shadow, typography overrides and more) accepts either a plain value or a responsive object:</p>
+<pre>type Responsive&lt;T&gt; = T | { base?: T; laptop?: T; tablet?: T; mobile?: T }
+// laptop ≤ 1279px · tablet ≤ 991px · mobile ≤ 767px (desktop-first: base applies everywhere)</pre>
+<p>When rendering, <code>compileTreeCss</code> (<code>packages/design-tokens</code>) walks every tree on the page and emits one rule per node, scoped as <code>.atrium-site .a-n-&lt;id&gt;</code>, plus <code>@media (max-width: …)</code> blocks for the breakpoint overrides. CSS values are checked by <code>isSafeCssValue</code>: no <code>url(javascript:…)</code>, no <code>expression()</code>, no breaking out of the declaration. Strict schemas reject unsafe values on input; lenient schemas drop them when reading stored data.</p>
+
+<h3>Theme tokens → CSS custom properties</h3>
+<table>
+  <tr><th style="width:22%">Group</th><th>Contents</th><th style="width:34%">Becomes</th></tr>
+  <tr><td><code>colors</code></td><td>primary, primaryContrast, secondary, accent, background, surface, surfaceAlt, text, muted, border, inverse, inverseText, success, warning, danger (+ custom)</td><td><code>--a-color-primary</code>, <code>--a-color-text</code>…</td></tr>
+  <tr><td><code>typography</code></td><td>heading/body font families (Google, local, custom, system), base size 12–22, modular scale 1.05–1.8, weights, line heights, letter spacing</td><td><code>--a-font-heading</code>, <code>--a-text-xs … -6xl</code>: fluid sizes using <code>clamp()</code> between a mobile and a desktop scale</td></tr>
+  <tr><td><code>spacing</code></td><td>unit, section rhythm (compact · regular · airy)</td><td>section padding variables</td></tr>
+  <tr><td><code>radius</code>, <code>shadows</code>, <code>borders</code></td><td>sm/md/lg/xl/full, sm/md/lg, width/style</td><td><code>--a-radius-md</code>, <code>--a-shadow-lg</code></td></tr>
+  <tr><td><code>containerWidths</code></td><td>narrow, default, wide, full</td><td>container max widths</td></tr>
+  <tr><td><code>buttons</code>, <code>motion</code></td><td>button shape/style; motion intensity and easing</td><td>button variables; animation runtime config</td></tr>
+</table>
+<p>Components never hard-code colours. They use tokens, plus local "tone" variables (<code>--t-bg</code>, <code>--t-text</code>, <code>--t-btn-bg</code>…) that sections switch between (<code>default</code>, <code>surface</code>, <code>inverse</code>, <code>on-media</code>). So changing the theme restyles every page without touching content.</p>
+
+<h2>5. The component registry</h2>
+<p><code>packages/component-registry</code> defines what a node <code>type</code> means. It currently registers <strong>65 components</strong>: 2 site-level (<code>site-header</code>, <code>site-footer</code>), 37 sections, 12 blocks and 14 elements. Each <code>ComponentDefinition</code> has:</p>
+<table>
+  <tr><th style="width:24%">Field</th><th>Purpose</th></tr>
+  <tr><td><code>type</code>, <code>name</code>, <code>category</code>, <code>level</code></td><td>Identity and where it may be placed (site, section, block, element).</td></tr>
+  <tr><td><code>props</code></td><td>A Zod object schema: the single source of truth for that component's props, defaults and validation.</td></tr>
+  <tr><td><code>defaultProps</code>, <code>variants</code>, <code>defaultVariant</code></td><td>Starting content and layout presets for the element picker and the AI.</td></tr>
+  <tr><td><code>controls</code>, <code>styleControls</code></td><td>What the inspector shows (text, media, list, select…) and which style keys are editable.</td></tr>
+  <tr><td><code>children</code></td><td>Whether it accepts children, which types, min/max.</td></tr>
+  <tr><td><code>bindable</code></td><td>Which list prop a CMS collection can feed, and the item fields.</td></tr>
+  <tr><td><code>animations</code>, <code>ai</code>, <code>tags</code></td><td>Recommended animation presets; guidance for the AI agent (when to use, example).</td></tr>
+</table>
+<p>The registry is shared. The editor uses it for the picker and inspector, <code>builder-core</code> uses it to validate and fill props, the AI agent reads its descriptions, and <code>renderer-core</code> maps each <code>type</code> to a React renderer.</p>
+
+<h2>6. Storage in PostgreSQL</h2>
+<p>Drafts are stored in pieces, so two people editing different pages don't conflict. Published versions are stored whole, so serving needs a single row.</p>
+<table>
+  <tr><th style="width:26%">Table</th><th>Holds</th><th style="width:26%">Notes</th></tr>
+  <tr><td><code>websites</code></td><td>Identity, slug, status, deployment mode, <code>published_version_id</code>, dashboard branding</td><td>Points at the live version.</td></tr>
+  <tr><td><code>website_settings</code></td><td><code>settings</code>, <code>navigation</code>, <code>header</code>, <code>footer</code> (JSON), <code>custom_css</code></td><td>Own <code>revision</code> counter.</td></tr>
+  <tr><td><code>themes</code></td><td><code>tokens</code> (JSON)</td><td>One theme per website.</td></tr>
+  <tr><td><code>pages</code></td><td>Page metadata columns + <code>document</code> (JSON: the sections tree)</td><td>Own <code>revision</code>; one row per page.</td></tr>
+  <tr><td><code>page_versions</code></td><td>Per-page history (<code>document</code> JSON)</td><td>Autosave history, restore.</td></tr>
+  <tr><td><code>forms</code>, <code>collections</code>, <code>global_sections</code>, <code>redirects</code></td><td>The remaining parts of the definition</td><td>Plus submissions, items, etc.</td></tr>
+  <tr><td><code>website_versions</code></td><td><code>snapshot</code> (the complete <code>SiteSnapshot</code> JSON), <code>number</code>, <code>checksum</code>, <code>message</code></td><td>Immutable; one per publish.</td></tr>
+  <tr><td><code>media</code></td><td>Metadata (key, type, size, dimensions, variants, checksum)</td><td>Bytes live in storage, not the DB.</td></tr>
+</table>
+<p><code>loadDraft()</code> in <code>packages/site-store</code> reassembles these rows into one <code>WebsiteDefinition</code>. The editor, preview, export and publish all work from that one assembled value.</p>
+
+<h2>7. Parsing and validation</h2>
+<p>Every way content enters the system goes through the same funnel. Loose input is accepted, normalised against the registry, then checked against the strict schema before anything is stored.</p>
+
+<div class="figure">
+<svg viewBox="0 0 680 250" xmlns="http://www.w3.org/2000/svg">
+  <defs><marker id="a4" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#5f5e5a" stroke-width="1.5"/></marker></defs>
+  <rect x="20" y="20" width="130" height="40" rx="7" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.8"/><text x="85" y="45" text-anchor="middle" font-size="11.5" fill="#2C2C2A">Editor operations</text>
+  <rect x="20" y="75" width="130" height="40" rx="7" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.8"/><text x="85" y="100" text-anchor="middle" font-size="11.5" fill="#2C2C2A">AI agent output</text>
+  <rect x="20" y="130" width="130" height="40" rx="7" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.8"/><text x="85" y="155" text-anchor="middle" font-size="11.5" fill="#2C2C2A">Imports / templates</text>
+  <rect x="20" y="185" width="130" height="40" rx="7" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.8"/><text x="85" y="210" text-anchor="middle" font-size="11.5" fill="#2C2C2A">API bodies</text>
+  <rect x="190" y="90" width="130" height="66" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.8"/><text x="255" y="114" text-anchor="middle" font-size="12" font-weight="600" fill="#3C3489">Input schemas</text><text x="255" y="131" text-anchor="middle" font-size="10" fill="#534AB7">ids/defaults optional</text><text x="255" y="145" text-anchor="middle" font-size="10" fill="#534AB7">Zod parse</text>
+  <rect x="355" y="90" width="140" height="66" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.8"/><text x="425" y="114" text-anchor="middle" font-size="12" font-weight="600" fill="#3C3489">normalizeWebsite</text><text x="425" y="131" text-anchor="middle" font-size="10" fill="#534AB7">ids, registry props,</text><text x="425" y="145" text-anchor="middle" font-size="10" fill="#534AB7">defaults, issues</text>
+  <rect x="530" y="60" width="130" height="56" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.8"/><text x="595" y="83" text-anchor="middle" font-size="12" font-weight="600" fill="#085041">Change authz</text><text x="595" y="100" text-anchor="middle" font-size="10" fill="#0F6E56">permission per diff</text>
+  <rect x="530" y="130" width="130" height="56" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.8"/><text x="595" y="153" text-anchor="middle" font-size="12" font-weight="600" fill="#085041">Saved draft</text><text x="595" y="170" text-anchor="middle" font-size="10" fill="#0F6E56">revision + 1</text>
+  <path d="M150 40 L170 40 L170 110 L186 110" fill="none" stroke="#5f5e5a" stroke-width="1" marker-end="url(#a4)"/>
+  <line x1="150" y1="95" x2="186" y2="115" stroke="#5f5e5a" stroke-width="1" marker-end="url(#a4)"/>
+  <line x1="150" y1="150" x2="186" y2="132" stroke="#5f5e5a" stroke-width="1" marker-end="url(#a4)"/>
+  <path d="M150 205 L170 205 L170 140 L186 140" fill="none" stroke="#5f5e5a" stroke-width="1" marker-end="url(#a4)"/>
+  <line x1="320" y1="123" x2="351" y2="123" stroke="#5f5e5a" stroke-width="1" marker-end="url(#a4)"/>
+  <path d="M495 110 L512 110 L512 88 L526 88" fill="none" stroke="#5f5e5a" stroke-width="1" marker-end="url(#a4)"/>
+  <line x1="595" y1="116" x2="595" y2="126" stroke="#5f5e5a" stroke-width="1" marker-end="url(#a4)"/>
+</svg>
+<div class="caption">Figure 4. One validation funnel for every source of content.</div>
+</div>
+
+<ol>
+  <li><strong>Input schemas</strong> (<code>WebsiteInputSchema</code>, <code>PageInputSchema</code>, <code>NodeInputSchema</code>) accept partial data: ids and defaults are optional, so the AI or an import can send just the content.</li>
+  <li><strong><code>normalizeWebsite</code> / <code>normalizePage</code></strong> (<code>builder-core</code>):
+    <ul>
+      <li>assign missing or duplicate ids and keep exactly one homepage, de-duplicating slugs;</li>
+      <li>look up each node's <code>type</code> in the registry and parse its <code>props</code> with that component's Zod schema, filling defaults and coercing types;</li>
+      <li>enforce the allowed children;</li>
+      <li>collect <code>NodeIssue</code>s (<code>error</code>/<code>warning</code> with a path) instead of failing on the first problem. Unknown types are kept and rendered as a visible placeholder, never silently dropped.</li>
+    </ul>
+  </li>
+  <li><strong>Strict vs lenient schemas.</strong> <code>StrictStyleSchema</code> and <code>StrictThemeTokensSchema</code> reject unsafe CSS or contrast-breaking themes on input with a message. The lenient <code>StyleSchema</code> and <code>ThemeTokensSchema</code> drop such values when reading stored data, so a stored document can always render.</li>
+  <li><strong>Change authorization</strong> (<code>siteChangeRequirements</code>, <code>pageChangeRequirements</code>). The API diffs the old and new definition and requires a permission per kind of change:
+    <ul>
+      <li>scripts, custom CSS and embeds need <code>code.manage</code>;</li>
+      <li>the theme needs <code>theme.update</code>;</li>
+      <li>publishing or scheduling needs <code>page.publish</code>;</li>
+      <li>menus, redirects, forms, collections and SEO each have their own permission.</li>
+    </ul>
+    A member who may edit text therefore cannot inject a script through the same save.</li>
+  <li><strong>Persist with optimistic concurrency</strong>: each save names the <code>revision</code> it was based on; a stale revision is rejected (409), so concurrent editors never overwrite each other silently.</li>
+</ol>
+
+<h2>8. Editing: operations and revisions</h2>
+<p>The visual editor does not send whole documents. It sends small <strong>operations</strong>, applied by <code>applyOperation</code> in <code>builder-core</code> on the client (for instant feedback) and again on the server (as the authority):</p>
+<pre>addNode · updateNode · setProp · setStyle · replaceNode · moveNode · removeNode · duplicateNode
+createPage · updatePage · deletePage · duplicatePage
+updateTheme · updateSettings · setMenu · createForm · updateForm · deleteForm · setRedirects · setCustomCss</pre>
+<p>Each operation is validated (for example, <code>setStyle</code> goes through the strict style schema and persists only the sanitised result), checked against the change permissions, and recorded for undo and redo. Page saves bump that page's <code>revision</code> and append to <code>page_versions</code>. Site-level saves bump <code>website_settings.revision</code>.</p>
+
+<h2>9. Publishing: freezing a snapshot</h2>
+<div class="figure">
+<svg viewBox="0 0 680 130" xmlns="http://www.w3.org/2000/svg">
+  <defs><marker id="a5" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#5f5e5a" stroke-width="1.5"/></marker></defs>
+  <rect x="10" y="30" width="120" height="66" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.8"/><text x="70" y="55" text-anchor="middle" font-size="11.5" font-weight="600" fill="#3C3489">Lock + load</text><text x="70" y="72" text-anchor="middle" font-size="9.5" fill="#534AB7">advisory lock,</text><text x="70" y="85" text-anchor="middle" font-size="9.5" fill="#534AB7">loadDraft()</text>
+  <rect x="145" y="30" width="120" height="66" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.8"/><text x="205" y="55" text-anchor="middle" font-size="11.5" font-weight="600" fill="#3C3489">Filter</text><text x="205" y="72" text-anchor="middle" font-size="9.5" fill="#534AB7">toPublished-</text><text x="205" y="85" text-anchor="middle" font-size="9.5" fill="#534AB7">Definition()</text>
+  <rect x="280" y="30" width="120" height="66" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.8"/><text x="340" y="55" text-anchor="middle" font-size="11.5" font-weight="600" fill="#3C3489">Freeze</text><text x="340" y="72" text-anchor="middle" font-size="9.5" fill="#534AB7">checksum, number,</text><text x="340" y="85" text-anchor="middle" font-size="9.5" fill="#534AB7">snapshot row</text>
+  <rect x="415" y="30" width="120" height="66" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.8"/><text x="475" y="55" text-anchor="middle" font-size="11.5" font-weight="600" fill="#085041">Go live</text><text x="475" y="72" text-anchor="middle" font-size="9.5" fill="#0F6E56">publishedVersionId</text><text x="475" y="85" text-anchor="middle" font-size="9.5" fill="#0F6E56">pages → published</text>
+  <rect x="550" y="30" width="120" height="66" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.8"/><text x="610" y="55" text-anchor="middle" font-size="11.5" font-weight="600" fill="#085041">Revalidate</text><text x="610" y="72" text-anchor="middle" font-size="9.5" fill="#0F6E56">renderer cache tags,</text><text x="610" y="85" text-anchor="middle" font-size="9.5" fill="#0F6E56">webhooks, deploys</text>
+  <line x1="130" y1="63" x2="141" y2="63" stroke="#5f5e5a" stroke-width="1" marker-end="url(#a5)"/>
+  <line x1="265" y1="63" x2="276" y2="63" stroke="#5f5e5a" stroke-width="1" marker-end="url(#a5)"/>
+  <line x1="400" y1="63" x2="411" y2="63" stroke="#5f5e5a" stroke-width="1" marker-end="url(#a5)"/>
+  <line x1="535" y1="63" x2="546" y2="63" stroke="#5f5e5a" stroke-width="1" marker-end="url(#a5)"/>
+</svg>
+<div class="caption">Figure 5. <code>freezeVersion()</code> in <code>packages/site-store/src/publish.ts</code>, run inside one database transaction.</div>
+</div>
+<ol>
+  <li><strong>Lock and load.</strong> <code>pg_advisory_xact_lock(hashtext(websiteId))</code> serialises publishes of the same site; <code>loadDraft()</code> assembles the definition.</li>
+  <li><strong>Filter</strong> with <code>toPublishedDefinition()</code>:
+    <ul>
+      <li>archived pages and pages scheduled for the future are dropped;</li>
+      <li>everything else is marked <code>published</code>;</li>
+      <li>only published collection items and enabled redirects are kept;</li>
+      <li>the result is re-parsed with <code>WebsiteDefinitionSchema</code>.</li>
+    </ul>
+  </li>
+  <li><strong>Freeze.</strong> Take a SHA-256 checksum of the published definition, assign the next version number, and build the <code>SiteSnapshot</code> (with <code>apiBaseUrl</code>, primary domain and runtime keys) through <code>SiteSnapshotSchema.parse</code>. Store it in <code>website_versions.snapshot</code>.</li>
+  <li><strong>Go live</strong>: set <code>websites.published_version_id</code> and <code>status = PUBLISHED</code>, and mark the included pages published. Rolling back just points <code>published_version_id</code> at an older version.</li>
+  <li><strong>After commit.</strong> The API calls <code>POST {RENDERER_URL}/api/revalidate</code> with the shared secret; the renderer runs <code>revalidateTag</code> for that site's cache tags. It also emits the <code>website.published</code> event for webhooks and starts an external deployment if the site uses "independent" mode.</li>
+</ol>
+<div class="note">Drafts and the live site can never mix: the renderer reads only <code>website_versions.snapshot</code> through <code>published_version_id</code>. Preview links (<code>/_preview/&lt;token&gt;</code>) are the only path that renders drafts, and they are never cached.</div>
+
+<h2>10. Serving a request</h2>
+<div class="figure">
+<svg viewBox="0 0 680 300" xmlns="http://www.w3.org/2000/svg">
+  <defs><marker id="a6" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#5f5e5a" stroke-width="1.5"/></marker></defs>
+  <rect x="20" y="20" width="150" height="56" rx="8" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.8"/><text x="95" y="43" text-anchor="middle" font-size="12" font-weight="600" fill="#2C2C2A">GET /about</text><text x="95" y="60" text-anchor="middle" font-size="10" fill="#5F5E5A">Host: leela.sites…</text>
+  <rect x="200" y="20" width="200" height="56" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.8"/><text x="300" y="43" text-anchor="middle" font-size="12" font-weight="600" fill="#085041">proxy.platform.ts</text><text x="300" y="60" text-anchor="middle" font-size="10" fill="#0F6E56">→ /atrium-tenant/&lt;host&gt;/about</text>
+  <rect x="430" y="20" width="230" height="56" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.8"/><text x="545" y="43" text-anchor="middle" font-size="12" font-weight="600" fill="#085041">ISR page cache</text><text x="545" y="60" text-anchor="middle" font-size="10" fill="#0F6E56">per host + path · revalidate 300 s</text>
+  <rect x="430" y="120" width="230" height="56" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.8"/><text x="545" y="143" text-anchor="middle" font-size="12" font-weight="600" fill="#085041">Snapshot fetch (cached)</text><text x="545" y="160" text-anchor="middle" font-size="10" fill="#0F6E56">tags host:&lt;h&gt;, site:&lt;id&gt;</text>
+  <rect x="200" y="120" width="200" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.8"/><text x="300" y="143" text-anchor="middle" font-size="12" font-weight="600" fill="#3C3489">/v1/public/sites/resolve</text><text x="300" y="160" text-anchor="middle" font-size="10" fill="#534AB7">X-Renderer-Secret · ETag</text>
+  <rect x="20" y="120" width="150" height="56" rx="8" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.8"/><text x="95" y="143" text-anchor="middle" font-size="12" font-weight="600" fill="#2C2C2A">PostgreSQL</text><text x="95" y="160" text-anchor="middle" font-size="10" fill="#5F5E5A">one row read</text>
+  <rect x="200" y="225" width="460" height="56" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.8"/><text x="430" y="248" text-anchor="middle" font-size="12" font-weight="600" fill="#085041">Parse → route → render → store in cache → HTML response</text><text x="430" y="265" text-anchor="middle" font-size="10" fill="#0F6E56">sections 11 and 12</text>
+  <line x1="170" y1="48" x2="196" y2="48" stroke="#5f5e5a" stroke-width="1" marker-end="url(#a6)"/>
+  <line x1="400" y1="48" x2="426" y2="48" stroke="#5f5e5a" stroke-width="1" marker-end="url(#a6)"/>
+  <line x1="545" y1="76" x2="545" y2="116" stroke="#5f5e5a" stroke-width="1" marker-end="url(#a6)"/>
+  <text x="553" y="100" font-size="10" fill="#5f5e5a">miss / stale</text>
+  <line x1="430" y1="148" x2="404" y2="148" stroke="#5f5e5a" stroke-width="1" marker-end="url(#a6)"/>
+  <line x1="200" y1="148" x2="174" y2="148" stroke="#5f5e5a" stroke-width="1" marker-end="url(#a6)"/>
+  <line x1="545" y1="176" x2="545" y2="221" stroke="#5f5e5a" stroke-width="1" marker-end="url(#a6)"/>
+</svg>
+<div class="caption">Figure 6. A visitor request. On a cache hit the response is served from the first teal box and nothing else runs.</div>
+</div>
+<ol>
+  <li><strong>Edge.</strong> nginx (or Caddy) terminates TLS and forwards <code>{sites domain}</code>, <code>*.{sites domain}</code> and verified custom domains to the renderer on port 3001, keeping the <code>Host</code> header.</li>
+  <li><strong>Host rewrite.</strong> <code>proxy.platform.ts</code> rewrites the request to an internal route:
+    <ul>
+      <li><code>/atrium-tenant/&lt;host&gt;/&lt;path&gt;</code> for live sites;</li>
+      <li><code>/_site/&lt;slug&gt;</code> for local development;</li>
+      <li><code>/_preview/&lt;token&gt;</code> for previews.</li>
+    </ul>
+    Each host and path pair becomes its own cache key. Requests that try to reach the internal <code>/atrium-*</code> routes directly are blocked.</li>
+  <li><strong>Page cache (ISR).</strong> Tenant pages use <code>revalidate = 300</code>: a rendered page is served from cache and refreshed in the background after five minutes, or immediately when publishing revalidates its tags.</li>
+  <li><strong>Snapshot fetch.</strong> On a miss, <code>getSnapshotForHost()</code> calls <code>GET /v1/public/sites/resolve?host=…</code> with <code>X-Renderer-Secret</code>. The fetch is itself cached and tagged <code>host:&lt;h&gt;</code> and an all-sites tag, so publish can purge it.</li>
+  <li><strong>Host → website</strong> (API, <code>PublicService.websiteForHost</code>):
+    <ul>
+      <li><code>{slug}.{PLATFORM_SITES_DOMAIN}</code> maps to a website by its slug;</li>
+      <li>otherwise the host is looked up in <code>domains</code>, and only verified domains (TXT proof) that point at the platform are served;</li>
+      <li>suspended or unpublished sites return 404.</li>
+    </ul>
+    The response is the stored snapshot, with an ETag (<code>checksum-version</code>), so revalidation can be a cheap 304.</li>
+</ol>
+
+<h2>11. Rendering a page</h2>
+<h3>Parse and route</h3>
+<ul>
+  <li><code>coerceSnapshot()</code> re-validates the JSON with <code>SiteSnapshotSchema.parse</code>. The renderer never trusts the shape, even from its own API.</li>
+  <li><code>resolveRequest()</code> → <code>resolvePageForPath()</code> (<code>renderer-core/routing.ts</code>) handles the following, in order:
+    <ol>
+      <li>enabled redirects (exact, wildcard, <code>:splat</code>), which return a redirect response;</li>
+      <li>the locale prefix, according to the site's localization strategy;</li>
+      <li>page slugs, including translated slugs;</li>
+      <li>collection-template pages, where <code>/{slug}/{item}</code> binds the CMS item into scope;</li>
+      <li>otherwise the site's 404 page (or a generated one), served with status 404 and <code>noindex</code>.</li>
+    </ol>
+  </li>
+  <li>A <strong><code>RenderContext</code></strong> is built for the page:
+    <ul>
+      <li>the definition, theme and registry;</li>
+      <li>the global-sections map;</li>
+      <li>the template scope (<code>vars</code>, <code>site</code>, <code>page</code>, the CMS <code>item</code>);</li>
+      <li>locale, mode (<code>live</code>/<code>preview</code>/<code>editor</code>), base path and API base URL.</li>
+    </ul>
+  </li>
+</ul>
+
+<h3>Build the CSS (<code>getSiteCss</code>)</h3>
+<p>Each page carries one <code>&lt;style&gt;</code> block, assembled in this order:</p>
+<ol>
+  <li>custom <code>@font-face</code> rules, plus the Google Fonts stylesheet with preconnect;</li>
+  <li><code>themeToCss(theme, '.atrium-site')</code>: all tokens as CSS custom properties;</li>
+  <li>component CSS, with only the chunks for components used on this page (shared CSS served as <code>/atrium-assets/renderer.css</code>);</li>
+  <li>the animation base CSS, which hides not-yet-animated elements to avoid a flash;</li>
+  <li><code>compileTreeCss</code>: per-node <code>.a-n-&lt;id&gt;</code> rules with breakpoint media queries;</li>
+  <li>the site <code>customCss</code>, then the page <code>customCss</code>, both through <code>sanitizeCss</code>.</li>
+</ol>
+<p>The whole block is escaped so no value can close the <code>&lt;style&gt;</code> element.</p>
+
+<h3>Render the tree (<code>NodeView</code>)</h3>
+<div class="figure">
+<svg viewBox="0 0 680 110" xmlns="http://www.w3.org/2000/svg">
+  <defs><marker id="a7" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#5f5e5a" stroke-width="1.5"/></marker></defs>
+  <g font-size="10.5" text-anchor="middle">
+  <rect x="5" y="25" width="100" height="56" rx="7" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.8"/><text x="55" y="49" fill="#085041" font-weight="600">Global ref</text><text x="55" y="65" fill="#0F6E56">swap in tree</text>
+  <rect x="117" y="25" width="100" height="56" rx="7" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.8"/><text x="167" y="49" fill="#085041" font-weight="600">Visibility</text><text x="167" y="65" fill="#0F6E56">skip if hidden</text>
+  <rect x="229" y="25" width="100" height="56" rx="7" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.8"/><text x="279" y="49" fill="#085041" font-weight="600">Translate</text><text x="279" y="65" fill="#0F6E56">locale props</text>
+  <rect x="341" y="25" width="100" height="56" rx="7" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.8"/><text x="391" y="49" fill="#085041" font-weight="600">{{ }} + bind</text><text x="391" y="65" fill="#0F6E56">vars, CMS items</text>
+  <rect x="453" y="25" width="100" height="56" rx="7" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.8"/><text x="503" y="49" fill="#085041" font-weight="600">Parse props</text><text x="503" y="65" fill="#0F6E56">schema defaults</text>
+  <rect x="565" y="25" width="110" height="56" rx="7" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.8"/><text x="620" y="49" fill="#3C3489" font-weight="600">Component</text><text x="620" y="65" fill="#534AB7">→ children</text>
+  </g>
+  <line x1="105" y1="53" x2="113" y2="53" stroke="#5f5e5a" stroke-width="1" marker-end="url(#a7)"/>
+  <line x1="217" y1="53" x2="225" y2="53" stroke="#5f5e5a" stroke-width="1" marker-end="url(#a7)"/>
+  <line x1="329" y1="53" x2="337" y2="53" stroke="#5f5e5a" stroke-width="1" marker-end="url(#a7)"/>
+  <line x1="441" y1="53" x2="449" y2="53" stroke="#5f5e5a" stroke-width="1" marker-end="url(#a7)"/>
+  <line x1="553" y1="53" x2="561" y2="53" stroke="#5f5e5a" stroke-width="1" marker-end="url(#a7)"/>
+</svg>
+<div class="caption">Figure 7. What <code>NodeView</code> does for every node before handing it to the component renderer.</div>
+</div>
+<ol>
+  <li><strong>Global sections</strong>: a node with <code>ref</code> is replaced by the shared tree (wrapped as <code>a-global</code>).</li>
+  <li><strong>Visibility</strong>: hidden nodes (by rule, schedule or flag) are skipped; per-breakpoint hiding is done in CSS.</li>
+  <li><strong>Translations</strong>: per-locale prop overrides are applied.</li>
+  <li><strong>Interpolation and binding</strong>:
+    <ul>
+      <li><code>{{vars.phone}}</code>, <code>{{item.title}}</code> and similar are resolved from the scope (HTML-escaped for HTML props);</li>
+      <li>a <code>binding</code> fills a list prop from a CMS collection.</li>
+    </ul>
+  </li>
+  <li><strong>Prop parsing</strong>: <code>parseWithSchema</code> applies the registry schema again, so missing props get defaults and bad values can't crash a render.</li>
+  <li><strong>Component</strong>:
+    <ul>
+      <li>the renderer registered for <code>type</code> outputs semantic HTML with the class <code>a-n-&lt;id&gt;</code>, the animation attributes (<code>data-a-anim</code>) and the node's children (through <code>NodeView</code> again);</li>
+      <li>an unknown type renders a placeholder (<code>a-unknown</code>) instead of failing the page.</li>
+    </ul>
+  </li>
+</ol>
+<p>The document shell (<code>SiteDocument</code>) adds the metadata built by <code>buildMetadata</code>:</p>
+<ul>
+  <li>title and description;</li>
+  <li>canonical URL and hreflang alternates;</li>
+  <li>robots, Open Graph and Twitter cards;</li>
+  <li>icons;</li>
+  <li>JSON-LD (organization, local business, page schema).</li>
+</ul>
+<p>It also adds the scripts allowed by consent, the cookie banner, the analytics beacon and the client islands.</p>
+
+<h2>12. In the browser</h2>
+<ul>
+  <li><strong>HTML first.</strong> The page is complete, server-rendered HTML (good for SEO and first paint). Only small client <strong>islands</strong> hydrate:
+    <ul>
+      <li>forms (validation, captcha, submit to <code>POST /v1/public/forms/:formId/submit</code>);</li>
+      <li>booking, carousel, lightbox, crossfade and map facades;</li>
+      <li>header behaviour;</li>
+      <li><code>SiteRuntime</code>.</li>
+    </ul>
+  </li>
+  <li><strong>SiteRuntime</strong> lazy-loads GSAP only on pages with animations, runs <code>initAnimations</code> over <code>[data-a-anim]</code> elements, and manages cookie consent, consent-gated scripts and the cookieless analytics beacon.</li>
+  <li><strong>Client navigation</strong> (<code>ClientLinks</code>):
+    <ul>
+      <li>same-origin link clicks become Next.js client navigations, which fetch only the next page's server payload (<code>?_rsc=</code>), not a full document;</li>
+      <li>the clicked link dims at once, and a slim loading bar in the site's primary colour appears after 120 ms; after 12 s it falls back to a normal page load.</li>
+    </ul>
+  </li>
+  <li><strong>Browser cache</strong> (Settings → Page loading, <code>settings.performance.cachePages</code>):
+    <ul>
+      <li>on: links are preloaded on hover/focus/touch and header links when idle; visited and preloaded pages stay in the router cache (<code>staleTimes.static</code> = 24 h) until the visitor reloads;</li>
+      <li>off: nothing is preloaded and every click fetches the latest page.</li>
+    </ul>
+  </li>
+</ul>
+
+<h2>13. Site bundles (export / import)</h2>
+<p>A website can be exported as a zip and imported elsewhere. The layout mirrors the definition:</p>
+<pre>site.json        settings, navigation, header, footer, globalSections, redirects, customCss, schemaVersion, bundle
+theme.json       theme tokens
+pages/*.json     one PageDocument per file (_home.json = homepage)
+forms/*.json     form definitions
+assets/&lt;path&gt;    optional media files, referenced in any JSON as "asset:&lt;path&gt;"</pre>
+<p>Import works as follows:</p>
+<ol>
+  <li>The zip is unpacked with limits: 300 MB upload, 400 MB unpacked, 2,000 entries, at most 500 referenced assets.</li>
+  <li>Every <code>asset:</code> reference is uploaded through <code>MediaService</code>, which detects the real file type, sanitises SVGs, checks storage quotas and reuses files already in the library.</li>
+  <li>The references are rewritten to media URLs: <code>src</code> objects also get <code>mediaId</code>, width, height and type, so the renderer can serve responsive image variants.</li>
+  <li>The rewritten bundle goes through the normal validation funnel (section 7) and a new website is created. Nothing existing is overwritten.</li>
+</ol>
+
+<h2>14. Security at the boundaries</h2>
+<table>
+  <tr><th style="width:28%">Boundary</th><th>Protection</th></tr>
+  <tr><td>Content input</td><td>Strict Zod schemas; per-diff permissions (scripts, CSS, embeds need <code>code.manage</code>); revision checks.</td></tr>
+  <tr><td>CSS</td><td><code>isSafeCssValue</code> for style values, <code>sanitizeCss</code> for custom CSS, <code>escapeCssForHtml</code> for the <code>&lt;style&gt;</code> block, node rules scoped to <code>.atrium-site</code>.</td></tr>
+  <tr><td>HTML and text</td><td>React escaping by default; <code>sanitizeHtml</code> for rich text; HTML-escaped interpolation for HTML props.</td></tr>
+  <tr><td>URLs and media</td><td>Safe-URL schemas (no <code>javascript:</code>); uploads type-sniffed from bytes, SVGs sanitised, user files served with a sandboxing CSP from the API/media origin, never the admin origin.</td></tr>
+  <tr><td>Renderer ↔ API</td><td>Snapshot and preview endpoints require <code>X-Renderer-Secret</code>; the renderer re-validates every snapshot; revalidation needs the same secret.</td></tr>
+  <tr><td>Domains</td><td>Only verified domains are served; on-demand TLS asks the API before issuing certificates.</td></tr>
+  <tr><td>Tenancy</td><td>Every resource is resolved to its organization and website before access; website-scoped members (e.g. Website Manager) are limited centrally in <code>AccessService</code>.</td></tr>
+</table>
+
+<h2>15. Source map</h2>
+<table>
+  <tr><th style="width:42%">Where</th><th>What</th></tr>
+  <tr><td><code>packages/schema/src/{website,page,node,style,theme,settings}.ts</code></td><td>The data model (Zod schemas and types)</td></tr>
+  <tr><td><code>packages/schema/src/responsive.ts</code></td><td>Breakpoints and responsive values</td></tr>
+  <tr><td><code>packages/component-registry/src</code></td><td>65 component definitions and their prop schemas</td></tr>
+  <tr><td><code>packages/builder-core/src/{normalize,operations,change-authz}.ts</code></td><td>Normalisation, editor operations, change permissions</td></tr>
+  <tr><td><code>packages/site-store/src/{draft,publish}.ts</code></td><td><code>loadDraft</code>, <code>toPublishedDefinition</code>, <code>freezeVersion</code></td></tr>
+  <tr><td><code>apps/api/src/modules/public/</code></td><td><code>/public/sites/resolve</code>, preview, forms, analytics</td></tr>
+  <tr><td><code>apps/api/src/modules/publishing/</code></td><td>Publish, rollback, renderer revalidation</td></tr>
+  <tr><td><code>apps/renderer/proxy.platform.ts</code></td><td>Host → internal route rewrite</td></tr>
+  <tr><td><code>apps/renderer/lib/{snapshot,platform,site,client-links}.tsx</code></td><td>Snapshot fetch and cache, document shell, client navigation</td></tr>
+  <tr><td><code>packages/renderer-core/src/{routing,node-view,props,styles}.ts(x)</code></td><td>Routing, node pipeline, interpolation, CSS assembly</td></tr>
+  <tr><td><code>packages/design-tokens/src/{tokens,styles}.ts</code></td><td><code>themeToCss</code> (tokens → CSS variables, fluid type scale), <code>compileTreeCss</code> (per-node rules)</td></tr>
+  <tr><td><code>packages/animations/src</code></td><td>Animation presets and runtime</td></tr>
+</table>
+
+</body>
+</html>
