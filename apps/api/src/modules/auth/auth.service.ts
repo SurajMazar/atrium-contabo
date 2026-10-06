@@ -10,6 +10,7 @@ import { ApiError, badRequest, conflict, unauthorized, validation } from '../../
 import { escapeHtml } from '../../common/html';
 import { PrismaService } from '../../common/prisma.service';
 import { RedisService } from '../../common/redis.service';
+import { assertPasswordStrength } from '../../common/passwords';
 import { hashToken, randomToken } from '../../common/tokens';
 import { SecretsService } from '../../common/secrets.service';
 import { QueueService } from '../../common/queue.service';
@@ -21,7 +22,6 @@ export interface SessionMeta {
   userAgent?: string;
 }
 
-const PASSWORD_MIN = 10;
 const DUMMY_HASH = '$argon2id$v=19$m=65536,t=3,p=4$c29tZXNhbHQ$RdescudvJCsgt3ub+b+dWRWJTmaaJObG';
 
 /** Per-account brute-force protection (independent of client IP, which can be spoofed or rotated). */
@@ -37,11 +37,7 @@ const REFRESH_REUSE_GRACE_MS = 30_000;
 const RECENT_AUTH_MS = 10 * 60_000;
 const TOTP_STEP_S = 30;
 
-export function assertPasswordStrength(password: string) {
-  if (password.length < PASSWORD_MIN) throw validation(`Password must be at least ${PASSWORD_MIN} characters`);
-  const classes = [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/].filter((r) => r.test(password)).length;
-  if (classes < 3) throw validation('Use a mix of upper and lower case letters, numbers and symbols');
-}
+export { assertPasswordStrength };
 
 const tooMany = () => new ApiError(429, 'RATE_LIMITED', 'Too many attempts. Wait a few minutes and try again.');
 

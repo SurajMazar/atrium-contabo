@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import * as argon2 from 'argon2';
 import { DEFAULT_PLANS, DEFAULT_ROLES, PERMISSIONS, slugify, type Permission } from '@atrium/schema';
 import { env } from '../../config/env';
 import { AuditService } from '../../common/audit.service';
@@ -7,6 +8,7 @@ import { badRequest, conflict, forbidden, limitExceeded, notFound } from '../../
 import { PrismaService } from '../../common/prisma.service';
 import { QueueService } from '../../common/queue.service';
 import { escapeHtml } from '../../common/html';
+import { assertPasswordStrength, generatePassword } from '../../common/passwords';
 import { hashToken, randomToken } from '../../common/tokens';
 
 @Injectable()
@@ -171,6 +173,42 @@ export class OrganizationsService {
     if (member.role.key === 'owner') await this.assertAnotherOwner(orgId, memberId);
     await this.db.organizationMember.delete({ where: { id: memberId } });
     await this.audit.log({ organizationId: orgId, actor: user, action: 'member.removed', resourceType: 'member', resourceId: memberId, summary: `${user.name} removed a member` });
+  }
+
+  /**
+   * Add someone without an email invitation: creates their account with a password the admin sets
+   * (or a generated one, returned once) and adds them with the role and website access chosen.
+   * Same rules as inviting — role ceiling, website scope, seat limit. Existing accounts are never
+   * pulled in this way (they must accept an invitation), so nobody joins an organization unasked.
+   */
+  async addMember(orgId: string, body: { email: string; name: string; roleId: string; websiteIds?: string[]; password?: string }, user: AuthUser, access: AccessContext) {
+    const email = body.email.trim().toLowerCase();
+    const role = await this.db.role.findFirst({ where: { id: body.roleId, organizationId: orgId } });
+    if (!role) throw badRequest('Role not found');
+    await this.assertCanGrantRole(access, role, 'add people to');
+    if (role.key === 'owner' && body.websiteIds?.length) throw badRequest('Owners always have access to every website');
+    const websiteIds = role.key === 'owner' ? [] : [...new Set(body.websiteIds ?? [])];
+    await this.assertWebsiteAccessList(orgId, websiteIds, access);
+    if (await this.db.user.findUnique({ where: { email }, select: { id: true } })) {
+      throw conflict('This person already has an account. Send them an invitation instead.', { reason: 'ACCOUNT_EXISTS' });
+    }
+    const pending = await this.db.invitation.count({ where: { organizationId: orgId, acceptedAt: null, expiresAt: { gt: new Date() } } });
+    await this.assertLimit(orgId, 'members', 1 + pending);
+    const generated = !body.password;
+    const password = body.password ?? generatePassword();
+    assertPasswordStrength(password);
+    const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
+    const created = await this.db.$transaction(async (tx) => {
+      const u = await tx.user.create({ data: { email, name: body.name.trim(), passwordHash } });
+      const m = await tx.organizationMember.create({ data: { organizationId: orgId, userId: u.id, roleId: role.id, websiteIds } });
+      // A pending invitation for the same address is superseded.
+      await tx.invitation.deleteMany({ where: { organizationId: orgId, email, acceptedAt: null } });
+      return { userId: u.id, memberId: m.id };
+    });
+    await this.audit.log({ organizationId: orgId, actor: user, action: 'member.added', resourceType: 'member', resourceId: created.memberId, summary: `${user.name} added ${email} as ${role.name} (account created without an invitation)`, metadata: { roleId: role.id, websiteIds } });
+    await this.queues.emit(orgId, null, 'user.added', { email, role: role.key });
+    const member = (await this.members(orgId)).find((m) => m.id === created.memberId);
+    return { member, ...(generated ? { password } : {}) };
   }
 
   // ── invitations ──

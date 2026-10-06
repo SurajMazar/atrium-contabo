@@ -116,6 +116,42 @@ describe('website manager', () => {
   });
 });
 
+describe('add member without an invitation', () => {
+  it('creates the account, adds it with role and website access, and returns a generated password once', async () => {
+    if (!ready) return;
+    const owner = await register('adder', `WM Add ${RUN}`);
+    const orgId = (await db.organizationMember.findFirstOrThrow({ where: { userId: owner.id } })).organizationId;
+    await db.organization.update({ where: { id: orgId }, data: { limits: { websites: 10, members: 10 } } });
+    const t = bearer(owner.token);
+    const site = await http.post(`/v1/organizations/${orgId}/websites`).set(t).send({ name: `A ${RUN}`, source: { type: 'blank' } }).expect(201);
+    const roles = (await http.get(`/v1/organizations/${orgId}/roles`).set(t).expect(200)).body as Array<{ id: string; key: string }>;
+    const wm = roles.find((r) => r.key === 'website_manager')!;
+
+    const email = `added-${RUN}@example.test`;
+    const res = await http.post(`/v1/organizations/${orgId}/members`).set(t).send({ email, name: 'Added Person', roleId: wm.id, websiteIds: [site.body.id] }).expect(201);
+    expect(res.body.password).toMatch(/.{12,}/);
+    expect(res.body.member.websiteIds).toEqual([site.body.id]);
+    expect(JSON.stringify(await db.user.findUniqueOrThrow({ where: { email } }))).not.toContain(res.body.password); // only the hash is stored
+
+    // They can sign in with it and see only their website.
+    const login = await http.post('/v1/auth/login').send({ email, password: res.body.password }).expect(200);
+    const list = await http.get(`/v1/organizations/${orgId}/websites`).set(bearer(login.body.accessToken)).expect(200);
+    expect((list.body as Array<{ id: string }>).map((w) => w.id)).toEqual([site.body.id]);
+
+    // A chosen password is used as-is and never echoed back; weak ones are refused.
+    const chosen = await http.post(`/v1/organizations/${orgId}/members`).set(t).send({ email: `chosen-${RUN}@example.test`, name: 'Chosen', roleId: wm.id, websiteIds: [site.body.id], password: 'Chosen-Passw0rd!' }).expect(201);
+    expect(chosen.body.password).toBeUndefined();
+    await http.post('/v1/auth/login').send({ email: `chosen-${RUN}@example.test`, password: 'Chosen-Passw0rd!' }).expect(200);
+    await http.post(`/v1/organizations/${orgId}/members`).set(t).send({ email: `weak-${RUN}@example.test`, name: 'Weak', roleId: wm.id, password: 'short' }).expect(422);
+
+    // Existing accounts are never pulled in without an invitation.
+    const existing = await http.post(`/v1/organizations/${orgId}/members`).set(t).send({ email: owner.email, name: 'X', roleId: wm.id }).expect(409);
+    expect(existing.body.error.details.reason).toBe('ACCOUNT_EXISTS');
+    // Only people who may invite can add, and the role ceiling applies.
+    await http.post(`/v1/organizations/${orgId}/members`).set(bearer(login.body.accessToken)).send({ email: `nope-${RUN}@example.test`, name: 'Nope', roleId: wm.id }).expect(403);
+  });
+});
+
 describe('dashboard branding per website', () => {
   it('layers website overrides over the organization branding', async () => {
     if (!ready) return;

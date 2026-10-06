@@ -2,13 +2,14 @@
 
 import { Button, PageHeader, Tabs, TabsContent, TabsList, TabsTrigger } from '@atrium/ui';
 import { useQuery } from '@tanstack/react-query';
-import { UserPlus } from 'lucide-react';
+import { UserPlus, UserRoundPlus } from 'lucide-react';
 import { useState } from 'react';
 import { Page } from '@/components/common/page';
 import { RequirePermission } from '@/components/common/permission';
 import { useApi } from '@/lib/api';
 import { qk } from '@/lib/query-keys';
 import { useSession } from '@/lib/session';
+import { AddMemberDialog } from './add-member-dialog';
 import { InvitationsTable } from './invitations-table';
 import { InviteDialog } from './invite-dialog';
 import { MembersTable } from './members-table';
@@ -19,6 +20,7 @@ export function TeamScreen({ orgId }: { orgId: string }) {
   const org = memberships.find((m) => m.organization.id === orgId)?.organization;
   const [tab, setTab] = useState<'members' | 'invitations'>('members');
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
 
   const members = useQuery({ queryKey: qk.members(orgId), queryFn: () => api.organizations.members(orgId) });
   const invitations = useQuery({ queryKey: qk.invitations(orgId), queryFn: () => api.organizations.invitations(orgId) });
@@ -33,9 +35,14 @@ export function TeamScreen({ orgId }: { orgId: string }) {
         description={org ? `People with access to ${org.name} and what they can do.` : 'People with access to this organization.'}
         actions={
           <RequirePermission permission="user.invite">
-            <Button size="sm" variant="primary" leadingIcon={<UserPlus />} onClick={() => setInviteOpen(true)} disabled={!can('user.invite')}>
-              Invite members
-            </Button>
+            <div className="flex gap-2">
+              <Button size="sm" variant="secondary" leadingIcon={<UserRoundPlus />} onClick={() => setAddOpen(true)} disabled={!can('user.invite')}>
+                Add member
+              </Button>
+              <Button size="sm" variant="primary" leadingIcon={<UserPlus />} onClick={() => setInviteOpen(true)} disabled={!can('user.invite')}>
+                Invite members
+              </Button>
+            </div>
           </RequirePermission>
         }
       />
@@ -64,6 +71,7 @@ export function TeamScreen({ orgId }: { orgId: string }) {
         existingEmails={[...(members.data ?? []).map((m) => m.user.email), ...pending.map((i) => i.email)]}
         onInvited={() => setTab('invitations')}
       />
+      <AddMemberDialog orgId={orgId} open={addOpen} onOpenChange={setAddOpen} roles={roles.data ?? []} rolesLoading={roles.isPending} />
     </Page>
   );
 }

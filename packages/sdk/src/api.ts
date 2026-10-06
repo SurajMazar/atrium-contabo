@@ -48,6 +48,8 @@ export function createAtriumClient(opts: AtriumClientOptions) {
       updateMember: (orgId: string, memberId: string, body: { roleId?: string; websiteIds?: string[] }) => http.patch<T.Member>(`/organizations/${orgId}/members/${memberId}`, body),
       removeMember: (orgId: string, memberId: string) => http.delete(`/organizations/${orgId}/members/${memberId}`),
       invitations: (orgId: string) => http.get<T.Invitation[]>(`/organizations/${orgId}/invitations`),
+      /** Add someone directly (creates their account, no email). `password` is returned once when generated. */
+      addMember: (orgId: string, body: { email: string; name: string; roleId: string; websiteIds?: string[]; password?: string }) => http.post<{ member: T.Member; password?: string }>(`/organizations/${orgId}/members`, body),
       invite: (orgId: string, body: { email: string; roleId: string; websiteIds?: string[] }) => http.post<T.Invitation>(`/organizations/${orgId}/invitations`, body),
       revokeInvitation: (orgId: string, id: string) => http.delete(`/organizations/${orgId}/invitations/${id}`),
       acceptInvitation: (token: string) => http.post<{ organizationId: string }>('/invitations/accept', { token }),

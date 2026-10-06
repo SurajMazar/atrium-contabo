@@ -7,6 +7,8 @@
  *   node dist/cli.js set-password --email ops@example.com
  *   node dist/cli.js reset-mfa --email ops@example.com
  *   node dist/cli.js list-users
+ *   node dist/cli.js list-orgs
+ *   node dist/cli.js delete-org --slug <slug> [--confirm <slug>]   (dry run without --confirm)
  *
  * Passwords: typed at a hidden prompt (with a TTY: `podman compose exec api …`), read from stdin with
  * --password-stdin, or generated and printed once. Every change is audited and signs the user out.
@@ -23,7 +25,10 @@ const USAGE = `Usage: node dist/cli.js <command> [options]
   super-admin   --email <e> [--revoke]           grant (or revoke) platform super admin
   set-password  --email <e> [--password-stdin]   reset a password and sign the user out everywhere
   reset-mfa     --email <e>                      turn off two-factor (lost authenticator) and sign out
-  list-users    [--super-admins]`;
+  list-users    [--super-admins]
+  list-orgs                                      organizations with their websites and members
+  delete-org    --slug <s> [--confirm <s>]       delete an organization and everything in it
+                                                 (shows what would go without --confirm)`;
 
 function parse(argv: string[]): { cmd?: string; opts: Opts } {
   const [cmd, ...rest] = argv;
@@ -185,6 +190,37 @@ async function main() {
           take: 500,
         });
         console.table(users.map((u) => ({ email: u.email, name: u.name, superAdmin: u.isSuperAdmin, mfa: u.mfaEnabled, disabled: !!u.disabledAt, created: u.createdAt.toISOString().slice(0, 10) })));
+        break;
+      }
+      case 'list-orgs': {
+        const orgs = await db.organization.findMany({
+          orderBy: { createdAt: 'asc' },
+          select: { slug: true, name: true, planKey: true, createdAt: true, _count: { select: { members: true } }, websites: { where: { deletedAt: null }, select: { slug: true } } },
+        });
+        console.table(orgs.map((o) => ({ slug: o.slug, name: o.name, plan: o.planKey, members: o._count.members, websites: o.websites.map((w) => w.slug).join(', ') || '—', created: o.createdAt.toISOString().slice(0, 10) })));
+        break;
+      }
+      case 'delete-org': {
+        const slug = required(opts, 'slug');
+        const org = await db.organization.findUnique({ where: { slug }, select: { id: true, name: true, slug: true } });
+        if (!org) throw new Error(`No organization with slug "${slug}" (see list-orgs)`);
+        const [websites, members, media] = await Promise.all([
+          db.website.findMany({ where: { organizationId: org.id }, select: { slug: true, name: true, deletedAt: true } }),
+          db.organizationMember.findMany({ where: { organizationId: org.id }, select: { user: { select: { email: true } }, role: { select: { key: true } } } }),
+          db.media.count({ where: { organizationId: org.id } }),
+        ]);
+        console.log(`Organization "${org.name}" (${org.slug})`);
+        console.log(`  websites (${websites.length}): ${websites.map((w) => `${w.slug}${w.deletedAt ? ' [deleted]' : ''}`).join(', ') || '—'}`);
+        console.log(`  members  (${members.length}): ${members.map((m) => `${m.user.email} (${m.role.key})`).join(', ') || '—'}`);
+        console.log(`  media files: ${media}`);
+        if (str(opts, 'confirm') !== org.slug) {
+          console.log(`\nNothing deleted (dry run). To delete all of the above permanently, run again with --confirm ${org.slug}`);
+          console.log('Member accounts stay; they only lose access to this organization.');
+          break;
+        }
+        await db.organization.delete({ where: { id: org.id } });
+        await db.auditLog.create({ data: { actorType: 'SYSTEM', actorName: 'api-cli', action: 'organization.deleted', resourceType: 'organization', resourceId: org.id, summary: `Deleted organization ${org.name} (${org.slug}) with ${websites.length} website(s) from the API container` } }).catch(() => undefined);
+        console.log(`\nDeleted "${org.name}" and its ${websites.length} website(s). Uploaded files on disk/S3 are not removed.`);
         break;
       }
       default:

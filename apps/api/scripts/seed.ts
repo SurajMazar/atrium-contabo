@@ -1,7 +1,11 @@
 /**
- * Idempotent development seed.
- *   pnpm db:seed                       (root) → reference data, super admin and an empty organization
- *   SEED_DEMO_SITES=1 pnpm db:seed     (root) → also the published demo websites (used by the tutorial recorder)
+ * Idempotent seed.
+ *   Local development (NODE_ENV≠production and a local database):
+ *     pnpm db:seed                     (root) → reference data, super admin and an empty organization
+ *     SEED_DEMO_SITES=1 pnpm db:seed   (root) → also the published demo websites (used by the tutorial recorder)
+ *   Production (anything else): reference data and the single super admin only — no organization,
+ *   no demo content. Sign in and create your organization from the admin. Existing plans keep the
+ *   limits a super admin set. (The API also does this on every start; the seed is optional there.)
  * Uses the same site-store pipeline as the API, so seeded sites are fully editable.
  */
 import 'dotenv/config';
@@ -47,10 +51,11 @@ function demoSites(): DemoEntry[] {
   }
 }
 
-async function reference() {
+async function reference(local: boolean) {
   await prisma.$transaction([
     ...Object.entries(PERMISSIONS).map(([key, description]) => prisma.permission.upsert({ where: { key }, create: { key, description }, update: { description } })),
-    ...DEFAULT_PLANS.map((p) => prisma.plan.upsert({ where: { key: p.key }, create: { key: p.key, name: p.name, limits: p.limits as object, features: p.features }, update: { limits: p.limits as object, features: p.features } })),
+    // Production keeps plan limits a super admin edited; local development resets them to the defaults.
+    ...DEFAULT_PLANS.map((p) => prisma.plan.upsert({ where: { key: p.key }, create: { key: p.key, name: p.name, limits: p.limits as object, features: p.features }, update: local ? { limits: p.limits as object, features: p.features } : {} })),
     ...Object.entries(FEATURE_FLAGS).map(([key, description]) => prisma.featureFlag.upsert({ where: { key }, create: { key, description, enabled: key !== 'collaboration' }, update: {} })),
   ]);
   log('reference data (permissions, plans, feature flags)');
@@ -76,9 +81,15 @@ function databaseHost(env: NodeJS.ProcessEnv): string | undefined {
  * is required, the .env.example values are rejected, and a missing SEED_ADMIN_PASSWORD is replaced by a
  * random one-time password printed once (change it after the first sign-in).
  */
+/** Local development: NODE_ENV≠production and the database is on this machine / the compose network. */
+export function isLocalDevelopment(env: NodeJS.ProcessEnv = process.env): boolean {
+  const host = databaseHost(env);
+  return env.NODE_ENV !== 'production' && !!host && LOCAL_DB_HOSTS.has(host);
+}
+
 export function resolveSeedAdmin(env: NodeJS.ProcessEnv = process.env): { email: string; password: string; generated: boolean } {
   const host = databaseHost(env);
-  const local = env.NODE_ENV !== 'production' && !!host && LOCAL_DB_HOSTS.has(host);
+  const local = isLocalDevelopment(env);
   const email = (env.SEED_ADMIN_EMAIL ?? '').trim().toLowerCase();
   const password = env.SEED_ADMIN_PASSWORD ?? '';
   if (local) return { email: email || EXAMPLE_ADMIN_EMAIL, password: password || EXAMPLE_ADMIN_PASSWORD, generated: false };
@@ -187,9 +198,14 @@ async function sites(orgId: string, userId: string) {
 async function main() {
   // Validate the super-admin credentials before touching the database.
   const credentials = resolveSeedAdmin();
-  console.log('Seeding Atrium…');
-  await reference();
+  const local = isLocalDevelopment();
+  console.log(`Seeding Atrium (${local ? 'local development' : 'production: reference data + super admin only'})…`);
+  await reference(local);
   const user = await admin(credentials);
+  if (!local) {
+    console.log(`Done. Sign in at ${process.env.ADMIN_URL ?? 'the admin'} with ${user.email} and create your organization.`);
+    return;
+  }
   const org = await organization(user.id);
   // Demo websites are opt-in: a normal seed leaves the organization empty, ready for your own sites.
   if (['1', 'true', 'yes'].includes((process.env.SEED_DEMO_SITES ?? '').toLowerCase())) await sites(org.id, user.id);

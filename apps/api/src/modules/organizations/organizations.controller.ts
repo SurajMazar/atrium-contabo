@@ -1,4 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { PERMISSIONS } from '@atrium/schema';
 import { z } from 'zod';
 import { AccessService } from '../../common/access.service';
@@ -67,6 +68,20 @@ export class OrganizationsController {
   @Delete('organizations/:orgId/members/:memberId')
   removeMember(@Param('orgId') orgId: string, @Param('memberId') memberId: string, @CurrentUser() user: AuthUser, @CurrentAccess() access: AccessContext) {
     return this.orgs.removeMember(orgId, memberId, user, access);
+  }
+
+  /** Add a member directly (account created here, no email invitation). */
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @Access('user.invite', 'organization', 'orgId')
+  @Post('organizations/:orgId/members')
+  addMember(
+    @Param('orgId') orgId: string,
+    @Body(new ZodBody(z.object({ email: z.string().trim().email().max(254), name: z.string().trim().min(1).max(120), roleId: z.string(), websiteIds: z.array(z.string().max(64)).max(500).optional(), password: z.string().min(1).max(200).optional() })))
+    body: { email: string; name: string; roleId: string; websiteIds?: string[]; password?: string },
+    @CurrentUser() user: AuthUser,
+    @CurrentAccess() access: AccessContext,
+  ) {
+    return this.orgs.addMember(orgId, body, user, access);
   }
 
   @Access('user.invite', 'organization', 'orgId')
