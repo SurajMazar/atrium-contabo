@@ -26,6 +26,7 @@ import { useRouter } from 'next/navigation';
 import { useMemo, useRef, useState } from 'react';
 import { Forbidden } from '@/components/common/permission';
 import { useApi } from '@/lib/api';
+import { ImportProgress, useImportWebsite } from './use-import-website';
 import { qk } from '@/lib/query-keys';
 import { useSession } from '@/lib/session';
 
@@ -285,13 +286,7 @@ function ImportWebsite({ orgId, onBack }: { orgId: string; onBack: () => void })
   const ref = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [name, setName] = useState('');
-  const imp = useMutation({
-    mutationFn: () => {
-      const fd = new FormData();
-      fd.append('file', file!);
-      if (name.trim()) fd.append('name', name.trim());
-      return api.websites.import(orgId, fd);
-    },
+  const imp = useImportWebsite(orgId, {
     onSuccess: (w) => {
       void qc.invalidateQueries({ queryKey: qk.websites(orgId) });
       toast.success(`Imported ${w.name}`);
@@ -320,9 +315,10 @@ function ImportWebsite({ orgId, onBack }: { orgId: string; onBack: () => void })
         <Field label="Name" optional help="Defaults to the name in the export.">
           <Input value={name} onChange={(e) => setName(e.target.value)} />
         </Field>
-        <Button variant="primary" className="w-full" disabled={!file} loading={imp.isPending} onClick={() => imp.mutate()}>
+        <Button variant="primary" className="w-full" disabled={!file} loading={imp.isPending} onClick={() => file && imp.mutate({ file, name })}>
           Import
         </Button>
+        <ImportProgress pending={imp.isPending} progress={imp.progress} />
       </div>
     </div>
   );

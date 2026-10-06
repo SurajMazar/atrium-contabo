@@ -46,6 +46,13 @@ const nextConfig: NextConfig = {
   // Optional separate output dir (e.g. NEXT_DIST_DIR=.next-perf for side-by-side builds).
   ...(process.env.NEXT_DIST_DIR ? { distDir: process.env.NEXT_DIST_DIR } : {}),
   reactStrictMode: true,
+  experimental: {
+    // Uploads reach the API through the /api/v1 rewrite. Next buffers a proxied body only up to
+    // this size (default 10 MB — larger site imports were cut off and hung), so match the API's
+    // largest upload: site bundle imports (300 MB). Big imports also need longer than the 30 s default.
+    proxyClientMaxBodySize: '310mb',
+    proxyTimeout: 10 * 60_000,
+  },
   poweredByHeader: false,
   transpilePackages: ['@atrium/ui', '@atrium/renderer-core'],
   images: {

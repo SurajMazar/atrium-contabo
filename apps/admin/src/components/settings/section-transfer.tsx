@@ -8,6 +8,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useRef, useState, type ReactNode } from 'react';
 import { RequirePermission } from '@/components/common/permission';
+import { ImportProgress, useImportWebsite } from '@/components/create/use-import-website';
 import { downloadAuthenticated, useApi } from '@/lib/api';
 import { formatBytes } from '@/lib/format';
 import { qk } from '@/lib/query-keys';
@@ -189,13 +190,7 @@ function ImportCard() {
   const [drag, setDrag] = useState(false);
   const canCreate = can('website.create');
 
-  const imp = useMutation({
-    mutationFn: () => {
-      const fd = new FormData();
-      fd.append('file', file!);
-      if (name.trim()) fd.append('name', name.trim());
-      return api.websites.import(orgId!, fd);
-    },
+  const imp = useImportWebsite(orgId, {
     onSuccess: (created) => {
       void qc.invalidateQueries({ queryKey: qk.websites(orgId!) });
       toast.success('Website imported', { description: created.name });
@@ -236,10 +231,11 @@ function ImportCard() {
             <Input value={name} onChange={(e) => setName(e.target.value)} disabled={imp.isPending} />
           </Field>
           <div className="flex justify-end">
-            <Button size="sm" variant="primary" leadingIcon={<FileUp />} loading={imp.isPending} disabled={!orgId} onClick={() => imp.mutate()}>
+            <Button size="sm" variant="primary" leadingIcon={<FileUp />} loading={imp.isPending} disabled={!orgId} onClick={() => file && imp.mutate({ file, name })}>
               Import as new website
             </Button>
           </div>
+          <ImportProgress pending={imp.isPending} progress={imp.progress} />
         </div>
       ) : (
         <button
