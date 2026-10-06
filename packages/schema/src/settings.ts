@@ -92,6 +92,17 @@ export const LocalizationSchema = z.object({
   strategy: z.enum(['prefix-except-default', 'prefix-all']).default('prefix-except-default'),
 });
 
+/** How the published site moves between pages (client-side navigation). */
+export const PerformanceSettingsSchema = z.object({
+  /**
+   * Keep pages a visitor has opened or preloaded in their browser until they reload the site, so
+   * going back or revisiting is instant. Off: every link click fetches the latest page.
+   */
+  cachePages: z.boolean().default(true),
+  /** Slim progress bar at the top while the next page loads (only when loading takes a moment). */
+  progressBar: z.boolean().default(true),
+});
+
 export const SiteSettingsSchema = z.object({
   name: z.string().min(1),
   business: BusinessInfoSchema,
@@ -116,6 +127,7 @@ export const SiteSettingsSchema = z.object({
     position: 'bottom-left',
   }),
   analytics: AnalyticsSettingsSchema.default({ builtIn: true }),
+  performance: PerformanceSettingsSchema.default({ cachePages: true, progressBar: true }),
   /** Free-form global variables available as {{vars.key}}. */
   variables: z.record(z.string(), z.string()).default({}),
   notFoundPageId: z.string().optional(),

@@ -52,6 +52,7 @@ export function websiteNav(id: string): NavItem[] {
     { label: 'Domains', href: `${b}/domains`, icon: Globe },
     { label: 'Deployments', href: `${b}/deployments`, icon: Rocket, permission: 'deployment.read' },
     { label: 'Versions', href: `${b}/versions`, icon: History },
+    { label: 'Dashboard branding', href: `${b}/branding`, icon: Palette, permission: 'website.update' },
     { label: 'Settings', href: `${b}/settings`, icon: Settings },
   ];
 }

@@ -39,7 +39,7 @@ export function WebsitesHome() {
   const api = useApi();
   const qc = useQueryClient();
   const router = useRouter();
-  const { currentOrg, memberships, can } = useSession();
+  const { currentOrg, memberships, can, scopedWebsiteIds } = useSession();
   const [view, setView] = useState<'grid' | 'list'>('grid');
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<SortState>({ key: 'updatedAt', dir: 'desc' });
@@ -56,6 +56,12 @@ export function WebsitesHome() {
   useEffect(() => {
     if (memberships.length === 0) router.replace('/onboarding');
   }, [memberships.length, router]);
+
+  // Someone who manages exactly one website lands straight in it.
+  const onlyWebsite = scopedWebsiteIds.length === 1 ? scopedWebsiteIds[0] : undefined;
+  useEffect(() => {
+    if (onlyWebsite) router.replace(`/w/${onlyWebsite}`);
+  }, [onlyWebsite, router]);
 
   const q = useQuery({ queryKey: qk.websites(currentOrg?.id ?? ''), queryFn: () => api.websites.list(currentOrg!.id), enabled: !!currentOrg });
 

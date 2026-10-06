@@ -227,6 +227,8 @@ model Invitation {
   organizationId String    @map("organization_id")
   email          String
   roleId         String    @map("role_id")
+  /// Websites the invitee will be limited to once they join (empty = all websites).
+  websiteIds     String[]  @default([]) @map("website_ids")
   tokenHash      String    @unique @map("token_hash")
   invitedById    String    @map("invited_by_id")
   expiresAt      DateTime  @map("expires_at")
@@ -261,6 +263,8 @@ model Website {
   name               String
   /// Platform subdomain: {slug}.sites.example.com
   slug               String         @unique
+  /// White-label overrides for this website's dashboard (AdminBranding); merged over the organization's.
+  adminBranding      Json?          @map("admin_branding")
   status             WebsiteStatus  @default(DRAFT)
   deploymentMode     DeploymentMode @default(PLATFORM) @map("deployment_mode")
   deploymentProvider String?        @map("deployment_provider")

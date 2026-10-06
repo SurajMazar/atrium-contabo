@@ -53,6 +53,8 @@ describe('platform providers', () => {
     const admin = await user('admin');
     await db.user.update({ where: { id: admin.id }, data: { isSuperAdmin: true } });
     const t = bearer(admin.token);
+    // Other admin-configured providers may already exist (a real install): compare against them.
+    const before = (await http.get('/v1/admin/providers/status').set(t).expect(200)).body.email;
     const created = await http
       .post('/v1/admin/providers')
       .set(t)
@@ -73,7 +75,7 @@ describe('platform providers', () => {
     const list = await http.get('/v1/admin/providers?kind=email').set(t).expect(200);
     expect((list.body as Array<{ id: string }>).some((p) => p.id === created.body.id)).toBe(true);
     await http.delete(`/v1/admin/providers/${created.body.id}`).set(t).expect(204);
-    expect((await http.get('/v1/admin/providers/status').set(t).expect(200)).body.email.source).not.toBe('admin');
+    expect((await http.get('/v1/admin/providers/status').set(t).expect(200)).body.email).toEqual(before);
     const log = await db.auditLog.findFirst({ where: { actorId: admin.id, action: 'platform.provider_created' } });
     expect(log).not.toBeNull();
   });

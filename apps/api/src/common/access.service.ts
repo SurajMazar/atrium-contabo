@@ -19,6 +19,19 @@ export interface MembershipInfo {
   suspended?: boolean;
 }
 
+/**
+ * Members limited to specific websites (OrganizationMember.websiteIds) work inside those websites
+ * only. Organization-level routes stay open to them just for what working on a website needs
+ * (the organization's name, their own website list, media, AI); organization-wide resources that
+ * belong to no website (shared media and folders, org webhooks/providers/integrations, templates)
+ * are read-only for them.
+ */
+const SCOPED_ORG_ROUTE: ReadonlySet<string> = new Set(['organization.read', 'website.read', 'media.read', 'media.upload', 'ai.use']);
+const SCOPED_SHARED_READ: ReadonlySet<string> = new Set(['organization.read', 'website.read', 'media.read']);
+
+/** True when the member only has access to some websites of the organization. */
+export const isWebsiteScoped = (access: Pick<AccessContext, 'websiteIds' | 'permissions'>) => access.websiteIds.length > 0 && !access.permissions.has('*');
+
 /** Throws FORBIDDEN listing every change the actor is not allowed to make. */
 export function assertRequirements(access: Pick<AccessContext, 'permissions'>, reqs: ChangeRequirement[]): void {
   const missing = missingRequirements(reqs, access.permissions);
@@ -168,7 +181,31 @@ export class AccessService {
   }
 
   async check(user: AuthUser, resource: ResourceKind, id: string, permission?: Permission | Permission[]): Promise<AccessContext> {
-    return this.authorize(user, await this.owner(resource, id), permission);
+    const owner = await this.owner(resource, id);
+    const access = await this.authorize(user, owner, permission);
+    if (isWebsiteScoped(access) && !owner.websiteId) {
+      const allowed = resource === 'organization' ? SCOPED_ORG_ROUTE : SCOPED_SHARED_READ;
+      if ([permission ?? []].flat().some((p) => !allowed.has(p))) throw forbidden('You only have access to specific websites');
+    }
+    return access;
+  }
+
+  /** Organization-wide views (members, usage, …) are for members with access to every website. */
+  assertOrganizationWide(access: AccessContext): void {
+    if (isWebsiteScoped(access)) throw forbidden('You only have access to specific websites');
+  }
+
+  /**
+   * The website an org-level write (upload, new folder) is filed under. Website-scoped members must
+   * file it under one of their websites; with exactly one, it is used by default.
+   */
+  async websiteForWrite(access: AccessContext, websiteId: string | null | undefined): Promise<string | undefined> {
+    if (!websiteId && isWebsiteScoped(access)) {
+      if (access.websiteIds.length !== 1) throw forbidden('Choose one of your websites');
+      websiteId = access.websiteIds[0];
+    }
+    await this.assertWebsiteInScope(access, websiteId);
+    return websiteId ?? undefined;
   }
 
   can(access: AccessContext, permission: Permission): boolean {

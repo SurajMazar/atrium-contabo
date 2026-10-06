@@ -2,7 +2,7 @@ import { Body, Controller, Get, Param, Put, Query } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
 import { AdminBrandingSchema, mergeBranding, type AdminBranding } from '@atrium/schema';
 import { AuditService } from '../../common/audit.service';
-import { Access, CurrentUser, Public, SuperAdminOnly, type AuthUser } from '../../common/decorators';
+import { Access, CurrentAccess, CurrentUser, Public, SuperAdminOnly, type AccessContext, type AuthUser } from '../../common/decorators';
 import { PrismaService } from '../../common/prisma.service';
 import { ZodBody } from '../../common/zod.pipe';
 
@@ -24,14 +24,46 @@ export class BrandingController {
   @Public()
   @SkipThrottle()
   @Get('branding')
-  async resolved(@Query('organizationId') organizationId?: string) {
+  async resolved(@Query('organizationId') organizationId?: string, @Query('websiteId') websiteId?: string) {
     const platform = await this.platform();
     let org: AdminBranding | undefined;
+    let site: AdminBranding | undefined;
+    if (websiteId) {
+      const w = await this.prisma.client.website.findFirst({ where: { id: websiteId, deletedAt: null }, select: { organizationId: true, adminBranding: true } });
+      // A website only ever layers over its own organization's branding.
+      if (w && (!organizationId || organizationId === w.organizationId)) {
+        organizationId = w.organizationId;
+        site = w.adminBranding ? AdminBrandingSchema.parse(w.adminBranding) : undefined;
+      }
+    }
     if (organizationId) {
       const o = await this.prisma.client.organization.findUnique({ where: { id: organizationId }, select: { branding: true } });
       org = o?.branding ? AdminBrandingSchema.parse(o.branding) : undefined;
     }
-    return { platform, organization: org ?? null, resolved: mergeBranding(platform, org) };
+    return { platform, organization: org ?? null, website: site ?? null, resolved: mergeBranding(platform, org, site) };
+  }
+
+  private async orgLayers(websiteId: string) {
+    const w = await this.prisma.client.website.findUniqueOrThrow({ where: { id: websiteId }, select: { adminBranding: true, organization: { select: { branding: true } } } });
+    const org = w.organization.branding ? AdminBrandingSchema.parse(w.organization.branding) : undefined;
+    return { platform: await this.platform(), org, site: AdminBrandingSchema.parse(w.adminBranding ?? {}) };
+  }
+
+  /** Dashboard branding for one website (what its members see in the admin), over the organization's. */
+  @Access('website.read', 'website', 'websiteId')
+  @Get('websites/:websiteId/branding')
+  async getWebsite(@Param('websiteId') websiteId: string) {
+    const { platform, org, site } = await this.orgLayers(websiteId);
+    return { website: site, inherited: mergeBranding(platform, org), resolved: mergeBranding(platform, org, site) };
+  }
+
+  @Access('website.update', 'website', 'websiteId')
+  @Put('websites/:websiteId/branding')
+  async saveWebsite(@Param('websiteId') websiteId: string, @Body(new ZodBody(AdminBrandingSchema)) body: AdminBranding, @CurrentUser() user: AuthUser, @CurrentAccess() access: AccessContext) {
+    await this.prisma.client.website.update({ where: { id: websiteId }, data: { adminBranding: body as object } });
+    await this.audit.log({ organizationId: access.organizationId, websiteId, actor: user, action: 'website.branding_updated', resourceType: 'website', resourceId: websiteId, summary: `${user.name} updated the dashboard branding` });
+    const { platform, org } = await this.orgLayers(websiteId);
+    return { website: body, inherited: mergeBranding(platform, org), resolved: mergeBranding(platform, org, body) };
   }
 
   @SuperAdminOnly()

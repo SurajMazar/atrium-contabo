@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, Upl
 import { FileInterceptor } from '@nestjs/platform-express';
 import { z } from 'zod';
 import { env } from '../../config/env';
-import { AccessService } from '../../common/access.service';
+import { AccessService, isWebsiteScoped } from '../../common/access.service';
 import { Access, CurrentAccess, CurrentUser, type AccessContext, type AuthUser } from '../../common/decorators';
 import { badRequest } from '../../common/errors';
 import { limitOf } from '../../common/http';
@@ -19,14 +19,14 @@ export class MediaController {
   @Access('media.read', 'organization', 'orgId') @Get('organizations/:orgId/media')
   async list(@Param('orgId') orgId: string, @Query() q: Record<string, string>, @CurrentAccess() access: AccessContext) {
     await this.access.assertWebsiteInScope(access, q.websiteId);
-    return this.media.list(orgId, { websiteId: q.websiteId, folderId: q.folderId, search: q.search, type: q.type, tag: q.tag, cursor: q.cursor, limit: limitOf(q.limit, 60) });
+    return this.media.list(orgId, { websiteId: q.websiteId, websiteIds: isWebsiteScoped(access) ? access.websiteIds : undefined, folderId: q.folderId, search: q.search, type: q.type, tag: q.tag, cursor: q.cursor, limit: limitOf(q.limit, 60) });
   }
 
   @Access('media.upload', 'organization', 'orgId') @Post('organizations/:orgId/media/upload') @UseInterceptors(upload())
   async upload(@Param('orgId') orgId: string, @UploadedFile() file: UploadFile | undefined, @Body() body: Record<string, string>, @CurrentUser() user: AuthUser, @CurrentAccess() access: AccessContext) {
     if (!file) throw badRequest('Attach a file in the "file" field');
-    await this.access.assertWebsiteInScope(access, body.websiteId || undefined);
-    return this.media.upload(orgId, file, { folderId: body.folderId || undefined, websiteId: body.websiteId || undefined, alt: body.alt, allowDuplicate: body.allowDuplicate === 'true' }, user);
+    const websiteId = await this.access.websiteForWrite(access, body.websiteId || undefined);
+    return this.media.upload(orgId, file, { folderId: body.folderId || undefined, websiteId, alt: body.alt, allowDuplicate: body.allowDuplicate === 'true' }, user);
   }
 
   @Access('media.upload', 'media', 'id') @Patch('media/:id')
@@ -44,13 +44,12 @@ export class MediaController {
   @Access('media.read', 'organization', 'orgId') @Get('organizations/:orgId/media-folders')
   async folders(@Param('orgId') orgId: string, @CurrentAccess() access: AccessContext, @Query('websiteId') websiteId?: string) {
     await this.access.assertWebsiteInScope(access, websiteId);
-    return this.media.folders(orgId, websiteId);
+    return this.media.folders(orgId, websiteId, isWebsiteScoped(access) ? access.websiteIds : undefined);
   }
 
   @Access('media.upload', 'organization', 'orgId') @Post('organizations/:orgId/media-folders')
   async createFolder(@Param('orgId') orgId: string, @Body(new ZodBody(z.object({ name: z.string().trim().min(1).max(80), parentId: z.string().optional(), websiteId: z.string().optional() }))) body: { name: string; parentId?: string; websiteId?: string }, @CurrentAccess() access: AccessContext) {
-    await this.access.assertWebsiteInScope(access, body.websiteId);
-    return this.media.createFolder(orgId, body);
+    return this.media.createFolder(orgId, { ...body, websiteId: await this.access.websiteForWrite(access, body.websiteId) });
   }
 
   @Access('media.upload', 'mediaFolder', 'id') @Patch('media-folders/:id')

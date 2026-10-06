@@ -2,13 +2,20 @@
 
 import { DEFAULT_ADMIN_BRANDING, mergeBranding, type AdminBranding } from '@atrium/schema';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { usePathname } from 'next/navigation';
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useApi } from './api';
 import { BRANDING_CACHE_KEY, DEFAULT_PRODUCT_NAME, toCache, type BrandingCache } from './branding-core';
 import { useSession } from './session';
 import { useTheme, type ThemePreference } from './theme';
 
-export const brandingQueryKey = (orgId: string | null | undefined) => ['branding', orgId ?? 'platform'] as const;
+export const brandingQueryKey = (orgId: string | null | undefined, websiteId?: string | null) => ['branding', orgId ?? 'platform', websiteId ?? 'org'] as const;
+
+/** `/w/<id>/…` (dashboard and editor) → the website whose branding applies. */
+function websiteFromPath(pathname: string | null): string | null {
+  const m = /^\/w\/([^/]+)/.exec(pathname ?? '');
+  return m && m[1] !== 'new' ? decodeURIComponent(m[1]!) : null;
+}
 
 interface BrandingValue {
   /** Platform defaults ← organization overrides, with built-in defaults filled in. */
@@ -108,16 +115,20 @@ function useDocumentTitle(productName: string) {
  */
 export function BrandingProvider({ children }: { children: ReactNode }) {
   const api = useApi();
-  const { currentOrg, status } = useSession();
+  const { currentOrg, status, scopedWebsiteIds } = useSession();
+  const pathname = usePathname();
   const { resolved: theme, setDefaultTheme } = useTheme();
   const orgId = status === 'authenticated' ? (currentOrg?.id ?? null) : null;
+  // Inside a website its own dashboard branding applies; someone who only manages one website sees
+  // that website's branding everywhere (account pages included).
+  const websiteId = status === 'authenticated' ? (websiteFromPath(pathname) ?? (scopedWebsiteIds.length === 1 ? scopedWebsiteIds[0]! : null)) : null;
   // The cache is read after mount (before paint) so server and client markup match.
   const [cached, setCached] = useState<AdminBranding | null>(null);
   useIsoLayoutEffect(() => setCached(readCache()), []);
 
   const q = useQuery({
-    queryKey: brandingQueryKey(orgId),
-    queryFn: () => api.branding.get(orgId ?? undefined),
+    queryKey: brandingQueryKey(orgId, websiteId),
+    queryFn: () => api.branding.get(orgId ?? undefined, websiteId ?? undefined),
     // Don't fetch the platform-only branding while the session is still booting.
     enabled: status !== 'loading',
     staleTime: 5 * 60_000,

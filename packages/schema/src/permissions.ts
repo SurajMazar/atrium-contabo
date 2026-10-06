@@ -88,6 +88,26 @@ export const DEFAULT_ROLES: DefaultRole[] = [
     permissions: ALL_PERMISSIONS.filter((p) => p !== 'organization.delete' && p !== 'billing.manage'),
   },
   {
+    // Meant for members limited to one (or a few) websites: everything inside those websites, nothing
+    // organization-wide (members, roles, billing, org settings and providers, other websites).
+    key: 'website_manager',
+    name: 'Website Manager',
+    description: 'Run assigned websites end to end: content, design, forms, SEO, domains and publishing',
+    permissions: [
+      ...READ_ONLY,
+      'website.update', 'website.export',
+      'theme.update', 'navigation.update',
+      'page.create', 'page.update', 'page.publish', 'page.delete',
+      'collection.manage', 'collection.content',
+      'media.upload', 'media.delete',
+      'form.create', 'form.update', 'form.delete',
+      'submission.read', 'submission.update', 'submission.export', 'submission.delete',
+      'seo.manage', 'redirect.manage', 'code.manage', 'domain.manage',
+      'deployment.preview', 'deployment.publish',
+      'ai.use', 'analytics.read',
+    ],
+  },
+  {
     key: 'designer',
     name: 'Designer',
     description: 'Design pages, themes and templates',

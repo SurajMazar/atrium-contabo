@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient } from '@atrium/db';
+import type { Prisma, PrismaClient, Website } from '@atrium/db';
 import {
   createId,
   SCHEMA_VERSION, WebsiteDefinitionSchema, type CollectionDefinition, type FormDefinition, type Node, type PageDocument,
@@ -296,7 +296,7 @@ export function reidentify(def: WebsiteDefinition): WebsiteDefinition {
 }
 
 /** Create a website with its full draft in one transaction-friendly sequence. */
-export async function createWebsiteFromDefinition(db: Db, input: CreateWebsiteInput) {
+export async function createWebsiteFromDefinition(db: Db, input: CreateWebsiteInput): Promise<Website> {
   const def = reidentify(WebsiteDefinitionSchema.parse({ ...input.definition, settings: { ...input.definition.settings, name: input.name } }));
   const website = await db.website.create({
     data: {

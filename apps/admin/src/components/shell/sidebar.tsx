@@ -62,7 +62,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const api = useApi();
   const qc = useQueryClient();
-  const { currentOrg, user, can } = useSession();
+  const { currentOrg, user, can, websiteScoped } = useSession();
   const setPaletteOpen = useShell((s) => s.setPaletteOpen);
   const { productName } = useBranding();
   const websiteId = websiteIdFromPath(pathname);
@@ -184,7 +184,8 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           </>
         )}
 
-        {!inAdmin && currentOrg && (
+        {/* Website-scoped members (e.g. Website Managers) work inside their websites only. */}
+        {!inAdmin && currentOrg && !websiteScoped && (
           <>
             <SectionLabel>Organization</SectionLabel>
             <div className="space-y-px">

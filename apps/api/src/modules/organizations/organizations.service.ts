@@ -136,10 +136,7 @@ export class OrganizationsService {
       await this.assertCanGrantRole(access, role, 'assign');
       if (member.role.key === 'owner' && role.key !== 'owner') await this.assertAnotherOwner(orgId, memberId);
     }
-    if (body.websiteIds?.length) {
-      const count = await this.db.website.count({ where: { id: { in: body.websiteIds }, organizationId: orgId } });
-      if (count !== body.websiteIds.length) throw badRequest('Unknown website in access list');
-    }
+    if (body.websiteIds) await this.assertWebsiteAccessList(orgId, body.websiteIds, access);
     await this.db.organizationMember.update({ where: { id: memberId }, data: { roleId: body.roleId, websiteIds: body.websiteIds } });
     await this.audit.log({ organizationId: orgId, actor: user, action: 'member.updated', resourceType: 'member', resourceId: memberId, summary: `${user.name} changed access for a member`, metadata: { roleId: body.roleId, previousRoleId: member.roleId, websiteIds: body.websiteIds } });
     return (await this.members(orgId)).find((m) => m.id === memberId);
@@ -148,6 +145,22 @@ export class OrganizationsService {
   private async assertAnotherOwner(orgId: string, exceptMemberId: string) {
     const owners = await this.db.organizationMember.count({ where: { organizationId: orgId, role: { key: 'owner' }, id: { not: exceptMemberId } } });
     if (owners === 0) throw badRequest('An organization must keep at least one owner');
+  }
+
+  /**
+   * Website access handed to someone: websites of this organization only, and someone who is
+   * themselves limited to some websites can neither grant "all websites" nor websites outside their own.
+   */
+  private async assertWebsiteAccessList(orgId: string, websiteIds: string[], access: AccessContext) {
+    const ids = [...new Set(websiteIds)];
+    if (ids.length) {
+      const count = await this.db.website.count({ where: { id: { in: ids }, organizationId: orgId, deletedAt: null } });
+      if (count !== ids.length) throw badRequest('Unknown website in access list');
+    }
+    if (access.permissions.has('*') || access.websiteIds.length === 0) return;
+    if (!ids.length) throw forbidden('You can only give access to the websites you have access to');
+    const outside = ids.filter((id) => !access.websiteIds.includes(id));
+    if (outside.length) throw forbidden('You can only give access to the websites you have access to');
   }
 
   async removeMember(orgId: string, memberId: string, user: AuthUser, access: AccessContext) {
@@ -163,14 +176,18 @@ export class OrganizationsService {
   // ── invitations ──
   async invitations(orgId: string) {
     const rows = await this.db.invitation.findMany({ where: { organizationId: orgId, acceptedAt: null }, include: { role: true }, orderBy: { createdAt: 'desc' } });
-    return rows.map((i) => ({ id: i.id, email: i.email, role: { id: i.role.id, key: i.role.key, name: i.role.name }, expiresAt: i.expiresAt.toISOString(), acceptedAt: null, createdAt: i.createdAt.toISOString() }));
+    return rows.map((i) => ({ id: i.id, email: i.email, role: { id: i.role.id, key: i.role.key, name: i.role.name }, websiteIds: i.websiteIds, expiresAt: i.expiresAt.toISOString(), acceptedAt: null, createdAt: i.createdAt.toISOString() }));
   }
 
-  async invite(orgId: string, body: { email: string; roleId: string }, user: AuthUser, access: AccessContext) {
+  async invite(orgId: string, body: { email: string; roleId: string; websiteIds?: string[] }, user: AuthUser, access: AccessContext) {
     const email = body.email.trim().toLowerCase();
     const role = await this.db.role.findFirst({ where: { id: body.roleId, organizationId: orgId } });
     if (!role) throw badRequest('Role not found');
     await this.assertCanGrantRole(access, role, 'invite people to');
+    // Owners always see every website; a scoped inviter's invitees are scoped too.
+    const websiteIds = role.key === 'owner' ? [] : [...new Set(body.websiteIds ?? (access.permissions.has('*') ? [] : access.websiteIds))];
+    if (role.key === 'owner' && body.websiteIds?.length) throw badRequest('Owners always have access to every website');
+    await this.assertWebsiteAccessList(orgId, websiteIds, access);
     const existing = await this.db.organizationMember.findFirst({ where: { organizationId: orgId, user: { email } } });
     if (existing) throw conflict('This person is already a member');
     // Pending invitations count toward the seat limit, and invitation email volume is capped per day.
@@ -180,7 +197,7 @@ export class OrganizationsService {
     if (today >= 100) throw limitExceeded('Too many invitations sent today. Try again tomorrow.');
     await this.db.invitation.deleteMany({ where: { organizationId: orgId, email, acceptedAt: null } });
     const token = randomToken();
-    const inv = await this.db.invitation.create({ data: { organizationId: orgId, email, roleId: role.id, tokenHash: hashToken(token), invitedById: user.id, expiresAt: new Date(Date.now() + 7 * 86_400_000) } });
+    const inv = await this.db.invitation.create({ data: { organizationId: orgId, email, roleId: role.id, websiteIds, tokenHash: hashToken(token), invitedById: user.id, expiresAt: new Date(Date.now() + 7 * 86_400_000) } });
     const org = await this.db.organization.findUniqueOrThrow({ where: { id: orgId } });
     const url = `${env().ADMIN_URL}/invite/${token}`;
     await this.queues.platformEmail({
@@ -192,7 +209,7 @@ export class OrganizationsService {
     });
     await this.audit.log({ organizationId: orgId, actor: user, action: 'user.invited', resourceType: 'invitation', resourceId: inv.id, summary: `${user.name} invited ${email}` });
     await this.queues.emit(orgId, null, 'user.invited', { email, role: role.key });
-    return { id: inv.id, email, role: { id: role.id, key: role.key, name: role.name }, expiresAt: inv.expiresAt.toISOString(), acceptedAt: null, createdAt: inv.createdAt.toISOString(), ...(env().NODE_ENV !== 'production' ? { devAcceptUrl: url } : {}) };
+    return { id: inv.id, email, role: { id: role.id, key: role.key, name: role.name }, websiteIds, expiresAt: inv.expiresAt.toISOString(), acceptedAt: null, createdAt: inv.createdAt.toISOString(), ...(env().NODE_ENV !== 'production' ? { devAcceptUrl: url } : {}) };
   }
 
   async revokeInvitation(orgId: string, id: string) {
@@ -211,7 +228,7 @@ export class OrganizationsService {
       // Single use under concurrency.
       const claimed = await tx.invitation.updateMany({ where: { id: inv.id, acceptedAt: null }, data: { acceptedAt: new Date() } });
       if (claimed.count !== 1) throw badRequest('This invitation is invalid or has expired');
-      await tx.organizationMember.upsert({ where: { organizationId_userId: { organizationId: inv.organizationId, userId: user.id } }, create: { organizationId: inv.organizationId, userId: user.id, roleId: inv.roleId }, update: {} });
+      await tx.organizationMember.upsert({ where: { organizationId_userId: { organizationId: inv.organizationId, userId: user.id } }, create: { organizationId: inv.organizationId, userId: user.id, roleId: inv.roleId, websiteIds: inv.websiteIds }, update: {} });
     });
     await this.audit.log({ organizationId: inv.organizationId, actor: user, action: 'invitation.accepted', resourceType: 'invitation', resourceId: inv.id, summary: `${user.name} joined the organization` });
     return { organizationId: inv.organizationId };

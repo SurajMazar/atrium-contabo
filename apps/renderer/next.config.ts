@@ -14,7 +14,12 @@ const config: NextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,
   // app/global-not-found.tsx renders the site's own 404 (also the exported 404.html).
-  experimental: { globalNotFound: true },
+  experimental: {
+    globalNotFound: true,
+    // Pages preloaded or visited through ClientLinks stay in the browser's router cache until the
+    // visitor reloads (sites opt out per website: settings → Page loading → Keep visited pages).
+    staleTimes: { static: 60 * 60 * 24, dynamic: 0 },
+  },
   ...(isExport ? { output: 'export' as const, trailingSlash: true } : {}),
 };
 

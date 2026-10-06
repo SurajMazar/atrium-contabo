@@ -170,7 +170,7 @@ export function SiteDocument({ r, req, children }: { r: Resolution; req: SiteReq
           scripts={gated}
           routeKey={`${page.id}:${r.locale}`}
         />
-        <ClientLinks />
+        <ClientLinks cachePages={settings.performance?.cachePages ?? true} progressBar={settings.performance?.progressBar ?? true} />
         {bodyEnd.map((s) => <ScriptTag key={s.id} s={s} />)}
         <PageCode code={page.scripts?.body} />
       </body>

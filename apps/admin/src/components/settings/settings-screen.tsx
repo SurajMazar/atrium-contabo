@@ -1,7 +1,7 @@
 'use client';
 
 import { cn, ConfirmDialog, PageHeader } from '@atrium/ui';
-import { AlertTriangle, ArrowLeftRight, BarChart3, Building2, Code2, Cookie, Lock, Paintbrush, Palette, Settings2, Share2, type LucideIcon } from 'lucide-react';
+import { AlertTriangle, ArrowLeftRight, BarChart3, Building2, Code2, Cookie, Gauge, Lock, Paintbrush, Palette, Settings2, Share2, type LucideIcon } from 'lucide-react';
 import { useCallback, useState, type ComponentType } from 'react';
 import { Page } from '@/components/common/page';
 import { PermissionPage } from '@/components/common/permission';
@@ -15,6 +15,7 @@ import { CookiesSection } from './section-cookies';
 import { CssSection } from './section-css';
 import { DangerSection } from './section-danger';
 import { GeneralSection } from './section-general';
+import { PerformanceSection } from './section-performance';
 import { ScriptsSection } from './section-scripts';
 import { SocialSection } from './section-social';
 import { TransferSection } from './section-transfer';
@@ -45,6 +46,7 @@ const GROUPS: Array<{ label: string; items: SectionDef[] }> = [
       { id: 'scripts', label: 'Scripts', icon: Code2, component: ScriptsSection, permission: 'code.manage' },
       { id: 'cookies', label: 'Cookie consent', icon: Cookie, component: CookiesSection },
       { id: 'analytics', label: 'Analytics', icon: BarChart3, component: AnalyticsSettingsSection },
+      { id: 'performance', label: 'Page loading', icon: Gauge, component: PerformanceSection },
       { id: 'css', label: 'Custom CSS', icon: Paintbrush, component: CssSection, permission: 'code.manage' },
     ],
   },

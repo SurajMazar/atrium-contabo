@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
 import { PERMISSIONS } from '@atrium/schema';
 import { z } from 'zod';
+import { AccessService } from '../../common/access.service';
 import { Access, CurrentAccess, CurrentUser, type AccessContext, type AuthUser } from '../../common/decorators';
 import { limitOf } from '../../common/http';
 import { ZodBody } from '../../common/zod.pipe';
@@ -11,7 +12,7 @@ const RoleBody = z.object({ name: z.string().trim().min(1).max(80), description:
 
 @Controller()
 export class OrganizationsController {
-  constructor(private readonly orgs: OrganizationsService) {}
+  constructor(private readonly orgs: OrganizationsService, private readonly access: AccessService) {}
 
   @Get('organizations')
   list(@CurrentUser() user: AuthUser) {
@@ -43,13 +44,15 @@ export class OrganizationsController {
 
   @Access('organization.read', 'organization', 'orgId')
   @Get('organizations/:orgId/usage')
-  usage(@Param('orgId') orgId: string) {
+  usage(@Param('orgId') orgId: string, @CurrentAccess() access: AccessContext) {
+    this.access.assertOrganizationWide(access);
     return this.orgs.usage(orgId);
   }
 
   @Access('organization.read', 'organization', 'orgId')
   @Get('organizations/:orgId/members')
-  members(@Param('orgId') orgId: string) {
+  members(@Param('orgId') orgId: string, @CurrentAccess() access: AccessContext) {
+    this.access.assertOrganizationWide(access);
     return this.orgs.members(orgId);
   }
 
@@ -74,7 +77,7 @@ export class OrganizationsController {
 
   @Access('user.invite', 'organization', 'orgId')
   @Post('organizations/:orgId/invitations')
-  invite(@Param('orgId') orgId: string, @Body(new ZodBody(z.object({ email: z.string().trim().email().max(254), roleId: z.string() }))) body: { email: string; roleId: string }, @CurrentUser() user: AuthUser, @CurrentAccess() access: AccessContext) {
+  invite(@Param('orgId') orgId: string, @Body(new ZodBody(z.object({ email: z.string().trim().email().max(254), roleId: z.string(), websiteIds: z.array(z.string().max(64)).max(500).optional() }))) body: { email: string; roleId: string; websiteIds?: string[] }, @CurrentUser() user: AuthUser, @CurrentAccess() access: AccessContext) {
     return this.orgs.invite(orgId, body, user, access);
   }
 

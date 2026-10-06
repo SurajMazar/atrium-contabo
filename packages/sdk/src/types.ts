@@ -71,6 +71,8 @@ export interface Invitation {
   id: ID;
   email: string;
   role: RoleSummary;
+  /** Websites the invitee will be limited to (empty = every website). */
+  websiteIds?: string[];
   expiresAt: string;
   acceptedAt: string | null;
   createdAt: string;

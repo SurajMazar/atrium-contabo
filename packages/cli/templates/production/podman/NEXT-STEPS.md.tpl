@@ -12,6 +12,13 @@ Generated {{generatedAt}} by `atrium setup production --target {{target}}`. Full
 | customer domains | CNAME → {{sitesDomain}} (TLS is issued on demand after the API verifies the domain) |
 
 ## 2. Configure
+- `compose.yaml` runs **only the application** (migrate, api, worker, renderer, admin). Point `.env` at
+  your own services: `DATABASE_URL` + `MIGRATE_DATABASE_URL` (PostgreSQL), `REDIS_URL`, storage
+  (`STORAGE_DRIVER=local` or `S3_*`) and `SMTP_*`, and put your reverse proxy in front of
+  127.0.0.1:3000 (admin), :4000 (api) and :3001 (sites). Bundled Caddy, PostgreSQL, Redis and SeaweedFS
+  are in `compose.yaml`, commented out — uncomment a service with its `depends_on` entries and volume.
+- The API adds missing reference data, built-in roles and the first super admin (SEED_ADMIN_EMAIL /
+  SEED_ADMIN_PASSWORD) on every start; existing data is never changed.
 - `.env` already has fresh secrets (JWT, ENCRYPTION_KEY, RENDERER_SECRET, ANALYTICS_SALT, Postgres owner +
   app role, Redis password, S3, admin password). Only api, worker and migrate read it in full; caddy,
   postgres, redis, renderer and admin get just their own variables (see the header of `compose.yaml`).

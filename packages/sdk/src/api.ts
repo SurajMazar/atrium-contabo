@@ -48,7 +48,7 @@ export function createAtriumClient(opts: AtriumClientOptions) {
       updateMember: (orgId: string, memberId: string, body: { roleId?: string; websiteIds?: string[] }) => http.patch<T.Member>(`/organizations/${orgId}/members/${memberId}`, body),
       removeMember: (orgId: string, memberId: string) => http.delete(`/organizations/${orgId}/members/${memberId}`),
       invitations: (orgId: string) => http.get<T.Invitation[]>(`/organizations/${orgId}/invitations`),
-      invite: (orgId: string, body: { email: string; roleId: string }) => http.post<T.Invitation>(`/organizations/${orgId}/invitations`, body),
+      invite: (orgId: string, body: { email: string; roleId: string; websiteIds?: string[] }) => http.post<T.Invitation>(`/organizations/${orgId}/invitations`, body),
       revokeInvitation: (orgId: string, id: string) => http.delete(`/organizations/${orgId}/invitations/${id}`),
       acceptInvitation: (token: string) => http.post<{ organizationId: string }>('/invitations/accept', { token }),
       roles: (orgId: string) => http.get<T.Role[]>(`/organizations/${orgId}/roles`),
@@ -254,7 +254,10 @@ export function createAtriumClient(opts: AtriumClientOptions) {
     },
     branding: {
       /** Public: platform defaults merged with an organization's overrides. */
-      get: (organizationId?: string) => http.get<{ platform: AdminBranding; organization: AdminBranding | null; resolved: AdminBranding }>('/branding', q({ organizationId })),
+      get: (organizationId?: string, websiteId?: string) => http.get<{ platform: AdminBranding; organization: AdminBranding | null; website?: AdminBranding | null; resolved: AdminBranding }>('/branding', q({ organizationId, websiteId })),
+      /** Dashboard branding for one website (over the organization's): `inherited` is what applies without it. */
+      website: (websiteId: string) => http.get<{ website: AdminBranding; inherited: AdminBranding; resolved: AdminBranding }>(`/websites/${websiteId}/branding`),
+      saveWebsite: (websiteId: string, branding: AdminBranding) => http.put<{ website: AdminBranding; inherited: AdminBranding; resolved: AdminBranding }>(`/websites/${websiteId}/branding`, branding),
       organization: (orgId: string) => http.get<{ organization: AdminBranding; resolved: AdminBranding }>(`/organizations/${orgId}/branding`),
       saveOrganization: (orgId: string, branding: AdminBranding) => http.put<{ organization: AdminBranding; resolved: AdminBranding }>(`/organizations/${orgId}/branding`, branding),
       savePlatform: (branding: AdminBranding) => http.put<{ platform: AdminBranding; resolved: AdminBranding }>('/admin/branding', branding),

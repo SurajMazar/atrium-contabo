@@ -89,21 +89,15 @@ describe('infra YAML', () => {
         'admin',
       ]),
     );
-    const prod = parse(readFileSync(join(infra, 'compose.prod.yaml'), 'utf8')) as {
-      services: Record<string, { depends_on?: Record<string, { condition: string }> }>;
+    const prodSrc = readFileSync(join(infra, 'compose.prod.yaml'), 'utf8');
+    const prod = parse(prodSrc) as {
+      services: Record<string, { depends_on?: Record<string, { condition: string }>; ports?: string[] }>;
     };
-    expect(Object.keys(prod.services)).toEqual(
-      expect.arrayContaining([
-        'caddy',
-        'postgres',
-        'redis',
-        'migrate',
-        'api',
-        'worker',
-        'renderer',
-        'admin',
-      ]),
-    );
+    // Production runs the application only; backing services are bring-your-own…
+    expect(Object.keys(prod.services).sort()).toEqual(['admin', 'api', 'migrate', 'renderer', 'worker']);
+    // …with bundled alternatives kept in the file, commented out.
+    for (const svc of ['caddy', 'postgres', 'redis', 's3', 's3-init']) expect(prodSrc).toMatch(new RegExp(`^  # ${svc}:$`, 'm'));
+    expect(prod.services.api!.ports).toEqual(['${ATRIUM_BIND:-127.0.0.1}:4000:4000']);
     expect(prod.services.api!.depends_on!.migrate!.condition).toBe(
       'service_completed_successfully',
     );

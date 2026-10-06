@@ -38,7 +38,9 @@ export interface BrandingSource {
 }
 
 export interface BrandingEditorProps {
-  scope: 'organization' | 'platform';
+  scope: 'website' | 'organization' | 'platform';
+  /** Permission named in the read-only banner (default organization.update). */
+  editPermission?: string;
   queryKey: readonly unknown[];
   load: () => Promise<BrandingSource>;
   save: (b: AdminBranding) => Promise<unknown>;
@@ -55,7 +57,32 @@ function same(a: AdminBranding, b: AdminBranding) {
   return JSON.stringify(compactBranding(a)) === JSON.stringify(compactBranding(b));
 }
 
-export function BrandingEditor({ scope, queryKey, load, save, mediaOrgId, canEdit }: BrandingEditorProps) {
+const COPY = {
+  website: {
+    inherit: 'Organization default',
+    description: 'White-label the dashboard and editor for everyone working on this website — give a client their own branded workspace. Anything left empty uses the organization’s branding.',
+    reset: 'Reset to organization branding',
+    resetTitle: 'Reset to organization branding?',
+    resetDescription: 'Every override for this website is removed and the organization’s branding applies again.',
+  },
+  organization: {
+    inherit: 'Platform default',
+    description: 'White-label the admin and editor for everyone in this organization: name, logo, colours and the sign-in page.',
+    reset: 'Reset to platform defaults',
+    resetTitle: 'Reset to platform defaults?',
+    resetDescription: 'Every override for this organization is removed and the platform branding applies again.',
+  },
+  platform: {
+    inherit: 'Built-in default',
+    description: 'Platform defaults for every organization. Organizations can override any of these.',
+    reset: 'Reset to built-in defaults',
+    resetTitle: 'Reset to built-in defaults?',
+    resetDescription: 'Platform branding is cleared; organizations without their own overrides use the built-in Atrium look.',
+  },
+} as const;
+
+export function BrandingEditor({ scope, queryKey, load, save, mediaOrgId, canEdit, editPermission = 'organization.update' }: BrandingEditorProps) {
+  const copy = COPY[scope];
   const qc = useQueryClient();
   const q = useQuery({ queryKey, queryFn: load });
   const [draft, setDraft] = useState<AdminBranding | null>(null);
@@ -92,7 +119,7 @@ export function BrandingEditor({ scope, queryKey, load, save, mediaOrgId, canEdi
       return n;
     });
   const overridden = (k: Key) => draft?.[k] !== undefined && draft?.[k] !== '';
-  const inheritLabel = scope === 'organization' ? 'Platform default' : 'Built-in default';
+  const inheritLabel = copy.inherit;
   const dis = !canEdit || mutation.isPending;
 
   const hint = (k: Key) =>
@@ -108,23 +135,19 @@ export function BrandingEditor({ scope, queryKey, load, save, mediaOrgId, canEdi
   return (
     <Page width="wide">
       <PageHeader
-        title="Branding"
-        description={
-          scope === 'organization'
-            ? 'White-label the admin and editor for everyone in this organization: name, logo, colours and the sign-in page.'
-            : 'Platform defaults for every organization. Organizations can override any of these.'
-        }
+        title={scope === 'website' ? 'Dashboard branding' : 'Branding'}
+        description={copy.description}
         actions={
           canEdit && (
             <Button size="sm" variant="ghost" leadingIcon={<RotateCcw />} disabled={!q.data || mutation.isPending || Object.keys(compactBranding(stored)).length === 0} onClick={() => setResetOpen(true)}>
-              {scope === 'organization' ? 'Reset to platform defaults' : 'Reset to built-in defaults'}
+              {copy.reset}
             </Button>
           )
         }
       />
       {!canEdit && (
         <Banner tone="neutral" className="mb-4">
-          View only — changing branding requires the <code className="font-mono text-xs">organization.update</code> permission.
+          View only — changing branding requires the <code className="font-mono text-xs">{editPermission}</code> permission.
         </Banner>
       )}
 
@@ -212,6 +235,8 @@ export function BrandingEditor({ scope, queryKey, load, save, mediaOrgId, canEdi
               </div>
             </FieldGroup>
 
+            {/* The sign-in page is shown before anyone picks a website, so it is set per organization. */}
+            {scope !== 'website' && (
             <FieldGroup title="Sign-in page" description="With an image the sign-in page uses a two-column layout.">
               <div className="grid gap-5 sm:grid-cols-[minmax(0,1fr)_200px]">
                 <div className="space-y-4">
@@ -225,6 +250,7 @@ export function BrandingEditor({ scope, queryKey, load, save, mediaOrgId, canEdi
                 <ImageSetting label="Image" help="Landscape or portrait, at least 1200px" value={draft.loginImageUrl} inherited={inherited.loginImageUrl} hint={hint('loginImageUrl')} orgId={mediaOrgId} disabled={dis} onChange={(v) => set({ loginImageUrl: v })} />
               </div>
             </FieldGroup>
+            )}
 
             <SaveBar dirty={dirty} saving={mutation.isPending} disabled={!canEdit} onSave={() => draft && mutation.mutate(draft)} onDiscard={() => setDraft(stored)} saveLabel="Save branding" />
           </div>
@@ -238,8 +264,8 @@ export function BrandingEditor({ scope, queryKey, load, save, mediaOrgId, canEdi
       <ConfirmDialog
         open={resetOpen}
         onOpenChange={setResetOpen}
-        title={scope === 'organization' ? 'Reset to platform defaults?' : 'Reset to built-in defaults?'}
-        description={scope === 'organization' ? 'Every override for this organization is removed and the platform branding applies again.' : 'Platform branding is cleared; organizations without their own overrides use the built-in Atrium look.'}
+        title={copy.resetTitle}
+        description={copy.resetDescription}
         confirmLabel="Reset branding"
         tone="danger"
         onConfirm={() => mutation.mutateAsync({})}

@@ -26,7 +26,7 @@ import { useApi } from '@/lib/api';
 import { useSession } from '@/lib/session';
 
 export function OrgSwitcher() {
-  const { memberships, currentOrg, setCurrentOrg } = useSession();
+  const { memberships, currentOrg, setCurrentOrg, websiteScoped } = useSession();
   const router = useRouter();
   const [createOpen, setCreateOpen] = useState(false);
 
@@ -61,14 +61,17 @@ export function OrgSwitcher() {
             </DropdownMenuItem>
           ))}
           <DropdownMenuSeparator />
-          {currentOrg && (
+          {/* Website-scoped members (e.g. Website Managers) only see their websites. */}
+          {currentOrg && !websiteScoped && (
             <DropdownMenuItem icon={<Settings2 />} onSelect={() => router.push(`/org/${currentOrg.id}/team`)}>
               Organization settings
             </DropdownMenuItem>
           )}
-          <DropdownMenuItem icon={<Plus />} onSelect={() => setCreateOpen(true)}>
-            Create organization
-          </DropdownMenuItem>
+          {!websiteScoped && (
+            <DropdownMenuItem icon={<Plus />} onSelect={() => setCreateOpen(true)}>
+              Create organization
+            </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
       <CreateOrganizationDialog open={createOpen} onOpenChange={setCreateOpen} />

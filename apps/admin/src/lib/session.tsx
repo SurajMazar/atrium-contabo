@@ -22,6 +22,13 @@ export interface SessionValue {
    * the server-computed `website.permissions`.
    */
   can: (permission: string, websiteId?: string) => boolean;
+  /**
+   * The current membership is limited to specific websites (e.g. a Website Manager): no
+   * organization dashboard, team, billing or settings — only those websites.
+   */
+  websiteScoped: boolean;
+  /** Website ids the current membership is limited to (empty = all websites). */
+  scopedWebsiteIds: string[];
   /** Store an auth result from login/register/MFA and load memberships. */
   signIn: (result: AuthResult) => Promise<void>;
   signOut: () => Promise<void>;
@@ -30,6 +37,9 @@ export interface SessionValue {
 }
 
 const SessionContext = createContext<SessionValue | null>(null);
+
+/** Organization-level permissions a website-scoped member keeps (mirrors the API's AccessService). */
+const SCOPED_ORG_PERMISSIONS = new Set(['organization.read', 'website.read', 'media.read', 'media.upload', 'ai.use']);
 const ORG_KEY = 'atrium.currentOrg';
 
 function readStoredOrg(): string | null {
@@ -119,6 +129,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const currentMembership = useMemo(() => me?.memberships.find((m) => m.organization.id === orgId) ?? me?.memberships[0] ?? null, [me, orgId]);
 
+  const websiteScoped = !!currentMembership && currentMembership.websiteIds.length > 0 && !me?.user.isSuperAdmin;
+  const scopedWebsiteIds = useMemo(() => (websiteScoped ? (currentMembership?.websiteIds ?? []) : []), [websiteScoped, currentMembership]);
+
   const can = useCallback(
     (permission: string, websiteId?: string) => {
       if (!me) return false;
@@ -131,9 +144,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         if (m.websiteIds.length > 0 && !m.websiteIds.includes(websiteId)) return false;
         return m.permissions.includes(permission);
       }
+      if (websiteScoped && !SCOPED_ORG_PERMISSIONS.has(permission)) return false;
       return currentMembership?.permissions.includes(permission) ?? false;
     },
-    [me, currentMembership, queryClient],
+    [me, currentMembership, queryClient, websiteScoped],
   );
 
   const value = useMemo<SessionValue>(
@@ -145,11 +159,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setCurrentOrg,
       status,
       can,
+      websiteScoped,
+      scopedWebsiteIds,
       signIn,
       signOut,
       reload: loadMe,
     }),
-    [me, currentMembership, setCurrentOrg, status, can, signIn, signOut, loadMe],
+    [me, currentMembership, setCurrentOrg, status, can, websiteScoped, scopedWebsiteIds, signIn, signOut, loadMe],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

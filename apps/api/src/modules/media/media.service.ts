@@ -65,9 +65,11 @@ export class MediaService {
     };
   }
 
-  async list(orgId: string, q: { websiteId?: string; folderId?: string; search?: string; type?: string; tag?: string; cursor?: string; limit: number }) {
+  async list(orgId: string, q: { websiteId?: string; websiteIds?: string[]; folderId?: string; search?: string; type?: string; tag?: string; cursor?: string; limit: number }) {
     const where: Record<string, unknown> = { organizationId: orgId, deletedAt: null };
     if (q.websiteId) where.OR = [{ websiteId: q.websiteId }, { websiteId: null }];
+    // Website-scoped members: their websites' media plus shared (untagged) organization media.
+    else if (q.websiteIds) where.OR = [{ websiteId: { in: q.websiteIds } }, { websiteId: null }];
     if (q.folderId !== undefined) where.folderId = q.folderId === 'root' || q.folderId === '' ? null : q.folderId;
     if (q.search) where.AND = [{ OR: [{ filename: { contains: q.search, mode: 'insensitive' } }, { alt: { contains: q.search, mode: 'insensitive' } }, { title: { contains: q.search, mode: 'insensitive' } }, { tags: { has: q.search.toLowerCase() } }] }];
     if (q.type === 'image') where.mimeType = { startsWith: 'image/' };
@@ -152,8 +154,9 @@ export class MediaService {
   }
 
   // folders
-  async folders(orgId: string, websiteId?: string) {
-    const rows = await this.db.mediaFolder.findMany({ where: { organizationId: orgId, ...(websiteId ? { OR: [{ websiteId }, { websiteId: null }] } : {}) }, orderBy: { name: 'asc' } });
+  async folders(orgId: string, websiteId?: string, websiteIds?: string[]) {
+    const scope = websiteId ? { OR: [{ websiteId }, { websiteId: null }] } : websiteIds ? { OR: [{ websiteId: { in: websiteIds } }, { websiteId: null }] } : {};
+    const rows = await this.db.mediaFolder.findMany({ where: { organizationId: orgId, ...scope }, orderBy: { name: 'asc' } });
     return rows.map((f) => ({ id: f.id, name: f.name, parentId: f.parentId, websiteId: f.websiteId }));
   }
 

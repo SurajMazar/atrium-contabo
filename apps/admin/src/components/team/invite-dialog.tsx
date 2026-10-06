@@ -1,8 +1,8 @@
 'use client';
 
 import type { Invitation, Role } from '@atrium/sdk';
-import { Button, Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, Field, Select, TagInput, toast } from '@atrium/ui';
-import { useQueryClient } from '@tanstack/react-query';
+import { Button, Combobox, Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, Field, RadioGroup, Select, TagInput, toast } from '@atrium/ui';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { errorMessage, useApi } from '@/lib/api';
 import { qk } from '@/lib/query-keys';
@@ -35,6 +35,10 @@ export function InviteDialog({
   const [submitted, setSubmitted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [failures, setFailures] = useState<Record<string, string>>({});
+  const [access, setAccess] = useState<'all' | 'specific'>('all');
+  const [websiteIds, setWebsiteIds] = useState<string[]>([]);
+  const websites = useQuery({ queryKey: qk.websites(orgId), queryFn: () => api.websites.list(orgId), enabled: open });
+  const websiteOptions = useMemo(() => (websites.data ?? []).map((w) => ({ value: w.id, label: w.name, description: w.primaryDomain ?? w.slug })), [websites.data]);
 
   const defaultRoleId = useMemo(() => {
     for (const key of PREFERRED_DEFAULT) {
@@ -50,6 +54,8 @@ export function InviteDialog({
       setSubmitted(false);
       setFailures({});
       setRoleId(defaultRoleId);
+      setAccess('all');
+      setWebsiteIds([]);
     }
   }, [open, defaultRoleId]);
 
@@ -72,14 +78,23 @@ export function InviteDialog({
             : undefined;
 
   const role = roles.find((r) => r.id === roleId);
+  const isOwner = role?.key === 'owner';
+  const scoped = !isOwner && access === 'specific';
+  const websitesMissing = submitted && scoped && websiteIds.length === 0;
+  const pickRole = (id: string) => {
+    setRoleId(id);
+    // A Website Manager is meant for specific websites.
+    if (roles.find((r) => r.id === id)?.key === 'website_manager') setAccess('specific');
+  };
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setSubmitted(true);
     setFailures({});
     if (!emails.length || invalid.length || duplicates.length || !roleId) return;
+    if (scoped && websiteIds.length === 0) return;
     setBusy(true);
-    const results = await Promise.allSettled(emails.map((email) => api.organizations.invite(orgId, { email, roleId })));
+    const results = await Promise.allSettled(emails.map((email) => api.organizations.invite(orgId, { email, roleId, websiteIds: scoped ? websiteIds : [] })));
     setBusy(false);
     const ok: Invitation[] = [];
     const failed: Record<string, string> = {};
@@ -130,13 +145,41 @@ export function InviteDialog({
             <Field label="Role" required help={role?.description ?? undefined}>
               <Select
                 value={roleId}
-                onValueChange={setRoleId}
+                onValueChange={pickRole}
                 disabled={rolesLoading || roles.length === 0}
                 placeholder={rolesLoading ? 'Loading roles…' : 'Select a role'}
                 options={roles.map((r) => ({ value: r.id, label: r.name, description: `${r.permissions.length} permissions` }))}
               />
             </Field>
-            <p className="text-xs text-fg-muted">Invited members get access to all websites. You can limit them to specific websites after they join.</p>
+            {isOwner ? (
+              <p className="text-xs text-fg-muted">Owners always have access to every website.</p>
+            ) : (
+              <Field label="Website access" error={websitesMissing ? 'Choose at least one website' : undefined} help={scoped ? 'They only see these websites — no organization dashboard, team, billing or settings.' : undefined}>
+                <RadioGroup
+                  value={access}
+                  onValueChange={(v) => setAccess(v as 'all' | 'specific')}
+                  options={[
+                    { value: 'all', label: 'All websites', description: 'Including websites created later' },
+                    { value: 'specific', label: 'Specific websites' },
+                  ]}
+                />
+                {scoped && (
+                  <div className="mt-2">
+                    <Combobox
+                      multiple
+                      aria-label="Websites"
+                      options={websiteOptions}
+                      value={websiteIds}
+                      onChange={setWebsiteIds}
+                      loading={websites.isPending}
+                      placeholder="Choose websites"
+                      searchPlaceholder="Search websites"
+                      emptyText={websites.isError ? 'Could not load websites' : 'No websites'}
+                    />
+                  </div>
+                )}
+              </Field>
+            )}
           </DialogBody>
           <DialogFooter>
             <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
