@@ -198,8 +198,13 @@ export class OrganizationsService {
     if (role.key === 'owner' && body.websiteIds?.length) throw badRequest('Owners always have access to every website');
     const websiteIds = role.key === 'owner' ? [] : [...new Set(body.websiteIds ?? [])];
     await this.assertWebsiteAccessList(orgId, websiteIds, access);
-    if (await this.db.user.findUnique({ where: { email }, select: { id: true } })) {
-      throw conflict('This person already has an account. Send them an invitation instead.', { reason: 'ACCOUNT_EXISTS' });
+    const existing = await this.db.user.findUnique({ where: { email }, select: { id: true } });
+    if (existing) {
+      // An existing account (e.g. someone removed earlier) is never attached directly — whoever
+      // registered that address must accept — so they get an invitation with the same role and access.
+      if (await this.db.organizationMember.findFirst({ where: { organizationId: orgId, userId: existing.id } })) throw conflict('This person is already a member', { reason: 'ALREADY_MEMBER' });
+      const invitation = await this.invite(orgId, { email, roleId: role.id, websiteIds }, user, access);
+      return { member: undefined, invited: true as const, invitation };
     }
     const pending = await this.db.invitation.count({ where: { organizationId: orgId, acceptedAt: null, expiresAt: { gt: new Date() } } });
     await this.assertLimit(orgId, 'members', 1 + pending);
@@ -218,7 +223,7 @@ export class OrganizationsService {
     await this.audit.log({ organizationId: orgId, actor: user, action: 'member.added', resourceType: 'member', resourceId: created.memberId, summary: `${user.name} added ${email} as ${role.name} (account created without an invitation)`, metadata: { roleId: role.id, websiteIds } });
     await this.queues.emit(orgId, null, 'user.added', { email, role: role.key });
     const member = (await this.members(orgId)).find((m) => m.id === created.memberId);
-    return { member, ...(generated ? { password } : {}) };
+    return { member, invited: false as const, ...(generated ? { password } : {}) };
   }
 
   // ── invitations ──

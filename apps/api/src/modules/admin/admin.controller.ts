@@ -93,6 +93,28 @@ export class AdminController {
     return { id: org.id, name: org.name, slug: org.slug, planKey: org.planKey, owner: b.owner ? { email: b.owner.email.toLowerCase(), created: createdOwner, invited: !!inviteEmail, ...(password ? { password } : {}) } : null };
   }
 
+  /**
+   * Add someone to any organization. A new email gets an account straight away (generated or
+   * chosen password, returned once when generated; they must set their own at first sign-in). An
+   * email that already has an account gets an invitation instead — the person must accept it with
+   * their verified address, so a pre-registered (possibly squatted) account is never attached.
+   */
+  @Post('organizations/:id/members')
+  async addOrganizationMember(
+    @Req() req: AppRequest,
+    @Param('id') id: string,
+    @Body(new ZodBody(z.object({ email: z.string().trim().email().max(254), name: z.string().trim().min(1).max(120), roleId: z.string(), websiteIds: z.array(z.string().max(64)).max(500).optional(), password: z.string().min(1).max(200).optional() })))
+    b: { email: string; name: string; roleId: string; websiteIds?: string[]; password?: string },
+    @CurrentUser() user: AuthUser,
+  ) {
+    if (!(await this.db.organization.findUnique({ where: { id }, select: { id: true } }))) throw notFound('Organization');
+    const access = { organizationId: id, permissions: new Set(['*']), websiteIds: [], superAdminOverride: true };
+    const email = b.email.toLowerCase();
+    const added = await this.orgs.addMember(id, b, user, access);
+    await this.audit.log({ organizationId: id, actor: user, action: added.invited ? 'platform.member_invited' : 'platform.member_added', resourceType: added.invited ? 'invitation' : 'member', resourceId: added.invited ? added.invitation.id : (added.member?.id ?? null), summary: `Super admin ${user.name} ${added.invited ? 'invited existing account' : 'added'} ${email}`, req });
+    return added.invited ? { mode: 'invited' as const, email } : { mode: 'created' as const, email, member: added.member, ...(added.password ? { password: added.password } : {}) };
+  }
+
   @Patch('organizations/:id')
   async updateOrganization(@Req() req: AppRequest, @Param('id') id: string, @Body(new ZodBody(z.object({ name: z.string().trim().min(1).max(120).optional(), planKey: z.string().optional(), suspended: z.boolean().optional(), featureFlags: z.record(z.string(), z.boolean()).optional(), limits: z.record(z.string(), z.number()).nullable().optional() }))) b: { name?: string; planKey?: string; suspended?: boolean; featureFlags?: Record<string, boolean>; limits?: Record<string, number> | null }, @CurrentUser() user: AuthUser) {
     if (b.planKey && !(await this.db.plan.findUnique({ where: { key: b.planKey } }))) throw badRequest('Unknown plan');

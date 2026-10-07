@@ -51,7 +51,7 @@ export function createAtriumClient(opts: AtriumClientOptions) {
       removeMember: (orgId: string, memberId: string) => http.delete(`/organizations/${orgId}/members/${memberId}`),
       invitations: (orgId: string) => http.get<T.Invitation[]>(`/organizations/${orgId}/invitations`),
       /** Add someone directly (creates their account, no email). `password` is returned once when generated. */
-      addMember: (orgId: string, body: { email: string; name: string; roleId: string; websiteIds?: string[]; password?: string }) => http.post<{ member: T.Member; password?: string }>(`/organizations/${orgId}/members`, body),
+      addMember: (orgId: string, body: { email: string; name: string; roleId: string; websiteIds?: string[]; password?: string }) => http.post<{ member?: T.Member; invited: boolean; password?: string }>(`/organizations/${orgId}/members`, body),
       invite: (orgId: string, body: { email: string; roleId: string; websiteIds?: string[] }) => http.post<T.Invitation>(`/organizations/${orgId}/invitations`, body),
       revokeInvitation: (orgId: string, id: string) => http.delete(`/organizations/${orgId}/invitations/${id}`),
       acceptInvitation: (token: string) => http.post<{ organizationId: string }>('/invitations/accept', { token }),
@@ -235,6 +235,9 @@ export function createAtriumClient(opts: AtriumClientOptions) {
       /** Create an organization; with `owner`, that person owns it (new accounts get a password, returned once when generated). */
       createOrganization: (body: { name: string; planKey?: string; owner?: { email: string; name: string; password?: string } }) =>
         http.post<{ id: string; name: string; slug: string; planKey: string; owner: { email: string; created: boolean; invited?: boolean; password?: string } | null }>('/admin/organizations', body),
+      /** Add someone to any organization: new emails get an account, existing accounts an invitation. */
+      addOrganizationMember: (orgId: string, body: { email: string; name: string; roleId: string; websiteIds?: string[]; password?: string }) =>
+        http.post<{ mode: 'created' | 'invited'; email: string; password?: string }>(`/admin/organizations/${orgId}/members`, body),
       updateOrganization: (id: string, body: { name?: string; planKey?: string; suspended?: boolean; featureFlags?: Record<string, boolean> }) => http.patch<Record<string, unknown>>(`/admin/organizations/${id}`, body),
       users: (query: { search?: string; cursor?: string } = {}) => http.get<T.List<Record<string, unknown>>>('/admin/users', q(query)),
       updateUser: (id: string, body: { disabled?: boolean; isSuperAdmin?: boolean }) => http.patch<Record<string, unknown>>(`/admin/users/${id}`, body),

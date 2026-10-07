@@ -150,9 +150,17 @@ describe('add member without an invitation', () => {
     expect(chosenLogin.body.user.passwordChangeRequired).toBe(true); // the admin knows it too
     await http.post(`/v1/organizations/${orgId}/members`).set(t).send({ email: `weak-${RUN}@example.test`, name: 'Weak', roleId: wm.id, password: 'short' }).expect(422);
 
-    // Existing accounts are never pulled in without an invitation.
-    const existing = await http.post(`/v1/organizations/${orgId}/members`).set(t).send({ email: owner.email, name: 'X', roleId: wm.id }).expect(409);
-    expect(existing.body.error.details.reason).toBe('ACCOUNT_EXISTS');
+    // Members cannot be added twice.
+    const again = await http.post(`/v1/organizations/${orgId}/members`).set(t).send({ email: owner.email, name: 'X', roleId: wm.id }).expect(409);
+    expect(again.body.error.details.reason).toBe('ALREADY_MEMBER');
+    // Someone removed earlier (an existing account) is re-added by invitation, never attached directly.
+    const removedMember = await db.organizationMember.findFirstOrThrow({ where: { organizationId: orgId, user: { email: `chosen-${RUN}@example.test` } } });
+    await http.delete(`/v1/organizations/${orgId}/members/${removedMember.id}`).set(t).expect(204);
+    const readd = await http.post(`/v1/organizations/${orgId}/members`).set(t).send({ email: `chosen-${RUN}@example.test`, name: 'Chosen', roleId: wm.id, websiteIds: [site.body.id] }).expect(201);
+    expect(readd.body).toMatchObject({ invited: true });
+    expect(await db.organizationMember.count({ where: { organizationId: orgId, user: { email: `chosen-${RUN}@example.test` } } })).toBe(0);
+    const pendingInv = await db.invitation.findFirstOrThrow({ where: { organizationId: orgId, email: `chosen-${RUN}@example.test`, acceptedAt: null } });
+    expect(pendingInv.websiteIds).toEqual([site.body.id]);
     // Only people who may invite can add, and the role ceiling applies.
     await http.post(`/v1/organizations/${orgId}/members`).set(bearer(login.body.accessToken)).send({ email: `nope-${RUN}@example.test`, name: 'Nope', roleId: wm.id }).expect(403);
   });
@@ -325,7 +333,7 @@ describe('captcha: page and API agree', () => {
     const t = bearer(owner.token);
     const site = await http.post(`/v1/organizations/${orgId}/websites`).set(t).send({ name: `Cap ${RUN}`, source: { type: 'blank' } }).expect(201);
     const form = await http.post(`/v1/websites/${site.body.id}/forms`).set(t).send({ name: 'Contact', fields: [{ type: 'email', name: 'email', label: 'Email' }] }).expect(201);
-    await http.post(`/v1/websites/${site.body.id}/publish`).set(t).send({ message: 'v1' }).expect(201);
+    await http.post(`/v1/websites/${site.body.id}/publish`).set(t).send({ message: 'v1' }).expect(200);
     const host = `${site.body.slug}.${(process.env.PLATFORM_SITES_DOMAIN ?? 'sites.localhost:3001').split(':')[0]}`;
 
     // Turn captcha on in the draft only: the live page has no widget, so the live form keeps working.
@@ -334,8 +342,9 @@ describe('captcha: page and API agree', () => {
     await http.post(`/v1/public/forms/${form.body.id}/submit`).send({ values: { email: 'visitor@example.com' } }).expect(200);
 
     // Publish it: now the API requires a token…
-    await http.post(`/v1/websites/${site.body.id}/publish`).set(t).send({ message: 'captcha' }).expect(201);
-    await http.post(`/v1/public/forms/${form.body.id}/submit`).send({ values: { email: 'visitor@example.com' } }).expect(424);
+    await http.post(`/v1/websites/${site.body.id}/publish`).set(t).send({ message: 'captcha' }).expect(200);
+    const needsToken = await http.post(`/v1/public/forms/${form.body.id}/submit`).send({ values: { email: 'visitor@example.com' } }).expect(422);
+    expect(JSON.stringify(needsToken.body)).toContain('_captcha');
 
     // …and a captcha integration added afterwards reaches the live page without republishing.
     const before = await http.get(`/v1/public/sites/resolve?host=${host}`).set('X-Renderer-Secret', RENDERER_SECRET).expect(200);
@@ -345,8 +354,10 @@ describe('captcha: page and API agree', () => {
     expect(after.body.runtime.captcha[form.body.id]).toEqual({ provider: 'recaptcha-v2', siteKey: `site-key-${RUN}` });
     expect(after.headers.etag).not.toBe(before.headers.etag);
     expect(JSON.stringify(after.body)).not.toContain('secret-key-value');
-    // With the integration in place, a submission without a token is a validation error, not "unavailable".
-    await http.post(`/v1/public/forms/${form.body.id}/submit`).send({ values: { email: 'visitor@example.com' } }).expect(422);
+    // A token is now checked with the live integration (this fake token fails verification).
+    await http.post(`/v1/public/forms/${form.body.id}/submit`).send({ values: { email: 'visitor@example.com' }, captchaToken: 'not-a-real-token' }).expect((r) => {
+      if (![422, 424].includes(r.status)) throw new Error(`expected a captcha failure, got ${r.status}`);
+    });
   });
 });
 
@@ -382,5 +393,16 @@ describe('super admin: rename organizations, delete users permanently', () => {
     await http.post('/v1/auth/login').send({ email: member.email, password: PASSWORD }).expect(401);
     // Non-super-admins cannot delete anyone.
     await http.delete(`/v1/admin/users/${owner.id}`).set(bearer(owner.token)).send({ confirmEmail: owner.email }).expect(403);
+
+    // Super admins add people to any organization: new emails get an account, existing ones an invitation.
+    const created = await http.post(`/v1/admin/organizations/${orgId}/members`).set(a).send({ email: `sa-new-${RUN}@example.test`, name: 'New Person', roleId: roles.find((r) => r.key === 'editor')!.id }).expect(201);
+    expect(created.body).toMatchObject({ mode: 'created' });
+    expect(created.body.password).toBeTruthy();
+    expect(await db.organizationMember.count({ where: { organizationId: orgId, user: { email: `sa-new-${RUN}@example.test` } } })).toBe(1);
+    const other = await register('sa-existing');
+    const invited = await http.post(`/v1/admin/organizations/${orgId}/members`).set(a).send({ email: other.email, name: 'Existing', roleId: roles.find((r) => r.key === 'viewer')!.id }).expect(201);
+    expect(invited.body).toMatchObject({ mode: 'invited' });
+    expect(await db.organizationMember.count({ where: { organizationId: orgId, userId: other.id } })).toBe(0);
+    await http.post(`/v1/admin/organizations/${orgId}/members`).set(bearer(owner.token)).send({ email: `x-${RUN}@example.test`, name: 'X', roleId: roles[0]!.id }).expect(403);
   });
 });

@@ -40,9 +40,10 @@ import {
 } from '@atrium/ui';
 import { FEATURE_FLAGS } from '@atrium/schema';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Ban, Building2, CircleCheck, CreditCard, Flag, MoreHorizontal, Pencil, Plus } from 'lucide-react';
+import { Ban, Building2, CircleCheck, CreditCard, Flag, MoreHorizontal, Pencil, Plus, UserPlus } from 'lucide-react';
 import { useState } from 'react';
 import { Page } from '@/components/common/page';
+import { AddMemberDialog } from '@/components/team/add-member-dialog';
 import { CreateOrganizationAdminDialog } from './create-organization';
 import { errorMessage, useApi } from '@/lib/api';
 import { formatDate, formatNumber, timeAgo } from '@/lib/format';
@@ -90,6 +91,7 @@ export function AdminOrganizations() {
   const [suspending, setSuspending] = useState<Org | null>(null);
   const [flagsFor, setFlagsFor] = useState<Org | null>(null);
   const [renaming, setRenaming] = useState<Org | null>(null);
+  const [addingTo, setAddingTo] = useState<Org | null>(null);
   const [newName, setNewName] = useState('');
 
   const orgs = list.items.map(toOrg).filter((o) => o.id);
@@ -128,6 +130,7 @@ export function AdminOrganizations() {
         }
       />
       <CreateOrganizationAdminDialog open={createOpen} onOpenChange={setCreateOpen} />
+      {addingTo && <AdminAddMember org={addingTo} onClose={() => setAddingTo(null)} />}
       <Dialog open={!!renaming} onOpenChange={(o) => !o && setRenaming(null)}>
         <DialogContent size="sm">
           <form
@@ -241,6 +244,9 @@ export function AdminOrganizations() {
                                 )}
                               </DropdownMenuSubContent>
                             </DropdownMenuSub>
+                            <DropdownMenuItem icon={<UserPlus />} onSelect={() => setAddingTo(o)}>
+                              Add member…
+                            </DropdownMenuItem>
                             <DropdownMenuItem
                               icon={<Pencil />}
                               onSelect={() => {
@@ -372,4 +378,11 @@ function FlagOverridesBody({ org, planFeatures, saving, onSave, onCancel }: { or
       </ul>
     </SheetContent>
   );
+}
+
+/** Super admin: add someone to this organization (roles are loaded for that organization). */
+function AdminAddMember({ org, onClose }: { org: Org; onClose: () => void }) {
+  const api = useApi();
+  const roles = useQuery({ queryKey: ['admin', 'org-roles', org.id], queryFn: () => api.organizations.roles(org.id) });
+  return <AddMemberDialog platform orgId={org.id} orgName={org.name} open onOpenChange={(o) => !o && onClose()} roles={roles.data ?? []} rolesLoading={roles.isPending} />;
 }

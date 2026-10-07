@@ -24,13 +24,15 @@ interface Created {
   name: string;
   email: string;
   password?: string;
+  /** Super-admin add of an existing account: an invitation was sent instead. */
+  invited?: boolean;
 }
 
 /**
  * Add someone without an email invitation: their account is created here and they can sign in
  * straight away with the email and password you share with them.
  */
-export function AddMemberDialog({ orgId, open, onOpenChange, roles, rolesLoading }: { orgId: string; open: boolean; onOpenChange: (open: boolean) => void; roles: Role[]; rolesLoading?: boolean }) {
+export function AddMemberDialog({ orgId, open, onOpenChange, roles, rolesLoading, platform, orgName }: { orgId: string; open: boolean; onOpenChange: (open: boolean) => void; roles: Role[]; rolesLoading?: boolean; /** Super admin adding to any organization (existing accounts are invited). */ platform?: boolean; orgName?: string }) {
   const api = useApi();
   const qc = useQueryClient();
   const nameRef = useRef<HTMLInputElement>(null);
@@ -82,22 +84,30 @@ export function AddMemberDialog({ orgId, open, onOpenChange, roles, rolesLoading
   const pwError = submitted && passwordMode === 'set' ? passwordProblem(password) : undefined;
 
   const add = useMutation({
-    mutationFn: () =>
-      api.organizations.addMember(orgId, {
+    mutationFn: async () => {
+      const body = {
         name: name.trim(),
         email: email.trim().toLowerCase(),
         roleId: roleId!,
         websiteIds: scoped ? websiteIds : [],
         ...(passwordMode === 'set' ? { password } : {}),
-      }),
+      };
+      if (platform) {
+        const r = await api.admin.addOrganizationMember(orgId, body);
+        return { password: r.password, invited: r.mode === 'invited' };
+      }
+      const r = await api.organizations.addMember(orgId, body);
+      return { password: r.password, invited: !!r.invited };
+    },
     onSuccess: (res) => {
       void qc.invalidateQueries({ queryKey: qk.members(orgId) });
       void qc.invalidateQueries({ queryKey: qk.invitations(orgId) });
-      setCreated({ name: name.trim(), email: email.trim().toLowerCase(), password: res.password });
+      void qc.invalidateQueries({ queryKey: ['admin'] });
+      setCreated({ name: name.trim(), email: email.trim().toLowerCase(), password: res.password, invited: res.invited });
       setPassword('');
     },
     onError: (err) => {
-      if (err instanceof AtriumApiError && (err.details as { reason?: string } | undefined)?.reason === 'ACCOUNT_EXISTS') setEmailTaken(true);
+      if (!platform && err instanceof AtriumApiError && (err.details as { reason?: string } | undefined)?.reason === 'ACCOUNT_EXISTS') setEmailTaken(true);
       else toast.error(errorMessage(err, 'Could not add this person'));
     },
   });
@@ -123,7 +133,21 @@ export function AddMemberDialog({ orgId, open, onOpenChange, roles, rolesLoading
           nameRef.current?.focus();
         }}
       >
-        {created ? (
+        {created?.invited ? (
+          <>
+            <DialogHeader title={`Invitation sent to ${created.email}`} description="This email already has an account (for example someone removed earlier), so they were invited with the same role and access instead of being added directly." />
+            <DialogBody>
+              <p className="text-sm text-fg-muted">
+                They join {orgName ?? 'the organization'} once they accept the invitation while signed in with that (verified) address. You can see it under the organization’s Team → Invitations.
+              </p>
+            </DialogBody>
+            <DialogFooter>
+              <Button size="sm" variant="primary" leadingIcon={<Check />} onClick={() => onOpenChange(false)}>
+                Done
+              </Button>
+            </DialogFooter>
+          </>
+        ) : created ? (
           <>
             <DialogHeader title={`${created.name} can sign in now`} description="Share these details with them securely — for example in person or through a password manager." />
             <DialogBody className="space-y-4">
@@ -163,7 +187,10 @@ export function AddMemberDialog({ orgId, open, onOpenChange, roles, rolesLoading
           </>
         ) : (
           <form onSubmit={submit} className="flex min-h-0 flex-col">
-            <DialogHeader title="Add member" description="Create an account for someone and add them right away — no invitation email is sent." />
+            <DialogHeader
+              title={platform ? `Add member to ${orgName ?? 'organization'}` : 'Add member'}
+              description={platform ? 'New emails get an account straight away; emails that already have an account receive an invitation.' : 'Create an account for someone and add them right away — no invitation email is sent.'}
+            />
             <DialogBody className="space-y-4">
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Name" required error={nameError}>
