@@ -12,6 +12,10 @@ import { OrganizationsService } from '../organizations/organizations.service';
 import { ResolverService } from '../providers/resolver.service';
 
 const HOSTNAME = /^(?=.{4,253}$)(?!-)([a-z0-9-]{1,63}(?<!-)\.)+[a-z]{2,63}$/;
+/** Second-level registry suffixes of country TLDs (`example.com.np`, `example.co.uk` are root domains). */
+const SECOND_LEVEL_SUFFIX = /\.(?:com|net|org|edu|gov|mil|co|ac|or|ne|go|gen|info|biz|ltd|plc|nom|sch|me|int)\.[a-z]{2}$/;
+/** RFC 5737 documentation address used as the default PLATFORM_INGRESS_IP: means "not configured". */
+const PLACEHOLDER_INGRESS_IP = '203.0.113.10';
 
 /** Hostnames of the platform's own apps (admin, API, renderer, preview) — never claimable by tenants. */
 function platformHostnames(): Set<string> {
@@ -52,13 +56,26 @@ export class DomainsService {
     return { id: d.id, hostname: d.hostname, isPrimary: d.isPrimary, redirectToPrimary: d.redirectToPrimary, environment: d.environment, provider: d.provider, status: d.status, dnsStatus: d.dnsStatus, sslStatus: d.sslStatus, dnsRecords: d.dnsRecords as DnsRecord[], verifiedAt: d.verifiedAt?.toISOString() ?? null, lastCheckedAt: d.lastCheckedAt?.toISOString() ?? null };
   }
 
+  /** Root (registrable) domain: `example.com`, or `example.com.np` / `example.co.uk` under a second-level suffix. */
   isApex(hostname: string) {
-    return hostname.split('.').length === 2;
+    const labels = hostname.split('.').length;
+    return labels === 2 || (labels === 3 && SECOND_LEVEL_SUFFIX.test(hostname));
   }
 
-  platformRecords(hostname: string, token: string): DnsRecord[] {
+  /**
+   * Addresses of the platform edge: PLATFORM_INGRESS_IP when configured, plus whatever PLATFORM_CNAME_TARGET
+   * resolves to, so an A record that points at the edge counts even when the IP is not in the env.
+   */
+  async ingressIps(): Promise<string[]> {
+    const ips = new Set<string>();
+    if (env().PLATFORM_INGRESS_IP && env().PLATFORM_INGRESS_IP !== PLACEHOLDER_INGRESS_IP) ips.add(env().PLATFORM_INGRESS_IP);
+    for (const ip of await resolve4(env().PLATFORM_CNAME_TARGET).catch(() => [] as string[])) ips.add(ip);
+    return [...ips];
+  }
+
+  async platformRecords(hostname: string, token: string): Promise<DnsRecord[]> {
     const records: DnsRecord[] = this.isApex(hostname)
-      ? [{ type: 'A', name: '@', value: env().PLATFORM_INGRESS_IP, reason: 'Points your root domain at the Atrium edge' }]
+      ? [{ type: 'A', name: '@', value: (await this.ingressIps())[0] ?? env().PLATFORM_INGRESS_IP, reason: 'Points your root domain at the Atrium edge' }]
       : [{ type: 'CNAME', name: hostname.split('.')[0]!, value: env().PLATFORM_CNAME_TARGET, reason: 'Points this subdomain at the Atrium edge' }];
     records.push({ type: 'TXT', name: `_atrium-verify.${hostname}`, value: token, reason: 'Proves you own this domain' });
     return records;
@@ -106,7 +123,7 @@ export class DomainsService {
     }
     await this.orgs.assertLimit(site.organizationId, 'customDomains');
     const token = `atrium-verify=${randomToken(16)}`;
-    let records = this.platformRecords(hostname, token);
+    let records = await this.platformRecords(hostname, token);
     let providerName = 'platform';
     if (provider) {
       providerName = provider.driver;
@@ -164,9 +181,15 @@ export class DomainsService {
     } else {
       const txt = await resolveTxt(`_atrium-verify.${d.hostname}`).catch(() => [] as string[][]);
       const ownership = txt.some((parts) => parts.join('') === d.verificationToken);
-      let pointing = false;
-      if (this.isApex(d.hostname)) pointing = (await resolve4(d.hostname).catch(() => [] as string[])).includes(env().PLATFORM_INGRESS_IP);
-      else pointing = (await resolveCname(d.hostname).catch(() => [] as string[])).some((c) => c.replace(/\.$/, '') === env().PLATFORM_CNAME_TARGET);
+      // Either record style counts: a CNAME to the platform target, or A records at the edge's addresses
+      // (root domains cannot use a CNAME; some subdomains use A records too).
+      const [cnames, addresses, ingress] = await Promise.all([
+        resolveCname(d.hostname).catch(() => [] as string[]),
+        resolve4(d.hostname).catch(() => [] as string[]),
+        this.ingressIps(),
+      ]);
+      const pointing = cnames.some((c) => c.replace(/\.$/, '') === env().PLATFORM_CNAME_TARGET) || addresses.some((ip) => ingress.includes(ip));
+      records = await this.platformRecords(d.hostname, d.verificationToken);
       verified = ownership && pointing;
       dnsStatus = verified ? 'valid' : ownership ? 'not-pointing' : pointing ? 'ownership-pending' : 'unverified';
       // TLS is provisioned on demand by the edge (Caddy on-demand TLS) once DNS points here.
