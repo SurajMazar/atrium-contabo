@@ -6,6 +6,7 @@ import { AuditService } from '../../common/audit.service';
 import type { AuthUser } from '../../common/decorators';
 import { badRequest, notFound, validation } from '../../common/errors';
 import { PrismaService } from '../../common/prisma.service';
+import { revalidateWebsites } from '../../common/renderer-revalidate';
 import { ResolverService } from './resolver.service';
 
 export type ProviderTable = 'email' | 'sms' | 'storage' | 'integration';
@@ -132,6 +133,7 @@ export class ProvidersService {
     }
     if (body.isDefault) await this.clearDefault(table, orgId, body.websiteId ?? null, data.kind as string | undefined);
     const row = await this.model(table).create({ data });
+    await this.refreshSitesForCaptcha(row);
     await this.audit.log({ organizationId: orgId, websiteId: body.websiteId ?? null, actor: user, action: `${table === 'integration' ? `integration.${kind}` : `${table}`}.created`, resourceType: `${table}Provider`, resourceId: row.id as string, summary: `${user.name} added ${body.driver} ${table === 'integration' ? kind : table} provider "${body.name}"` });
     return serializeProviderRecord(row as never);
   }
@@ -165,6 +167,7 @@ export class ProvidersService {
     if (table === 'integration' && body.enabled !== undefined) data.enabled = body.enabled;
     if (body.isDefault) await this.clearDefault(table, existing.organizationId as string, (existing.websiteId as string | null) ?? null, existing.kind as string | undefined, id);
     const row = await this.model(table).update({ where: { id }, data });
+    await this.refreshSitesForCaptcha(row);
     await this.audit.log({ organizationId: existing.organizationId as string, actor: user, action: table === 'email' ? 'smtp.changed' : `${table}.updated`, resourceType: `${table}Provider`, resourceId: id, summary: `${user.name} updated provider "${row.name}"`, metadata: { secretsChanged: !!body.secrets } });
     this.resolver.resolver.invalidate?.(id);
     return serializeProviderRecord(row as never);
@@ -187,7 +190,20 @@ export class ProvidersService {
     if (!existing) throw notFound('Provider');
     await this.model(table).delete({ where: { id } });
     this.resolver.resolver.invalidate?.(id);
+    await this.refreshSitesForCaptcha(existing);
     await this.audit.log({ organizationId: existing.organizationId as string, actor: user, action: `${table}.deleted`, resourceType: `${table}Provider`, resourceId: id, summary: `${user.name} removed provider "${existing.name as string}"` });
+  }
+
+  /**
+   * Captcha site keys are served live with each site's snapshot: when a captcha integration changes,
+   * drop the renderer's cached pages of the websites it covers so forms pick up the new widget.
+   */
+  private async refreshSitesForCaptcha(row: Record<string, unknown>) {
+    if (row.kind !== 'CAPTCHA') return;
+    const websiteIds = row.websiteId
+      ? [row.websiteId as string]
+      : (await this.prisma.client.website.findMany({ where: { organizationId: row.organizationId as string, deletedAt: null, publishedVersionId: { not: null } }, select: { id: true } })).map((w) => w.id);
+    await revalidateWebsites(websiteIds);
   }
 
   async test(table: ProviderTable, id: string, body: { to?: string }) {

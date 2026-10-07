@@ -62,7 +62,25 @@ export class PublicService {
     const site = await this.websiteForHost(host);
     if (!site?.publishedVersionId) throw notFound('Site');
     const v = await this.db.websiteVersion.findUniqueOrThrow({ where: { id: site.publishedVersionId } });
-    return { ...(v.snapshot as unknown as SiteSnapshot), etag: `"${v.checksum.slice(0, 32)}-${v.number}"` };
+    const snapshot = v.snapshot as unknown as SiteSnapshot;
+    // Public runtime config (captcha site keys) is resolved live, not frozen at publish: adding or
+    // rotating a captcha integration takes effect without republishing (the API verifies tokens
+    // with the live integration too, so page and API always agree).
+    const runtime = await this.publishing.runtimeFor(site.id, site.organizationId, snapshot.definition);
+    const runtimeTag = sha(JSON.stringify(runtime)).slice(0, 8);
+    return { ...snapshot, runtime, etag: `"${v.checksum.slice(0, 32)}-${v.number}-${runtimeTag}"` };
+  }
+
+  /**
+   * Captcha settings of the form as PUBLISHED (what visitors' pages render), read from the live
+   * snapshot. Enforcing the draft's setting instead would break the live form between "turn on
+   * captcha" and the next publish (the page has no widget yet). `undefined`: not in a published version.
+   */
+  private async publishedCaptcha(versionId: string | null, formId: string): Promise<FormDefinition['settings']['captcha'] | undefined> {
+    if (!versionId) return undefined;
+    const rows = await this.db.$queryRaw<Array<{ c: unknown }>>`SELECT jsonb_path_query_first(snapshot, '$.definition.forms[*] ? (@.id == $id).settings.captcha', jsonb_build_object('id', ${formId}::text)) AS c FROM website_versions WHERE id = ${versionId}`;
+    const c = rows[0]?.c;
+    return c && typeof c === 'object' ? (c as FormDefinition['settings']['captcha']) : undefined;
   }
 
   /** Caddy/edge on-demand TLS: allow certificates only for hosts we serve. */
@@ -79,7 +97,7 @@ export class PublicService {
   }
 
   async submit(formId: string, body: { values?: Record<string, unknown>; captchaToken?: string; _hp?: string; _ts?: number; pageUrl?: string; locale?: string } & Record<string, unknown>, meta: { ip?: string; userAgent?: string; referrer?: string; origin?: string }, files: UploadedPart[] = []) {
-    const row = await this.db.form.findFirst({ where: { id: formId, archivedAt: null }, include: { fields: true, rules: true, website: { select: { id: true, organizationId: true, status: true, deletedAt: true, slug: true, domains: { where: { verifiedAt: { not: null } }, select: { hostname: true } } } } } });
+    const row = await this.db.form.findFirst({ where: { id: formId, archivedAt: null }, include: { fields: true, rules: true, website: { select: { id: true, organizationId: true, status: true, deletedAt: true, slug: true, publishedVersionId: true, domains: { where: { verifiedAt: { not: null } }, select: { hostname: true } } } } } });
     if (!row || row.website.deletedAt || row.website.status === 'SUSPENDED') throw notFound('Form');
     const form: FormDefinition = FormDefinitionSchema.parse(formFromRow(row));
     const ipHash = meta.ip ? sha(`${meta.ip}|${env().ANALYTICS_SALT}`) : undefined;
@@ -89,9 +107,9 @@ export class PublicService {
     const values: Record<string, unknown> = { ...(body.values ?? Object.fromEntries(Object.entries(body).filter(([k]) => !k.startsWith('_') && !['captchaToken', 'pageUrl', 'locale', 'values', 'g-recaptcha-response', 'cf-turnstile-response', 'h-captcha-response'].includes(k)))) };
     const honeypot = form.settings.honeypot && typeof body._hp === 'string' && body._hp.trim().length > 0;
 
-    // captcha
+    // captcha — as published (see publishedCaptcha); drafts that were never published use their own setting.
     let captchaScore: number | undefined;
-    const c = form.settings.captcha;
+    const c = (await this.publishedCaptcha(row.website.publishedVersionId, formId)) ?? form.settings.captcha;
     if (c.provider !== 'none' && !honeypot) {
       const token = body.captchaToken ?? (body['g-recaptcha-response'] as string) ?? (body['cf-turnstile-response'] as string) ?? (body['h-captcha-response'] as string);
       if (!token) throw validation('Please complete the verification challenge', [{ field: '_captcha', message: 'Verification required' }]);

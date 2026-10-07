@@ -235,9 +235,11 @@ export function createAtriumClient(opts: AtriumClientOptions) {
       /** Create an organization; with `owner`, that person owns it (new accounts get a password, returned once when generated). */
       createOrganization: (body: { name: string; planKey?: string; owner?: { email: string; name: string; password?: string } }) =>
         http.post<{ id: string; name: string; slug: string; planKey: string; owner: { email: string; created: boolean; invited?: boolean; password?: string } | null }>('/admin/organizations', body),
-      updateOrganization: (id: string, body: { planKey?: string; suspended?: boolean; featureFlags?: Record<string, boolean> }) => http.patch<Record<string, unknown>>(`/admin/organizations/${id}`, body),
+      updateOrganization: (id: string, body: { name?: string; planKey?: string; suspended?: boolean; featureFlags?: Record<string, boolean> }) => http.patch<Record<string, unknown>>(`/admin/organizations/${id}`, body),
       users: (query: { search?: string; cursor?: string } = {}) => http.get<T.List<Record<string, unknown>>>('/admin/users', q(query)),
       updateUser: (id: string, body: { disabled?: boolean; isSuperAdmin?: boolean }) => http.patch<Record<string, unknown>>(`/admin/users/${id}`, body),
+      /** Permanently delete an account; `confirmEmail` must repeat its email address. */
+      deleteUser: (id: string, confirmEmail: string) => http.delete(`/admin/users/${id}`, { body: { confirmEmail } }),
       websites: (query: { search?: string; cursor?: string } = {}) => http.get<T.List<Record<string, unknown>>>('/admin/websites', q(query)),
       jobs: () => http.get<Array<{ queue: string; counts: Record<string, number>; failed: Array<{ id: string; name: string; failedReason: string; attemptsMade: number; timestamp: number }> }>>('/admin/jobs'),
       retryJob: (queue: string, jobId: string) => http.post<void>(`/admin/jobs/${enc(queue)}/${enc(jobId)}/retry`),

@@ -314,3 +314,73 @@ describe('audit fixes (2026-10-06)', () => {
     await http.post(`/v1/organizations/${orgId}/webhooks`).set(d).send({ name: 'Deploys', url: 'https://hooks.example.com/x', events: ['deployment.completed'] }).expect(201);
   });
 });
+
+describe('captcha: page and API agree', () => {
+  const RENDERER_SECRET = process.env.RENDERER_SECRET ?? 'change-me-renderer-secret';
+
+  it('enforces captcha as published and serves site keys live', async () => {
+    if (!ready) return;
+    const owner = await register('cap-owner', `Cap Org ${RUN}`);
+    const orgId = (await db.organizationMember.findFirstOrThrow({ where: { userId: owner.id } })).organizationId;
+    const t = bearer(owner.token);
+    const site = await http.post(`/v1/organizations/${orgId}/websites`).set(t).send({ name: `Cap ${RUN}`, source: { type: 'blank' } }).expect(201);
+    const form = await http.post(`/v1/websites/${site.body.id}/forms`).set(t).send({ name: 'Contact', fields: [{ type: 'email', name: 'email', label: 'Email' }] }).expect(201);
+    await http.post(`/v1/websites/${site.body.id}/publish`).set(t).send({ message: 'v1' }).expect(201);
+    const host = `${site.body.slug}.${(process.env.PLATFORM_SITES_DOMAIN ?? 'sites.localhost:3001').split(':')[0]}`;
+
+    // Turn captcha on in the draft only: the live page has no widget, so the live form keeps working.
+    const full = await http.get(`/v1/forms/${form.body.id}`).set(t).expect(200);
+    await http.put(`/v1/forms/${form.body.id}`).set(t).send({ ...full.body, settings: { ...full.body.settings, captcha: { provider: 'recaptcha-v2', minScore: 0.5, action: 'submit' } } }).expect(200);
+    await http.post(`/v1/public/forms/${form.body.id}/submit`).send({ values: { email: 'visitor@example.com' } }).expect(200);
+
+    // Publish it: now the API requires a token…
+    await http.post(`/v1/websites/${site.body.id}/publish`).set(t).send({ message: 'captcha' }).expect(201);
+    await http.post(`/v1/public/forms/${form.body.id}/submit`).send({ values: { email: 'visitor@example.com' } }).expect(424);
+
+    // …and a captcha integration added afterwards reaches the live page without republishing.
+    const before = await http.get(`/v1/public/sites/resolve?host=${host}`).set('X-Renderer-Secret', RENDERER_SECRET).expect(200);
+    expect(before.body.runtime.captcha[form.body.id]).toBeUndefined();
+    await http.post(`/v1/organizations/${orgId}/integrations`).set(t).send({ kind: 'CAPTCHA', name: 'reCAPTCHA', driver: 'recaptcha-v2', config: { siteKey: `site-key-${RUN}` }, secrets: { secretKey: 'secret-key-value' }, isDefault: true }).expect(201);
+    const after = await http.get(`/v1/public/sites/resolve?host=${host}`).set('X-Renderer-Secret', RENDERER_SECRET).expect(200);
+    expect(after.body.runtime.captcha[form.body.id]).toEqual({ provider: 'recaptcha-v2', siteKey: `site-key-${RUN}` });
+    expect(after.headers.etag).not.toBe(before.headers.etag);
+    expect(JSON.stringify(after.body)).not.toContain('secret-key-value');
+    // With the integration in place, a submission without a token is a validation error, not "unavailable".
+    await http.post(`/v1/public/forms/${form.body.id}/submit`).send({ values: { email: 'visitor@example.com' } }).expect(422);
+  });
+});
+
+describe('super admin: rename organizations, delete users permanently', () => {
+  it('renames, refuses unsafe deletions, then deletes permanently', async () => {
+    if (!ready) return;
+    const admin = await register('del-admin');
+    await db.user.update({ where: { id: admin.id }, data: { isSuperAdmin: true } });
+    const a = bearer(admin.token);
+    const owner = await register('del-owner', `Del Org ${RUN}`);
+    const orgId = (await db.organizationMember.findFirstOrThrow({ where: { userId: owner.id } })).organizationId;
+
+    // Owners rename their organization; super admins can too.
+    await http.patch(`/v1/organizations/${orgId}`).set(bearer(owner.token)).send({ name: `Renamed ${RUN}` }).expect(200);
+    await http.patch(`/v1/admin/organizations/${orgId}`).set(a).send({ name: `Admin Renamed ${RUN}` }).expect(200);
+    expect((await db.organization.findUniqueOrThrow({ where: { id: orgId } })).name).toBe(`Admin Renamed ${RUN}`);
+
+    // Deleting: confirmation must match, sole owners are refused, yourself is refused.
+    await http.delete(`/v1/admin/users/${owner.id}`).set(a).send({ confirmEmail: 'wrong@example.test' }).expect(400);
+    const sole = await http.delete(`/v1/admin/users/${owner.id}`).set(a).send({ confirmEmail: owner.email }).expect(409);
+    expect(sole.body.error.details.reason).toBe('SOLE_OWNER');
+    await http.delete(`/v1/admin/users/${admin.id}`).set(a).send({ confirmEmail: admin.email }).expect(400);
+
+    // A plain member is deleted with their sessions and memberships; they cannot sign in again.
+    const member = await register('del-member');
+    const roles = (await http.get(`/v1/organizations/${orgId}/roles`).set(bearer(owner.token)).expect(200)).body as Array<{ id: string; key: string }>;
+    const inv = await http.post(`/v1/organizations/${orgId}/invitations`).set(bearer(owner.token)).send({ email: member.email, roleId: roles.find((r) => r.key === 'editor')!.id }).expect(201);
+    await http.post('/v1/invitations/accept').set(bearer(member.token)).send({ token: String(inv.body.devAcceptUrl).split('/invite/')[1] }).expect(200);
+    await http.delete(`/v1/admin/users/${member.id}`).set(a).send({ confirmEmail: member.email }).expect(204);
+    expect(await db.user.findUnique({ where: { id: member.id } })).toBeNull();
+    expect(await db.organizationMember.count({ where: { userId: member.id } })).toBe(0);
+    await http.get('/v1/auth/me').set(bearer(member.token)).expect(401);
+    await http.post('/v1/auth/login').send({ email: member.email, password: PASSWORD }).expect(401);
+    // Non-super-admins cannot delete anyone.
+    await http.delete(`/v1/admin/users/${owner.id}`).set(bearer(owner.token)).send({ confirmEmail: owner.email }).expect(403);
+  });
+});

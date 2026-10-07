@@ -4,6 +4,11 @@ import {
   Badge,
   Button,
   ConfirmDialog,
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -17,7 +22,9 @@ import {
   DropdownMenuTrigger,
   EmptyState,
   ErrorState,
+  Field,
   IconButton,
+  Input,
   PageHeader,
   SegmentedControl,
   Sheet,
@@ -33,7 +40,7 @@ import {
 } from '@atrium/ui';
 import { FEATURE_FLAGS } from '@atrium/schema';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Ban, Building2, CircleCheck, CreditCard, Flag, MoreHorizontal, Plus } from 'lucide-react';
+import { Ban, Building2, CircleCheck, CreditCard, Flag, MoreHorizontal, Pencil, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { Page } from '@/components/common/page';
 import { CreateOrganizationAdminDialog } from './create-organization';
@@ -82,12 +89,14 @@ export function AdminOrganizations() {
   const plans = useQuery({ queryKey: qk.admin('plans'), queryFn: () => api.admin.plans(), staleTime: 5 * 60_000 });
   const [suspending, setSuspending] = useState<Org | null>(null);
   const [flagsFor, setFlagsFor] = useState<Org | null>(null);
+  const [renaming, setRenaming] = useState<Org | null>(null);
+  const [newName, setNewName] = useState('');
 
   const orgs = list.items.map(toOrg).filter((o) => o.id);
   const planName = (key: string) => plans.data?.find((p) => p.key === key)?.name ?? key;
 
   const update = useMutation({
-    mutationFn: ({ id, body }: { id: string; body: { planKey?: string; suspended?: boolean; featureFlags?: Record<string, boolean> } }) => api.admin.updateOrganization(id, body),
+    mutationFn: ({ id, body }: { id: string; body: { name?: string; planKey?: string; suspended?: boolean; featureFlags?: Record<string, boolean> } }) => api.admin.updateOrganization(id, body),
     onMutate: async ({ id, body }) => {
       await qc.cancelQueries({ queryKey: list.key });
       const prev = qc.getQueryData<AdminPages<Row>>(list.key);
@@ -99,7 +108,8 @@ export function AdminOrganizations() {
       toast.error(errorMessage(err, 'Could not update organization'));
     },
     onSuccess: (_r, { body }) => {
-      if (body.planKey) toast.success(`Plan changed to ${planName(body.planKey)}`);
+      if (body.name) toast.success(`Renamed to ${body.name}`);
+      else if (body.planKey) toast.success(`Plan changed to ${planName(body.planKey)}`);
       else if (body.suspended !== undefined) toast.success(body.suspended ? 'Organization suspended' : 'Organization reinstated');
       else if (body.featureFlags) toast.success('Feature overrides saved');
     },
@@ -118,6 +128,34 @@ export function AdminOrganizations() {
         }
       />
       <CreateOrganizationAdminDialog open={createOpen} onOpenChange={setCreateOpen} />
+      <Dialog open={!!renaming} onOpenChange={(o) => !o && setRenaming(null)}>
+        <DialogContent size="sm">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const name = newName.trim();
+              if (renaming && name && name !== renaming.name) update.mutate({ id: renaming.id, body: { name } });
+              setRenaming(null);
+            }}
+            className="flex min-h-0 flex-col"
+          >
+            <DialogHeader title="Rename organization" description="Members see the new name right away. The URL slug stays the same." />
+            <DialogBody>
+              <Field label="Name">
+                <Input value={newName} onChange={(e) => setNewName(e.target.value)} maxLength={120} autoFocus />
+              </Field>
+            </DialogBody>
+            <DialogFooter>
+              <Button size="sm" variant="ghost" type="button" onClick={() => setRenaming(null)}>
+                Cancel
+              </Button>
+              <Button size="sm" variant="primary" type="submit" disabled={!newName.trim()}>
+                Save
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
       <div className="mb-4">
         <AdminSearch value={search} onChange={setSearch} placeholder="Search by name or slug" />
       </div>
@@ -203,6 +241,15 @@ export function AdminOrganizations() {
                                 )}
                               </DropdownMenuSubContent>
                             </DropdownMenuSub>
+                            <DropdownMenuItem
+                              icon={<Pencil />}
+                              onSelect={() => {
+                                setNewName(o.name);
+                                setRenaming(o);
+                              }}
+                            >
+                              Rename…
+                            </DropdownMenuItem>
                             <DropdownMenuItem icon={<Flag />} onSelect={() => setFlagsFor(o)}>
                               Feature overrides…
                             </DropdownMenuItem>

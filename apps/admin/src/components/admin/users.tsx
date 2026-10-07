@@ -3,7 +3,14 @@
 import {
   Avatar,
   Badge,
+  Banner,
+  Button,
   ConfirmDialog,
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -11,7 +18,9 @@ import {
   DropdownMenuTrigger,
   EmptyState,
   ErrorState,
+  Field,
   IconButton,
+  Input,
   PageHeader,
   StatusDot,
   Table,
@@ -24,7 +33,7 @@ import {
   toast,
 } from '@atrium/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { MoreHorizontal, ShieldCheck, ShieldOff, UserCheck, UserX, Users } from 'lucide-react';
+import { MoreHorizontal, ShieldCheck, ShieldOff, Trash2, UserCheck, UserX, Users } from 'lucide-react';
 import { useState } from 'react';
 import { Page } from '@/components/common/page';
 import { errorMessage, useApi } from '@/lib/api';
@@ -72,6 +81,7 @@ export function AdminUsers() {
   const debounced = useDebounced(search.trim(), 250);
   const list = useAdminList<Row>('users', { search: debounced || undefined }, (q) => api.admin.users(q));
   const [action, setAction] = useState<Action | null>(null);
+  const [deleting, setDeleting] = useState<AdminUser | null>(null);
   const users = list.items.map(toUser).filter((u) => u.id);
 
   const update = useMutation({
@@ -193,6 +203,9 @@ export function AdminUsers() {
                                 Disable user
                               </DropdownMenuItem>
                             )}
+                            <DropdownMenuItem icon={<Trash2 />} tone="danger" disabled={self} onSelect={() => setDeleting(u)}>
+                              Delete permanently…
+                            </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TD>
@@ -219,6 +232,66 @@ export function AdminUsers() {
           return update.mutateAsync({ id: action.user.id, body });
         }}
       />
+      <DeleteUserDialog user={deleting} onClose={() => setDeleting(null)} onDeleted={() => void qc.invalidateQueries({ queryKey: adminPrefix('users') })} />
     </Page>
+  );
+}
+
+/** Permanent deletion: type the email to confirm; refused for sole owners (the API says which organizations). */
+function DeleteUserDialog({ user, onClose, onDeleted }: { user: AdminUser | null; onClose: () => void; onDeleted: () => void }) {
+  const api = useApi();
+  const [typed, setTyped] = useState('');
+  const [error, setError] = useState<string>();
+  const del = useMutation({
+    mutationFn: () => api.admin.deleteUser(user!.id, typed.trim()),
+    onSuccess: () => {
+      toast.success(`${user?.email} was deleted`);
+      onDeleted();
+      close();
+    },
+    onError: (err) => setError(errorMessage(err, 'Could not delete this user')),
+  });
+  const close = () => {
+    setTyped('');
+    setError(undefined);
+    onClose();
+  };
+  const matches = !!user && typed.trim().toLowerCase() === user.email.toLowerCase();
+  return (
+    <Dialog open={!!user} onOpenChange={(o) => !o && !del.isPending && close()}>
+      <DialogContent size="sm">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (matches) del.mutate();
+          }}
+          className="flex min-h-0 flex-col"
+        >
+          <DialogHeader title={`Delete ${user?.name || user?.email} permanently?`} description="Their account, sessions and organization memberships are removed and cannot be restored. Content they created stays." />
+          <DialogBody className="space-y-3">
+            {error && <Banner tone="danger">{error}</Banner>}
+            <Field label={`Type ${user?.email ?? 'the email'} to confirm`}>
+              <Input
+                value={typed}
+                onChange={(e) => {
+                  setTyped(e.target.value);
+                  setError(undefined);
+                }}
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </Field>
+          </DialogBody>
+          <DialogFooter>
+            <Button size="sm" variant="ghost" type="button" onClick={close} disabled={del.isPending}>
+              Cancel
+            </Button>
+            <Button size="sm" variant="danger" type="submit" loading={del.isPending} disabled={!matches}>
+              Delete permanently
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -63,7 +63,7 @@ export function OrgSwitcher() {
           <DropdownMenuSeparator />
           {/* Website-scoped members (e.g. Website Managers) only see their websites. */}
           {currentOrg && !websiteScoped && (
-            <DropdownMenuItem icon={<Settings2 />} onSelect={() => router.push(`/org/${currentOrg.id}/team`)}>
+            <DropdownMenuItem icon={<Settings2 />} onSelect={() => router.push(`/org/${currentOrg.id}/settings`)}>
               Organization settings
             </DropdownMenuItem>
           )}

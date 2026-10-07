@@ -1,11 +1,11 @@
-import { Body, Controller, Get, HttpCode, Param, Patch, Post, Put, Query, Req } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Patch, Post, Put, Query, Req, Delete } from '@nestjs/common';
 import { z } from 'zod';
 import * as argon2 from 'argon2';
 import { AuditService } from '../../common/audit.service';
 import { assertPasswordStrength, generatePassword } from '../../common/passwords';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { CurrentUser, SuperAdminOnly, type AppRequest, type AuthUser } from '../../common/decorators';
-import { badRequest, notFound } from '../../common/errors';
+import { ApiError, badRequest, notFound } from '../../common/errors';
 import { limitOf } from '../../common/http';
 import { PrismaService } from '../../common/prisma.service';
 import { QueueService } from '../../common/queue.service';
@@ -94,11 +94,11 @@ export class AdminController {
   }
 
   @Patch('organizations/:id')
-  async updateOrganization(@Req() req: AppRequest, @Param('id') id: string, @Body(new ZodBody(z.object({ planKey: z.string().optional(), suspended: z.boolean().optional(), featureFlags: z.record(z.string(), z.boolean()).optional(), limits: z.record(z.string(), z.number()).nullable().optional() }))) b: { planKey?: string; suspended?: boolean; featureFlags?: Record<string, boolean>; limits?: Record<string, number> | null }, @CurrentUser() user: AuthUser) {
+  async updateOrganization(@Req() req: AppRequest, @Param('id') id: string, @Body(new ZodBody(z.object({ name: z.string().trim().min(1).max(120).optional(), planKey: z.string().optional(), suspended: z.boolean().optional(), featureFlags: z.record(z.string(), z.boolean()).optional(), limits: z.record(z.string(), z.number()).nullable().optional() }))) b: { name?: string; planKey?: string; suspended?: boolean; featureFlags?: Record<string, boolean>; limits?: Record<string, number> | null }, @CurrentUser() user: AuthUser) {
     if (b.planKey && !(await this.db.plan.findUnique({ where: { key: b.planKey } }))) throw badRequest('Unknown plan');
-    const o = await this.db.organization.update({ where: { id }, data: { planKey: b.planKey, featureFlags: b.featureFlags, limits: b.limits === null ? undefined : b.limits, suspendedAt: b.suspended === undefined ? undefined : b.suspended ? new Date() : null } });
+    const o = await this.db.organization.update({ where: { id }, data: { name: b.name, planKey: b.planKey, featureFlags: b.featureFlags, limits: b.limits === null ? undefined : b.limits, suspendedAt: b.suspended === undefined ? undefined : b.suspended ? new Date() : null } });
     await this.audit.log({ organizationId: id, actor: user, action: 'platform.organization_updated', resourceType: 'organization', resourceId: id, summary: `Super admin ${user.name} updated organization`, metadata: b, req });
-    return { id: o.id, planKey: o.planKey, suspended: !!o.suspendedAt, featureFlags: o.featureFlags };
+    return { id: o.id, name: o.name, planKey: o.planKey, suspended: !!o.suspendedAt, featureFlags: o.featureFlags };
   }
 
   @Get('users')
@@ -115,10 +115,50 @@ export class AdminController {
   @Patch('users/:id')
   async updateUser(@Req() req: AppRequest, @Param('id') id: string, @Body(new ZodBody(z.object({ disabled: z.boolean().optional(), isSuperAdmin: z.boolean().optional() }))) b: { disabled?: boolean; isSuperAdmin?: boolean }, @CurrentUser() user: AuthUser) {
     if (id === user.id && (b.disabled || b.isSuperAdmin === false)) throw badRequest('You cannot remove your own access');
+    if (b.isSuperAdmin === false || b.disabled) await this.assertNotLastSuperAdmin(id);
     const u = await this.db.user.update({ where: { id }, data: { disabledAt: b.disabled === undefined ? undefined : b.disabled ? new Date() : null, isSuperAdmin: b.isSuperAdmin } });
     if (b.disabled) await this.db.session.updateMany({ where: { userId: id, revokedAt: null }, data: { revokedAt: new Date() } });
     await this.audit.log({ actor: user, action: 'platform.user_updated', resourceType: 'user', resourceId: id, summary: `Super admin ${user.name} updated ${u.email}`, metadata: b, req });
     return { id: u.id, disabled: !!u.disabledAt, isSuperAdmin: u.isSuperAdmin };
+  }
+
+  /** The platform always keeps at least one active super admin. */
+  private async assertNotLastSuperAdmin(userId: string) {
+    const target = await this.db.user.findUnique({ where: { id: userId }, select: { isSuperAdmin: true } });
+    if (!target?.isSuperAdmin) return;
+    const others = await this.db.user.count({ where: { isSuperAdmin: true, disabledAt: null, id: { not: userId } } });
+    if (others === 0) throw badRequest('This is the only super admin. Make someone else super admin first.');
+  }
+
+  /**
+   * Permanently delete an account: sessions, memberships, sign-in links and tokens go with it
+   * (references elsewhere — audit entries, version authors — keep the id as history). Refused for
+   * yourself, the last super admin, and anyone who is the only owner of an organization (transfer
+   * ownership or delete that organization first). `confirmEmail` must repeat the account's email.
+   */
+  @HttpCode(204)
+  @Delete('users/:id')
+  async deleteUser(@Req() req: AppRequest, @Param('id') id: string, @Body(new ZodBody(z.object({ confirmEmail: z.string().trim().max(254) }))) b: { confirmEmail: string }, @CurrentUser() user: AuthUser) {
+    if (id === user.id) throw badRequest('You cannot delete your own account here');
+    const target = await this.db.user.findUnique({ where: { id }, select: { id: true, email: true, name: true } });
+    if (!target) throw notFound('User');
+    if (b.confirmEmail.toLowerCase() !== target.email.toLowerCase()) throw badRequest('Type the account’s email address to confirm');
+    await this.assertNotLastSuperAdmin(id);
+    const owned = await this.db.organizationMember.findMany({ where: { userId: id, role: { key: 'owner' } }, select: { organizationId: true, organization: { select: { name: true, slug: true } } } });
+    const soleOwnerOf: Array<{ name: string; slug: string }> = [];
+    for (const m of owned) {
+      const owners = await this.db.organizationMember.count({ where: { organizationId: m.organizationId, role: { key: 'owner' } } });
+      if (owners <= 1) soleOwnerOf.push(m.organization);
+    }
+    if (soleOwnerOf.length) {
+      throw new ApiError(409, 'CONFLICT', `${target.email} is the only owner of ${soleOwnerOf.map((o) => o.name).join(', ')}. Make someone else owner (or delete the organization) first.`, { reason: 'SOLE_OWNER', organizations: soleOwnerOf });
+    }
+    await this.db.$transaction([
+      this.db.formSubmission.updateMany({ where: { assignedToId: id }, data: { assignedToId: null } }),
+      this.db.invitation.deleteMany({ where: { email: target.email, acceptedAt: null } }),
+      this.db.user.delete({ where: { id } }),
+    ]);
+    await this.audit.log({ actor: user, action: 'platform.user_deleted', resourceType: 'user', resourceId: id, summary: `Super admin ${user.name} permanently deleted ${target.email}`, req });
   }
 
   @Get('websites')
