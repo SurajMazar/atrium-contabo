@@ -5,7 +5,7 @@ The `SurajMazar/atrium-contabo` repository deploys itself to a Contabo VPS. Ever
 
 | Job | What it does |
 | --- | --- |
-| **verify** | `pnpm lint`, `pnpm typecheck`, `pnpm test` |
+| **verify** | `pnpm lint`, `pnpm typecheck` |
 | **images** | builds `api`, `migrate`, `worker`, `renderer`, `admin` and pushes them to `ghcr.io/surajmazar/atrium-contabo/atrium-*:<commit sha>` (and `:latest`) |
 | **deploy** | SSHes into the VPS, syncs `infra/compose.prod.yaml`, pulls the new tag, runs `compose up -d` (migrations first), waits for `/v1/health` and rolls back to the previous tag if the API does not come up |
 

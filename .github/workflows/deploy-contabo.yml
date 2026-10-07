@@ -3,7 +3,7 @@
 # deploy-vercel.yml) skip themselves in that repository, so this is the only pipeline there; in the
 # original repository every job here is skipped.
 #
-#   verify  → lint, typecheck, unit tests
+#   verify  → lint, typecheck
 #   images  → build api, migrate, worker, renderer, admin → ghcr.io/<owner>/atrium-contabo/atrium-*:<sha>
 #   deploy  → SSH into the VPS:
 #               1. sync infra/compose.prod.yaml → $DEPLOY_DIR/compose.yaml (app only: migrate, api, worker,
@@ -56,24 +56,11 @@ env:
 
 jobs:
   verify:
-    name: Lint · typecheck · test
+    name: Lint · typecheck
     if: github.repository == 'SurajMazar/atrium-contabo' && !inputs.tag
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    # Throwaway PostgreSQL/Redis/Mailpit so the API's end-to-end tests run for real (REQUIRE_DB=1).
-    services:
-      postgres:
-        image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
-        env: { POSTGRES_USER: atrium, POSTGRES_PASSWORD: atrium, POSTGRES_DB: atrium }
-        ports: ['55432:5432']
-        options: --health-cmd "pg_isready -U atrium -d atrium" --health-interval 5s --health-retries 20
-      redis:
-        image: redis:7-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
-        ports: ['56379:6379']
-        options: --health-cmd "redis-cli ping" --health-interval 5s --health-retries 20
-      mailpit:
-        image: axllent/mailpit:v1.31.4@sha256:b68349e3a014b90c5610bfb26b2ae36f3892d7b8cf25ee140c6c71c98d2fcf48
-        ports: ['51025:1025', '58025:8025']
+    timeout-minutes: 20
+    # Tests are not part of the deploy gate for now (run them locally / in the original repo's CI).
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -83,23 +70,10 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
       - run: pnpm install --frozen-lockfile
-      - name: Configure .env (generated secrets, local storage)
-        run: |
-          pnpm atrium --yes setup env
-          pnpm atrium config set STORAGE_DRIVER local
       - name: Lint
         run: pnpm lint
       - name: Typecheck
         run: pnpm typecheck
-      - name: Migrate and seed the test database
-        run: |
-          pnpm exec turbo run build --filter=./packages/*
-          pnpm db:deploy
-          pnpm db:seed
-      - name: Unit + API end-to-end tests
-        env:
-          REQUIRE_DB: '1'
-        run: pnpm test
 
   images:
     name: Image · ${{ matrix.image }}
