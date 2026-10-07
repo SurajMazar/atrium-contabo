@@ -29,6 +29,8 @@ x-app: &app
   env_file: [.env]
   restart: unless-stopped
   networks: [edge, data]
+  # PostgreSQL/Redis installed on the host (not in compose) are reachable as host.docker.internal.
+  extra_hosts: ['host.docker.internal:host-gateway']
 
 # Application containers: immutable root filesystem, no Linux capabilities, no privilege escalation.
 # Writable paths are explicit: /tmp (tmpfs) plus the volumes declared per service.

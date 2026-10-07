@@ -11,7 +11,8 @@ describe('unzip limits', () => {
     const t0 = Date.now();
     await expect(unzip(bomb, { maxTotalBytes: 1024 * 1024 })).rejects.toThrow(/maximum uncompressed size/);
     expect(Date.now() - t0).toBeLessThan(5_000);
-  });
+    // Building the 64 MB fixture is the slow part on CI runners; only the unzip is timed above.
+  }, 60_000);
 
   it('refuses when the sizes an archive declares exceed the budget', async () => {
     const zip = new JSZip();
