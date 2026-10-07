@@ -82,6 +82,12 @@ address exists.
 - **Backups**: `/etc/cron.daily/atrium-db-backup` writes `pg_dump -Fc` to `/var/backups/atrium` and keeps
   14 days. Copy them off the server too.
 
+- **Old images**: `/etc/cron.d/atrium-image-cleanup` runs
+  [`infra/scripts/image-cleanup.sh`](../../infra/scripts/image-cleanup.sh) (installed as
+  `/usr/local/sbin/atrium-image-cleanup`) daily at 03:30. It keeps the 3 newest images per service so
+  rollbacks need no pull, never removes an image a container uses, and prunes dangling layers. It logs to
+  `/var/log/atrium-image-cleanup.log`, rotated monthly.
+
 Shell access on the server: `sudo -u postgres psql -d atrium`. From your machine, open a tunnel with
 `ssh -L 5433:127.0.0.1:5432 root@<VPS_IP>` and connect to `localhost:5433`.
 
