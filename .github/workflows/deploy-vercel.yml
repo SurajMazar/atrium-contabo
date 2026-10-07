@@ -32,6 +32,8 @@ permissions:
 jobs:
   deploy:
     name: ${{ matrix.app }} → Vercel
+    # The Contabo mirror deploys to its VPS instead (deploy-contabo.yml).
+    if: github.repository != 'SurajMazar/atrium-contabo'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: ${{ inputs.environment || 'production' }}

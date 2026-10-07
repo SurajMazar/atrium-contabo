@@ -1,0 +1,274 @@
+# Contabo pipeline — runs ONLY in the SurajMazar/atrium-contabo repository, ONLY on pushes to main
+# (plus manual runs for redeploys/rollbacks). The shared workflows (ci.yml, security.yml,
+# deploy-vercel.yml) skip themselves in that repository, so this is the only pipeline there; in the
+# original repository every job here is skipped.
+#
+#   verify  → lint, typecheck, unit tests
+#   images  → build api, migrate, worker, renderer, admin → ghcr.io/<owner>/atrium-contabo/atrium-*:<sha>
+#   deploy  → SSH into the VPS:
+#               1. sync infra/compose.prod.yaml → $DEPLOY_DIR/compose.yaml (app only: migrate, api, worker,
+#                  renderer, admin — PostgreSQL, Redis, storage, mail and the reverse proxy are your own);
+#               2. set ATRIUM_IMAGE_REGISTRY/ATRIUM_IMAGE_TAG in .env, log in to GHCR with this run's
+#                  short-lived token, pull;
+#               3. `compose up -d` (migrate runs first), wait for the API health check, roll back to the
+#                  previous tag if it fails, log out of GHCR.
+# The server's .env (database, Redis, secrets…) is never written by CI except those two variables.
+#
+# GitHub environment `contabo` (Settings → Environments):
+#   secrets  DEPLOY_SSH_KEY          private key allowed to log in as DEPLOY_USER
+#            DEPLOY_SSH_KNOWN_HOSTS  the server's host key line(s) (ssh-keyscan, fingerprint verified)
+#   vars     DEPLOY_HOST             server IP or host name
+#            DEPLOY_USER             SSH user (default: root)
+#            DEPLOY_PORT             SSH port (default: 22)
+#            DEPLOY_DIR              directory with compose.yaml + .env (default: /opt/atrium/deploy/podman)
+#
+# Manual run: Actions → Contabo · build & deploy → Run workflow. With a tag (a full commit SHA built
+# earlier) it skips the build and redeploys that tag — use it to roll back.
+#
+# Hardening: actions pinned by SHA; inputs/secrets reach scripts only through env (never ${{ }} in run:);
+# the tag and directory are validated locally and again on the server.
+name: Contabo · build & deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Redeploy an existing image tag (full commit SHA) without building. Empty = build and deploy this commit.
+        required: false
+
+concurrency:
+  group: contabo-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '24'
+  TURBO_TELEMETRY_DISABLED: '1'
+  NEXT_TELEMETRY_DISABLED: '1'
+  ATRIUM_API_INTERNAL_URL: http://localhost:4000
+
+jobs:
+  verify:
+    name: Lint · typecheck · test
+    if: github.repository == 'SurajMazar/atrium-contabo' && !inputs.tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: pnpm install --frozen-lockfile
+      - name: Lint
+        run: pnpm lint
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Unit tests
+        run: pnpm test
+
+  images:
+    name: Image · ${{ matrix.image }}
+    needs: [verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read # checkout
+      packages: write # push images to ghcr.io
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { image: api, file: api.Containerfile, target: runtime }
+          - { image: migrate, file: api.Containerfile, target: migrate }
+          - { image: worker, file: worker.Containerfile, target: runtime }
+          - { image: renderer, file: renderer.Containerfile, target: runtime }
+          - { image: admin, file: admin.Containerfile, target: runtime }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
+        with:
+          # A namespace of its own, so these packages never collide with the original repository's.
+          images: ghcr.io/${{ github.repository_owner }}/atrium-contabo/atrium-${{ matrix.image }}
+          tags: |
+            type=sha,format=long,prefix=
+            type=raw,value=latest
+      - name: Build and push
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: infra/containers/${{ matrix.file }}
+          target: ${{ matrix.target }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            GIT_SHA=${{ github.sha }}
+            ATRIUM_API_INTERNAL_URL=http://api:4000
+          cache-from: type=gha,scope=contabo-${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=contabo-${{ matrix.image }}
+          provenance: false
+
+  deploy:
+    name: Deploy · Contabo VPS
+    needs: [images]
+    # Builds deploy after `images`; a manual run with a tag skips verify/images and deploys that tag.
+    if: >-
+      always() && github.repository == 'SurajMazar/atrium-contabo' &&
+      (needs.images.result == 'success' || (inputs.tag && needs.images.result == 'skipped'))
+    runs-on: ubuntu-latest
+    environment: contabo
+    timeout-minutes: 30
+    permissions:
+      contents: read # checkout (compose.prod.yaml of the deployed commit)
+      packages: read # the VPS pulls the images with this run's token
+    env:
+      INPUT_TAG: ${{ inputs.tag }}
+      RUN_SHA: ${{ github.sha }}
+      OWNER: ${{ github.repository_owner }}
+      DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ vars.DEPLOY_USER || 'root' }}
+      DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+      DEPLOY_DIR: ${{ vars.DEPLOY_DIR || '/opt/atrium/deploy/podman' }}
+    steps:
+      - name: Resolve and validate inputs
+        id: cfg
+        run: |
+          set -euo pipefail
+          TAG="${INPUT_TAG:-$RUN_SHA}"
+          [[ "$TAG" =~ ^[A-Za-z0-9._-]{1,128}$ ]] || { echo "::error::Invalid image tag"; exit 1; }
+          [[ "$DEPLOY_DIR" =~ ^/[A-Za-z0-9._/-]+$ ]] || { echo "::error::DEPLOY_DIR must be an absolute path of [A-Za-z0-9._/-]"; exit 1; }
+          [[ "$DEPLOY_HOST" =~ ^[A-Za-z0-9.:-]+$ ]] || { echo "::error::Set the DEPLOY_HOST variable in the contabo environment"; exit 1; }
+          [[ "$DEPLOY_USER" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || { echo "::error::Invalid DEPLOY_USER"; exit 1; }
+          [[ "$DEPLOY_PORT" =~ ^[0-9]{1,5}$ ]] || { echo "::error::Invalid DEPLOY_PORT"; exit 1; }
+          NS="ghcr.io/${OWNER,,}/atrium-contabo"
+          # compose.prod.yaml comes from the deployed commit when the tag is a commit SHA.
+          REF="$RUN_SHA"; [[ "$TAG" =~ ^[0-9a-f]{40}$ ]] && REF="$TAG"
+          { echo "tag=$TAG"; echo "ns=$NS"; echo "ref=$REF"; } >> "$GITHUB_OUTPUT"
+          echo "Deploying $NS/atrium-*:$TAG to $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_DIR"
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ steps.cfg.outputs.ref }}
+          persist-credentials: false
+          sparse-checkout: infra/compose.prod.yaml
+          sparse-checkout-cone-mode: false
+
+      - name: SSH key + pinned host key
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          [[ -n "$SSH_KEY" ]] || { echo "::error::Secret DEPLOY_SSH_KEY is empty"; exit 1; }
+          [[ -n "$KNOWN_HOSTS" ]] || { echo "::error::Secret DEPLOY_SSH_KNOWN_HOSTS is empty (ssh-keyscan -t ed25519 <host>, verify the fingerprint)"; exit 1; }
+          install -d -m 700 ~/.ssh
+          install -m 600 /dev/null ~/.ssh/deploy_key
+          install -m 600 /dev/null ~/.ssh/known_hosts
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host vps
+            HostName $DEPLOY_HOST
+            User $DEPLOY_USER
+            Port $DEPLOY_PORT
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            BatchMode yes
+            StrictHostKeyChecking yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+            ServerAliveInterval 30
+          EOF
+          chmod 600 ~/.ssh/config
+          ssh vps true
+
+      - name: Upload compose file
+        run: |
+          set -euo pipefail
+          ssh vps bash -s -- "$DEPLOY_DIR" <<'SSH'
+            set -euo pipefail
+            DIR="$1"
+            [[ -f "$DIR/.env" ]] || { echo "::error::$DIR/.env is missing on the server (create it once; see docs/deployment/contabo.md)" >&2; exit 1; }
+          SSH
+          scp -q infra/compose.prod.yaml "vps:$DEPLOY_DIR/compose.yaml.next"
+
+      - name: Pull images and roll out
+        env:
+          TAG: ${{ steps.cfg.outputs.tag }}
+          NS: ${{ steps.cfg.outputs.ns }}
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # The token travels on stdin (never in argv or the environment of the remote shell's children).
+          printf '%s\n' "$GHCR_TOKEN" | ssh vps "ENGINE=\$(command -v podman >/dev/null && echo podman || echo docker); \"\$ENGINE\" login ghcr.io -u '$GHCR_USER' --password-stdin >/dev/null"
+          # Quoted heredoc: nothing is expanded locally; values are positional arguments.
+          ssh vps bash -s -- "$DEPLOY_DIR" "$NS" "$TAG" <<'SSH'
+            set -euo pipefail
+            DIR="$1"; NS="$2"; TAG="$3"
+            [[ "$TAG" =~ ^[A-Za-z0-9._-]{1,128}$ ]] || { echo "invalid tag" >&2; exit 1; }
+            [[ "$NS" =~ ^ghcr\.io/[a-z0-9._/-]+$ ]] || { echo "invalid namespace" >&2; exit 1; }
+            cd -- "$DIR"
+            ENGINE=$(command -v podman >/dev/null && echo podman || echo docker)
+            compose() { "$ENGINE" compose "$@"; }
+            setenv() { if grep -q "^$1=" .env; then sed -i "s|^$1=.*|$1=$2|" .env; else printf '%s=%s\n' "$1" "$2" >> .env; fi; }
+
+            PREV_TAG=$(sed -n 's/^ATRIUM_IMAGE_TAG=//p' .env | tail -1)
+            PREV_NS=$(sed -n 's/^ATRIUM_IMAGE_REGISTRY=//p' .env | tail -1)
+            cp -p .env ".env.bak"
+            [[ -f compose.yaml ]] && cp -p compose.yaml compose.yaml.bak
+            mv compose.yaml.next compose.yaml
+
+            setenv ATRIUM_IMAGE_REGISTRY "$NS"
+            setenv ATRIUM_IMAGE_TAG "$TAG"
+            echo "→ pulling $NS/atrium-*:$TAG"
+            compose pull migrate api worker renderer admin
+
+            healthy() {
+              for _ in $(seq 1 40); do
+                if curl -fsS --max-time 5 http://127.0.0.1:4000/v1/health >/dev/null 2>&1 \
+                  || wget -q -T 5 -O /dev/null http://127.0.0.1:4000/v1/health 2>/dev/null; then return 0; fi
+                sleep 5
+              done
+              return 1
+            }
+            # No --remove-orphans: services you run in the same project (database, Redis…) stay untouched.
+            if compose up -d --no-build migrate api worker renderer admin && healthy; then
+              echo "✓ deployed $TAG (previous: ${PREV_TAG:-none})"
+              compose ps
+              "$ENGINE" image prune -f >/dev/null || true
+              exit 0
+            fi
+
+            echo "✗ $TAG did not become healthy — recent logs:" >&2
+            compose logs --tail 80 migrate api 2>&1 | tail -160 >&2 || true
+            if [[ -n "$PREV_TAG" ]]; then
+              echo "↺ rolling back to ${PREV_NS:-$NS}:$PREV_TAG" >&2
+              cp -p .env.bak .env
+              [[ -f compose.yaml.bak ]] && cp -p compose.yaml.bak compose.yaml
+              compose up -d --no-build api worker renderer admin || true
+            fi
+            exit 1
+          SSH
+
+      - name: Log out of GHCR and remove the SSH key
+        if: always()
+        run: |
+          ssh vps "ENGINE=\$(command -v podman >/dev/null && echo podman || echo docker); \"\$ENGINE\" logout ghcr.io >/dev/null 2>&1 || true" || true
+          rm -f ~/.ssh/deploy_key ~/.ssh/config

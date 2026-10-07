@@ -1,0 +1,99 @@
+# Contabo VPS (GitHub Actions → GHCR → Podman)
+
+The `SurajMazar/atrium-contabo` repository deploys itself to a Contabo VPS. Every push to `main` runs
+[`.github/workflows/deploy-contabo.yml`](../../.github/workflows/deploy-contabo.yml):
+
+| Job | What it does |
+| --- | --- |
+| **verify** | `pnpm lint`, `pnpm typecheck`, `pnpm test` |
+| **images** | builds `api`, `migrate`, `worker`, `renderer`, `admin` and pushes them to `ghcr.io/surajmazar/atrium-contabo/atrium-*:<commit sha>` (and `:latest`) |
+| **deploy** | SSHes into the VPS, syncs `infra/compose.prod.yaml`, pulls the new tag, runs `compose up -d` (migrations first), waits for `/v1/health` and rolls back to the previous tag if the API does not come up |
+
+Only the application runs on the VPS from this pipeline. PostgreSQL, Redis, object storage (R2/S3 or the
+local `api-storage` volume), SMTP and the reverse proxy (nginx) are your own services, configured in the
+server's `.env`.
+
+The workflow only runs in `atrium-contabo`. In the original `SurajMazar/atrium` repository every job is
+skipped, and the shared workflows (`ci.yml`, `security.yml`, `deploy-vercel.yml`) skip themselves in
+`atrium-contabo`, so each repository runs only its own pipelines. Nothing runs for pull requests, tags or
+other branches.
+
+## Git: one push, both repositories
+
+`origin` fetches from `atrium-contabo` and pushes to both repositories:
+
+```bash
+git remote set-url origin git@github.com:SurajMazar/atrium-contabo.git
+git remote set-url --add --push origin git@github.com:SurajMazar/atrium-contabo.git
+git remote set-url --add --push origin git@github.com:SurajMazar/atrium.git
+git remote add original git@github.com:SurajMazar/atrium.git   # fetch-only view of the old repo
+git remote -v
+```
+
+`git push` then updates both `main` branches; only `atrium-contabo` deploys.
+
+## One-time server setup
+
+```bash
+# as root on the VPS (Ubuntu/Debian)
+apt-get update && apt-get install -y podman podman-compose curl
+mkdir -p /opt/atrium/deploy/podman && cd /opt/atrium/deploy/podman
+# .env: generate one locally with `pnpm atrium setup production --target podman --domain <domain>`
+# (or reuse your current one), then copy it here and fill in DATABASE_URL, MIGRATE_DATABASE_URL,
+# REDIS_URL, storage (STORAGE_DRIVER=local | r2 | s3), SMTP_*, …
+chmod 600 .env
+```
+
+The pipeline writes `compose.yaml` and sets `ATRIUM_IMAGE_REGISTRY` and `ATRIUM_IMAGE_TAG` in `.env`;
+everything else in `.env` is yours. It keeps the previous files as `.env.bak` and `compose.yaml.bak`.
+The containers listen on `127.0.0.1` only (admin `:3000`, renderer `:3001`, API `:4000`), so nginx
+proxies to them.
+
+## Deploy key
+
+Use a key that exists only for deployments:
+
+```bash
+ssh-keygen -t ed25519 -N '' -C 'atrium-contabo deploy' -f ~/.ssh/atrium_contabo_deploy
+ssh-copy-id -i ~/.ssh/atrium_contabo_deploy.pub root@<VPS_IP>
+ssh-keyscan -t ed25519 <VPS_IP>       # → DEPLOY_SSH_KNOWN_HOSTS
+```
+
+Compare the scanned key's fingerprint with the server's own (`ssh-keygen -lf
+/etc/ssh/ssh_host_ed25519_key.pub` in the Contabo VNC console) before saving it.
+
+## GitHub settings (atrium-contabo)
+
+Settings → Environments → **contabo**:
+
+| Type | Name | Value |
+| --- | --- | --- |
+| secret | `DEPLOY_SSH_KEY` | contents of `~/.ssh/atrium_contabo_deploy` (private key) |
+| secret | `DEPLOY_SSH_KNOWN_HOSTS` | output of `ssh-keyscan -t ed25519 <VPS_IP>` |
+| variable | `DEPLOY_HOST` | VPS IP or host name |
+| variable | `DEPLOY_USER` | SSH user (default `root`) |
+| variable | `DEPLOY_PORT` | SSH port (default `22`) |
+| variable | `DEPLOY_DIR` | `/opt/atrium/deploy/podman` (default) |
+
+No registry credentials are stored: the deploy job logs the server in to GHCR with the run's
+short-lived `GITHUB_TOKEN`, pulls, and logs out again.
+
+## Redeploy or roll back
+
+Actions → **Contabo · build & deploy** → _Run workflow_:
+
+- empty tag: build and deploy the selected branch's latest commit;
+- a tag (full commit SHA of an earlier build): skip the build and deploy that tag.
+
+Migrations only move forward, so rolling back runs older application code against the newer, additively
+migrated schema.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| `Host key verification failed` | `DEPLOY_SSH_KNOWN_HOSTS` doesn't match the server; rescan and verify the fingerprint |
+| `Permission denied (publickey)` | the public key is not in `~/.ssh/authorized_keys` of `DEPLOY_USER` |
+| `.env is missing on the server` | create `$DEPLOY_DIR/.env` (see above) |
+| `denied` while pulling from ghcr.io | the packages must stay linked to `atrium-contabo` (Package settings → Manage Actions access) |
+| health check fails, rolled back | the job prints the `migrate`/`api` logs; on the server: `podman compose logs api` |

@@ -29,6 +29,8 @@ env:
 jobs:
   audit:
     name: Dependency audit (pnpm audit --prod)
+    # Not in the Contabo mirror: its only pipeline is deploy-contabo.yml (push to main).
+    if: github.repository != 'SurajMazar/atrium-contabo'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -48,6 +50,8 @@ jobs:
 
   secrets:
     name: Secret scan (gitleaks, full history)
+    # Not in the Contabo mirror: its only pipeline is deploy-contabo.yml (push to main).
+    if: github.repository != 'SurajMazar/atrium-contabo'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -75,6 +79,8 @@ jobs:
 
   codeql:
     name: CodeQL (javascript-typescript, security-extended)
+    # Not in the Contabo mirror: its only pipeline is deploy-contabo.yml (push to main).
+    if: github.repository != 'SurajMazar/atrium-contabo'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -96,6 +102,8 @@ jobs:
 
   trivy-config:
     name: IaC scan (Trivy config, infra/)
+    # Not in the Contabo mirror: its only pipeline is deploy-contabo.yml (push to main).
+    if: github.repository != 'SurajMazar/atrium-contabo'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -126,6 +134,8 @@ jobs:
 
   api-security-tests:
     name: API tests (incl. security regression suite)
+    # Not in the Contabo mirror: its only pipeline is deploy-contabo.yml (push to main).
+    if: github.repository != 'SurajMazar/atrium-contabo'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:

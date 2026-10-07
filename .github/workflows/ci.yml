@@ -31,6 +31,8 @@ env:
 jobs:
   verify:
     name: Lint · typecheck · test · build
+    # Not in the Contabo mirror: its only pipeline is deploy-contabo.yml (push to main).
+    if: github.repository != 'SurajMazar/atrium-contabo'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -72,6 +74,8 @@ jobs:
 
   manifests:
     name: Kubernetes + compose manifests
+    # Not in the Contabo mirror: its only pipeline is deploy-contabo.yml (push to main).
+    if: github.repository != 'SurajMazar/atrium-contabo'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -113,6 +117,8 @@ jobs:
 
   database:
     name: Prisma migrations (deploy + drift)
+    # Not in the Contabo mirror: its only pipeline is deploy-contabo.yml (push to main).
+    if: github.repository != 'SurajMazar/atrium-contabo'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
