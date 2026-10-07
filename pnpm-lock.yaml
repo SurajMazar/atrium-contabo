@@ -225,6 +225,9 @@ importers:
       cookie-parser:
         specifier: ^1.4.7
         version: 1.4.7
+      dotenv:
+        specifier: ^17.2.0
+        version: 17.4.2
       exceljs:
         specifier: ^4.4.0
         version: 4.4.0
@@ -307,9 +310,6 @@ importers:
       '@types/supertest':
         specifier: ^6.0.3
         version: 6.0.3
-      dotenv:
-        specifier: ^17.2.0
-        version: 17.4.2
       supertest:
         specifier: ^7.3.1
         version: 7.3.1
