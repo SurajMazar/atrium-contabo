@@ -24,6 +24,8 @@ interface BrandingValue {
   /** Logo URL for the current theme (dark variant falls back to the light one). */
   logoUrl: string | null;
   isLoading: boolean;
+  /** 'invitation': accounts only through an invitation link; null until known. */
+  signup: 'open' | 'invitation' | null;
 }
 
 const BrandingContext = createContext<BrandingValue | null>(null);
@@ -176,8 +178,9 @@ export function BrandingProvider({ children }: { children: ReactNode }) {
       productName,
       logoUrl: (theme === 'dark' ? branding.logoDarkUrl || branding.logoUrl : branding.logoUrl) || null,
       isLoading: q.isPending && !cached,
+      signup: q.data?.signup ?? null,
     }),
-    [branding, productName, theme, q.isPending, cached],
+    [branding, productName, theme, q.isPending, cached, q.data?.signup],
   );
 
   return <BrandingContext.Provider value={value}>{children}</BrandingContext.Provider>;

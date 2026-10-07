@@ -12,6 +12,7 @@ import { z } from 'zod';
 import { AuthFrame } from '@/components/auth/auth-layout';
 import { safeNext } from '@/components/auth/auth-redirect';
 import { PasswordStrength, passwordSchema } from '@/components/auth/password';
+import { useBranding } from '@/lib/branding';
 import { useApi } from '@/lib/api';
 import { useSession } from '@/lib/session';
 
@@ -29,6 +30,9 @@ export function RegisterForm() {
   const params = useSearchParams();
   const next = params.get('next');
   const invited = !!next?.startsWith('/invite/');
+  // The invitation link (/invite/<token>) proves the address; without one, sign-up may be closed.
+  const invitationToken = invited ? decodeURIComponent(next!.slice('/invite/'.length).split(/[/?#]/)[0] ?? '') || undefined : undefined;
+  const { signup } = useBranding();
   const [error, setError] = useState<string | null>(null);
   const form = useForm<Values>({ resolver: zodResolver(schema), defaultValues: { name: '', email: params.get('email') ?? '', password: '' } });
   const password = form.watch('password');
@@ -36,7 +40,7 @@ export function RegisterForm() {
   const onSubmit = form.handleSubmit(async (v) => {
     setError(null);
     try {
-      const r = await api.auth.register(v);
+      const r = await api.auth.register({ ...v, invitationToken });
       await signIn(r);
       router.replace(next ? safeNext(next) : '/onboarding');
     } catch (e) {
@@ -44,6 +48,27 @@ export function RegisterForm() {
       else setError(e instanceof Error ? e.message : 'Registration failed');
     }
   });
+
+  if (!invited && signup === 'invitation') {
+    return (
+      <AuthFrame
+        title="Accounts are created by invitation"
+        description="Ask your administrator to invite you. The invitation email has a link that sets up your account."
+        footer={
+          <>
+            Already have an account?{' '}
+            <Link href="/login" className="font-medium text-fg hover:underline">
+              Sign in
+            </Link>
+          </>
+        }
+      >
+        <Button variant="primary" className="w-full" asChild>
+          <Link href="/login">Go to sign in</Link>
+        </Button>
+      </AuthFrame>
+    );
+  }
 
   return (
     <AuthFrame

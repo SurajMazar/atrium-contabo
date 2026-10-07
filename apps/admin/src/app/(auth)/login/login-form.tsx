@@ -22,7 +22,7 @@ const schema = z.object({
 type Values = z.infer<typeof schema>;
 
 export function LoginForm() {
-  const { productName } = useBranding();
+  const { productName, signup } = useBranding();
   const api = useApi();
   const { signIn } = useSession();
   const router = useRouter();
@@ -116,12 +116,15 @@ export function LoginForm() {
       title={`Sign in to ${productName}`}
       brandHeadline
       footer={
-        <>
-          New to {productName}?{' '}
-          <Link href={`/register${params.get('next') ? `?next=${encodeURIComponent(next)}` : ''}`} className="font-medium text-fg hover:underline">
-            Create an account
-          </Link>
-        </>
+        // Accounts come from invitations unless open sign-up is enabled (invite links open /register themselves).
+        signup === 'open' ? (
+          <>
+            New to {productName}?{' '}
+            <Link href={`/register${params.get('next') ? `?next=${encodeURIComponent(next)}` : ''}`} className="font-medium text-fg hover:underline">
+              Create an account
+            </Link>
+          </>
+        ) : undefined
       }
     >
       <form className="space-y-4" onSubmit={onSubmit} noValidate>

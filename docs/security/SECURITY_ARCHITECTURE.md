@@ -74,6 +74,8 @@ host, so one tenant's pages and scripts can never render under another tenant's 
   - uploads are filed under their website.
 - **Organizations** are created only by super admins (`POST /admin/organizations`, or `POST
   /organizations` as a super admin). Sign-up never creates one.
+- **Sign-up** is invitation-only in production (`OPEN_SIGNUP` off): `/auth/register` needs a pending
+  invitation token for the same email; that account starts with a verified email.
 - **Super-admin access** to a tenant is audited (writes always, reads once per hour per session)
   and requires an MFA-verified session in production.
 

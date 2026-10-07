@@ -10,7 +10,7 @@ import { ZodBody } from '../../common/zod.pipe';
 import { AuthService } from './auth.service';
 
 const email = z.string().trim().email().max(254);
-const Register = z.object({ name: z.string().trim().min(1).max(120), email, password: z.string().min(1).max(200), organizationName: z.string().trim().max(120).optional() });
+const Register = z.object({ name: z.string().trim().min(1).max(120), email, password: z.string().min(1).max(200), organizationName: z.string().trim().max(120).optional(), invitationToken: z.string().trim().min(10).max(200).optional() });
 const Login = z.object({ email, password: z.string().min(1).max(200) });
 const Mfa = z.object({ challengeToken: z.string().min(10), code: z.string().min(6).max(20) });
 const Code = z.object({ code: z.string().min(6).max(24), currentPassword: z.string().max(200).optional() });

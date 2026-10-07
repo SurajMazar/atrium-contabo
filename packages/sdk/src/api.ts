@@ -21,7 +21,7 @@ export function createAtriumClient(opts: AtriumClientOptions) {
   return {
     http,
     auth: {
-      register: (body: { name: string; email: string; password: string; organizationName?: string }) => http.post<T.AuthResult>('/auth/register', body),
+      register: (body: { name: string; email: string; password: string; organizationName?: string; invitationToken?: string }) => http.post<T.AuthResult>('/auth/register', body),
       login: (body: { email: string; password: string }) => http.post<T.LoginResult>('/auth/login', body),
       verifyMfa: (body: { challengeToken: string; code: string }) => http.post<T.AuthResult>('/auth/mfa/verify', body),
       refresh: () => http.post<T.AuthResult>('/auth/refresh'),
@@ -268,7 +268,7 @@ export function createAtriumClient(opts: AtriumClientOptions) {
       /** Public: platform defaults merged with an organization's overrides. */
       /** `host`: the admin's own hostname — an organization's admin domain resolves to its branding before sign-in. */
       get: (organizationId?: string, websiteId?: string, host?: string) =>
-        http.get<{ platform: AdminBranding; organization: AdminBranding | null; website?: AdminBranding | null; hostOrganization?: { id: string; name: string } | null; resolved: AdminBranding }>('/branding', q({ organizationId, websiteId, host })),
+        http.get<{ platform: AdminBranding; organization: AdminBranding | null; website?: AdminBranding | null; hostOrganization?: { id: string; name: string } | null; signup?: 'open' | 'invitation'; resolved: AdminBranding }>('/branding', q({ organizationId, websiteId, host })),
       /** Dashboard branding for one website (over the organization's): `inherited` is what applies without it. */
       website: (websiteId: string) => http.get<{ website: AdminBranding; inherited: AdminBranding; resolved: AdminBranding }>(`/websites/${websiteId}/branding`),
       saveWebsite: (websiteId: string, branding: AdminBranding) => http.put<{ website: AdminBranding; inherited: AdminBranding; resolved: AdminBranding }>(`/websites/${websiteId}/branding`, branding),

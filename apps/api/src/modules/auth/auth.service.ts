@@ -6,7 +6,7 @@ import { authenticator } from 'otplib';
 import QRCode from 'qrcode';
 import { env } from '../../config/env';
 import { AuditService } from '../../common/audit.service';
-import { ApiError, badRequest, conflict, unauthorized, validation } from '../../common/errors';
+import { ApiError, badRequest, conflict, forbidden, unauthorized, validation } from '../../common/errors';
 import { escapeHtml } from '../../common/html';
 import { PrismaService } from '../../common/prisma.service';
 import { RedisService } from '../../common/redis.service';
@@ -95,13 +95,27 @@ export class AuthService {
   }
 
   // ── registration / login ──
-  async register(input: { name: string; email: string; password: string; organizationName?: string }, meta: SessionMeta) {
+  /**
+   * Create an account. Without OPEN_SIGNUP (production default) only invited people can: the request
+   * must carry a pending invitation token for the same email. Holding that token proves the address
+   * (the link was emailed to it), so the account starts verified and can accept straight away.
+   */
+  async register(input: { name: string; email: string; password: string; organizationName?: string; invitationToken?: string }, meta: SessionMeta) {
     const email = input.email.trim().toLowerCase();
+    let invitedEmail = false;
+    if (input.invitationToken) {
+      const inv = await this.db.invitation.findUnique({ where: { tokenHash: hashToken(input.invitationToken) }, select: { email: true, acceptedAt: true, expiresAt: true } });
+      if (!inv || inv.acceptedAt || inv.expiresAt < new Date()) throw badRequest('This invitation is invalid or has expired', { reason: 'INVITATION_INVALID' });
+      if (inv.email.toLowerCase() !== email) throw forbidden('Use the email address this invitation was sent to', { reason: 'INVITATION_EMAIL_MISMATCH' });
+      invitedEmail = true;
+    } else if (!env().OPEN_SIGNUP) {
+      throw forbidden('Accounts are created by invitation. Ask your administrator to invite you.', { reason: 'SIGNUP_DISABLED' });
+    }
     assertPasswordStrength(input.password);
     if (await this.db.user.findUnique({ where: { email } })) throw conflict('An account with this email already exists');
-    const user = await this.db.user.create({ data: { email, name: input.name.trim(), passwordHash: await argon2.hash(input.password, { type: argon2.argon2id }) } });
+    const user = await this.db.user.create({ data: { email, name: input.name.trim(), passwordHash: await argon2.hash(input.password, { type: argon2.argon2id }), ...(invitedEmail ? { emailVerifiedAt: new Date() } : {}) } });
     if (input.organizationName?.trim()) await this.orgs.createWithOwner(input.organizationName.trim(), user.id);
-    await this.sendVerification(user).catch((err: Error) => this.logger.warn(`verification email failed: ${err.message}`));
+    if (!invitedEmail) await this.sendVerification(user).catch((err: Error) => this.logger.warn(`verification email failed: ${err.message}`));
     await this.audit.log({ actor: user, action: 'auth.registered', resourceType: 'user', resourceId: user.id, summary: `${user.name} created an account`, ip: meta.ip, userAgent: meta.userAgent });
     return this.issue(user.id, meta, false);
   }

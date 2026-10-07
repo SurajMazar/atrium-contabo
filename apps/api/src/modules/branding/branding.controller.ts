@@ -3,6 +3,7 @@ import { SkipThrottle } from '@nestjs/throttler';
 import { AdminBrandingSchema, mergeBranding, type AdminBranding } from '@atrium/schema';
 import { organizationForAdminHost } from '../../common/admin-hosts';
 import { AuditService } from '../../common/audit.service';
+import { env } from '../../config/env';
 import { Access, CurrentAccess, CurrentUser, Public, SuperAdminOnly, type AccessContext, type AuthUser } from '../../common/decorators';
 import { PrismaService } from '../../common/prisma.service';
 import { ZodBody } from '../../common/zod.pipe';
@@ -49,7 +50,7 @@ export class BrandingController {
       const o = await this.prisma.client.organization.findFirst({ where: { id: hostOrgId, suspendedAt: null }, select: { id: true, name: true } });
       hostOrganization = o ?? null;
     }
-    return { platform, organization: org ?? null, website: site ?? null, hostOrganization, resolved: mergeBranding(platform, org, site) };
+    return { platform, organization: org ?? null, website: site ?? null, hostOrganization, signup: env().OPEN_SIGNUP ? ('open' as const) : ('invitation' as const), resolved: mergeBranding(platform, org, site) };
   }
 
   private async orgLayers(websiteId: string) {

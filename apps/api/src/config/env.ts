@@ -65,6 +65,8 @@ const EnvSchema = z
     OUTBOUND_ALLOW_PRIVATE: optionalBool,
     /** Super admins must have MFA enabled to use /admin endpoints. Default: true in production, false otherwise. */
     SUPER_ADMIN_REQUIRE_MFA: optionalBool,
+    /** Anyone may create an account. Default: false in production (accounts only through invitations), true otherwise. */
+    OPEN_SIGNUP: optionalBool,
     /** Separate cookieless origin user uploads are served from (e.g. https://media.example.com). Optional. */
     MEDIA_ORIGIN: optionalString.pipe(z.string().url().optional()),
     MAIL_FROM: z.string().default('Atrium <no-reply@atrium.localhost>'),
@@ -86,6 +88,7 @@ const EnvSchema = z
       COOKIE_SECURE: e.COOKIE_SECURE ?? production,
       OUTBOUND_ALLOW_PRIVATE: e.OUTBOUND_ALLOW_PRIVATE ?? !production,
       SUPER_ADMIN_REQUIRE_MFA: e.SUPER_ADMIN_REQUIRE_MFA ?? production,
+      OPEN_SIGNUP: e.OPEN_SIGNUP ?? !production,
     };
   });
 

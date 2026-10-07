@@ -39,10 +39,15 @@ export function Onboarding() {
     { id: 'account', label: 'Create your account', description: user ? `Signed in as ${user.email}` : undefined, status: 'complete' },
     {
       id: 'org',
-      label: 'Create an organization',
-      description: hasOrg ? currentOrg?.name : 'Organizations hold websites, members, billing and integrations.',
+      // Only platform administrators create organizations; everyone else joins one by invitation.
+      label: user?.isSuperAdmin || hasOrg ? 'Create an organization' : 'Join an organization',
+      description: hasOrg
+        ? currentOrg?.name
+        : user?.isSuperAdmin
+          ? 'Organizations hold websites, members, billing and integrations.'
+          : 'You are not part of an organization yet. Ask your administrator to invite you, then open the link in the invitation email.',
       status: status(1),
-      action: !hasOrg && (
+      action: !hasOrg && user?.isSuperAdmin && (
         <Button size="sm" variant="primary" onClick={() => setOrgOpen(true)}>
           Create organization
         </Button>
