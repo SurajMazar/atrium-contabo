@@ -34,15 +34,25 @@ git remote -v
 
 ## One-time server setup
 
+The VPS (Ubuntu 24.04, `169.58.157.28`) runs Docker Engine with the compose plugin, plus nginx and certbot
+on the host. Docker is used instead of Podman because Ubuntu's podman-compose does not wait for the
+`migrate` service to finish before starting the API. The pipeline works with either.
+
 ```bash
-# as root on the VPS (Ubuntu/Debian)
-apt-get update && apt-get install -y podman podman-compose curl
-mkdir -p /opt/atrium/deploy/podman && cd /opt/atrium/deploy/podman
-# .env: generate one locally with `pnpm atrium setup production --target podman --domain <domain>`
-# (or reuse your current one), then copy it here and fill in DATABASE_URL, MIGRATE_DATABASE_URL,
-# REDIS_URL, storage (STORAGE_DRIVER=local | r2 | s3), SMTP_*, …
-chmod 600 .env
+# as root on the VPS
+apt-get install -y ca-certificates curl nginx certbot python3-certbot-nginx python3-certbot-dns-cloudflare
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release; echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list
+apt-get update && apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+install -d -m 750 /opt/atrium          # DEPLOY_DIR
 ```
+
+`/opt/atrium/.env` holds the production configuration (database, Redis, storage, SMTP, secrets). When
+you move an existing installation, copy its `.env`: `ENCRYPTION_KEY`, the `JWT_*` secrets and
+`RENDERER_SECRET` must stay the same, or stored provider credentials can't be decrypted and everyone is
+signed out. `DATABASE_URL`, `MIGRATE_DATABASE_URL` and `REDIS_URL` must be reachable from the VPS. Then
+run `chmod 600 /opt/atrium/.env`.
 
 The pipeline writes `compose.yaml` and sets `ATRIUM_IMAGE_REGISTRY` and `ATRIUM_IMAGE_TAG` in `.env`;
 everything else in `.env` is yours. It keeps the previous files as `.env.bak` and `compose.yaml.bak`.
@@ -73,7 +83,7 @@ Settings → Environments → **contabo**:
 | variable | `DEPLOY_HOST` | VPS IP or host name |
 | variable | `DEPLOY_USER` | SSH user (default `root`) |
 | variable | `DEPLOY_PORT` | SSH port (default `22`) |
-| variable | `DEPLOY_DIR` | `/opt/atrium/deploy/podman` (default) |
+| variable | `DEPLOY_DIR` | `/opt/atrium` |
 
 No registry credentials are stored: the deploy job logs the server in to GHCR with the run's
 short-lived `GITHUB_TOKEN`, pulls, and logs out again.
@@ -96,4 +106,4 @@ migrated schema.
 | `Permission denied (publickey)` | the public key is not in `~/.ssh/authorized_keys` of `DEPLOY_USER` |
 | `.env is missing on the server` | create `$DEPLOY_DIR/.env` (see above) |
 | `denied` while pulling from ghcr.io | the packages must stay linked to `atrium-contabo` (Package settings → Manage Actions access) |
-| health check fails, rolled back | the job prints the `migrate`/`api` logs; on the server: `podman compose logs api` |
+| health check fails, rolled back | the job prints the `migrate`/`api` logs; on the server: `cd /opt/atrium && docker compose logs api` |
