@@ -3,7 +3,11 @@
   "ui": "stream",
   "globalEnv": ["NODE_ENV"],
   "tasks": {
-    "build": { "dependsOn": ["^build"], "outputs": ["dist/**", ".next/**", "!.next/cache/**"] },
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", ".next/**", "!.next/cache/**"],
+      "env": ["ATRIUM_API_INTERNAL_URL", "API_URL", "ADMIN_URL", "ATRIUM_STATIC_EXPORT", "NEXT_DIST_DIR"]
+    },
     "dev": { "cache": false, "persistent": true },
     "lint": { "dependsOn": ["^build"] },
     "typecheck": { "dependsOn": ["^build"] },
