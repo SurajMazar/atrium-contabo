@@ -197,7 +197,7 @@ Deliveries carry `X-Atrium-Event`, `X-Atrium-Delivery`, `X-Atrium-Timestamp` and
 | GET | `/websites/:id/seo` | `[{ pageId, title, slug, report: SeoReport }]` |
 | GET/PUT | `/websites/:id/redirects` | PUT `{ redirects: Redirect[] }` (loop detection → `422`) |
 | GET | `/websites/:id/links` | broken links |
-| GET | `/websites/:id/analytics?from=&to=` | `{ totals: { pageviews, visitors, sessions, conversions, conversionRate }, series: [{ date, pageviews, visitors }], topPages, referrers, countries, devices, forms }` |
+| GET | `/websites/:id/analytics?from=&to=` | `{ enabled, totals: { pageviews, visitors, sessions, conversions, conversionRate }, series: [{ date, pageviews, visitors }], topPages, referrers, countries, devices, forms }` |
 
 ## AI
 
@@ -233,13 +233,15 @@ Deliveries carry `X-Atrium-Event`, `X-Atrium-Delivery`, `X-Atrium-Timestamp` and
 | GET | `/public/sites/resolve?host=` | `SiteSnapshot` for the published version (ETag/`If-None-Match`). Renderer-only: requires `X-Renderer-Secret`. |
 | GET | `/public/preview?token=&password=` | draft `SiteSnapshot` (renderer-only header) |
 | POST | `/public/forms/:formId/submit` | JSON or multipart `{ values, captchaToken?, _hp?, pageUrl?, locale? }` → `{ ok, message, redirectUrl? }` or `422 { details: FieldError[] }`. Rate limited per IP+form. |
-| POST | `/public/analytics/collect` | `{ websiteId, type: 'pageview'\|'event'\|'conversion', path, referrer?, name?, props? }` → `204` |
+| POST | `/public/analytics/collect` | `{ websiteId, type: 'pageview'\|'event'\|'conversion', path, referrer?, name?, props? }` → `204`. Stored only when the organization's analytics is on (off until a super admin turns it on) |
 | GET | `/public/domains/check?domain=` | `200` if the host belongs to a site (edge on-demand TLS `ask` hook), else `404` |
 | GET | `/storage/*` | public files for the `local` storage driver (`private/*` keys are never served) |
 
 ## Super admin — `/admin` (requires `isSuperAdmin`)
 
 `GET /admin/overview`, `GET/PATCH /admin/organizations[/:id]`, `GET/PATCH /admin/users[/:id]`, `GET /admin/websites`, `GET /admin/jobs`, `POST /admin/jobs/:queue/:jobId/retry`, `GET/PUT /admin/feature-flags`, `GET/PUT /admin/plans`, `GET /admin/audit-logs`, `GET/PATCH /admin/abuse-reports[/:id]`, `GET /admin/ai-usage`.
+
+Organizations: `PATCH /admin/organizations/:id` also takes `analyticsEnabled` (built-in analytics, off by default) and `suspended` (members locked out, websites offline). `DELETE /admin/organizations/:id` `{ confirmSlug }` → `204` permanently deletes a **suspended** organization and everything it owns (`409 NOT_SUSPENDED` otherwise); members keep their accounts and stored files are removed afterwards, best effort.
 
 ## Branding (white-label admin)
 

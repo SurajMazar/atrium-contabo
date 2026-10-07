@@ -64,7 +64,7 @@ async function main() {
     publishedAt: new Date().toISOString(),
     apiBaseUrl: 'http://localhost:4000',
     definition,
-    runtime: { captcha: {} },
+    runtime: { captcha: {}, analytics: false },
   };
   const staticExport = args.has('--static');
   const files = await buildNextProject({ snapshot, repoRoot, staticExport, ...(rendererArg ? { rendererDir: rendererArg } : {}) });

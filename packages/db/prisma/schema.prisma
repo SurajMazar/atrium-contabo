@@ -134,6 +134,8 @@ model Organization {
   limits        Json?
   billingRef    String?   @map("billing_ref")
   suspendedAt   DateTime? @map("suspended_at")
+  /// Built-in visitor analytics. Off until a super admin turns it on for the organization.
+  analyticsEnabled Boolean @default(false) @map("analytics_enabled")
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
 

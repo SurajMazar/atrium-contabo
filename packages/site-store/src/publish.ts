@@ -30,7 +30,7 @@ export async function freezeVersion(tx: Db, websiteId: string, opts: FreezeOptio
   const number = (last?.number ?? 0) + 1;
   const v = await tx.websiteVersion.create({ data: { websiteId, number, snapshot: {}, checksum, message: opts.message, source: 'PUBLISH', createdById: opts.userId ?? null } });
   const snapshot: SiteSnapshot = SiteSnapshotSchema.parse({
-    websiteId, versionId: v.id, version: number, publishedAt: v.createdAt.toISOString(), apiBaseUrl: opts.apiBaseUrl, primaryDomain: opts.primaryDomain, definition: published, runtime: opts.runtime ?? { captcha: {} },
+    websiteId, versionId: v.id, version: number, publishedAt: v.createdAt.toISOString(), apiBaseUrl: opts.apiBaseUrl, primaryDomain: opts.primaryDomain, definition: published, runtime: opts.runtime ?? { captcha: {}, analytics: false },
   });
   await tx.websiteVersion.update({ where: { id: v.id }, data: { snapshot: JSON.parse(JSON.stringify(snapshot)) } });
   // Card thumbnail for the dashboard: the homepage's first image (sized down when it's an Unsplash-style URL).

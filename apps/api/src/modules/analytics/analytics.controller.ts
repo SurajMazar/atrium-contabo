@@ -26,6 +26,7 @@ export class AnalyticsController {
       db.formSubmission.groupBy({ by: ['formId'], where: { websiteId: id, createdAt: { gte: start, lte: end }, status: { not: 'SPAM' } }, _count: true }),
       db.analyticsEvent.findMany({ where: { ...where, type: 'pageview' }, select: { createdAt: true, visitorHash: true } }),
     ]);
+    const org = await db.website.findUnique({ where: { id }, select: { organization: { select: { analyticsEnabled: true } } } });
     const formNames = new Map((await db.form.findMany({ where: { id: { in: forms.map((f) => f.formId) } }, select: { id: true, name: true } })).map((f) => [f.id, f.name]));
     const series = new Map<string, { pageviews: number; visitors: Set<string> }>();
     for (let t = start.getTime(); t <= end.getTime(); t += 86_400_000) series.set(new Date(t).toISOString().slice(0, 10), { pageviews: 0, visitors: new Set() });
@@ -37,6 +38,7 @@ export class AnalyticsController {
       series.set(k, s);
     }
     return {
+      enabled: !!org?.organization.analyticsEnabled,
       totals: { pageviews: pv, visitors: visitors.length, sessions: sessions.length, conversions, conversionRate: visitors.length ? Math.round((conversions / visitors.length) * 1000) / 10 : 0 },
       series: [...series.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, s]) => ({ date, pageviews: s.pageviews, visitors: s.visitors.size })),
       topPages: pages.sort((a, b) => b._count - a._count).slice(0, 10).map((p) => ({ path: p.path, pageviews: p._count })),

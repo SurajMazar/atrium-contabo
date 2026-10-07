@@ -38,8 +38,9 @@ export class PublishingService {
   /** Public, non-secret runtime config: captcha site keys per form. */
   async runtimeFor(websiteId: string, organizationId: string, def: WebsiteDefinition): Promise<SiteSnapshot['runtime']> {
     const captcha: SiteSnapshot['runtime']['captcha'] = {};
+    const analytics = !!(await this.db.organization.findUnique({ where: { id: organizationId }, select: { analyticsEnabled: true } }))?.analyticsEnabled;
     const forms = def.forms.filter((f) => f.settings.captcha.provider !== 'none');
-    if (!forms.length) return { captcha };
+    if (!forms.length) return { captcha, analytics };
     const integrations = await this.db.integration.findMany({ where: { organizationId, kind: 'CAPTCHA', enabled: true, OR: [{ websiteId }, { websiteId: null }] } });
     for (const f of forms) {
       const c = f.settings.captcha;
@@ -52,7 +53,7 @@ export class PublishingService {
       const siteKey = (pick?.config as { siteKey?: string } | null)?.siteKey;
       if (siteKey) captcha[f.id] = { provider: c.provider, siteKey };
     }
-    return { captcha };
+    return { captcha, analytics };
   }
 
   async primaryDomain(websiteId: string) {

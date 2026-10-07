@@ -40,7 +40,7 @@ import {
 } from '@atrium/ui';
 import { FEATURE_FLAGS } from '@atrium/schema';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Ban, Building2, CircleCheck, CreditCard, Flag, Globe, MoreHorizontal, Pencil, Plus, UserPlus } from 'lucide-react';
+import { BarChart3, Ban, Building2, CircleCheck, CreditCard, Flag, Globe, MoreHorizontal, Pencil, Plus, Trash2, UserPlus } from 'lucide-react';
 import { useState } from 'react';
 import { Page } from '@/components/common/page';
 import { AddMemberDialog } from '@/components/team/add-member-dialog';
@@ -63,6 +63,7 @@ interface Org {
   suspended: boolean;
   featureFlags: Record<string, boolean>;
   adminHostname: string | null;
+  analyticsEnabled: boolean;
 }
 
 function toOrg(r: Row): Org {
@@ -79,6 +80,7 @@ function toOrg(r: Row): Org {
     suspended: bool(r.suspended) || !!r.suspendedAt,
     featureFlags: flags,
     adminHostname: str(r.adminHostname) || null,
+    analyticsEnabled: bool(r.analyticsEnabled),
   };
 }
 
@@ -95,13 +97,14 @@ export function AdminOrganizations() {
   const [renaming, setRenaming] = useState<Org | null>(null);
   const [addingTo, setAddingTo] = useState<Org | null>(null);
   const [domainFor, setDomainFor] = useState<Org | null>(null);
+  const [deleting, setDeleting] = useState<Org | null>(null);
   const [newName, setNewName] = useState('');
 
   const orgs = list.items.map(toOrg).filter((o) => o.id);
   const planName = (key: string) => plans.data?.find((p) => p.key === key)?.name ?? key;
 
   const update = useMutation({
-    mutationFn: ({ id, body }: { id: string; body: { name?: string; planKey?: string; suspended?: boolean; featureFlags?: Record<string, boolean> } }) => api.admin.updateOrganization(id, body),
+    mutationFn: ({ id, body }: { id: string; body: { name?: string; planKey?: string; suspended?: boolean; featureFlags?: Record<string, boolean>; analyticsEnabled?: boolean } }) => api.admin.updateOrganization(id, body),
     onMutate: async ({ id, body }) => {
       await qc.cancelQueries({ queryKey: list.key });
       const prev = qc.getQueryData<AdminPages<Row>>(list.key);
@@ -117,7 +120,15 @@ export function AdminOrganizations() {
       else if (body.planKey) toast.success(`Plan changed to ${planName(body.planKey)}`);
       else if (body.suspended !== undefined) toast.success(body.suspended ? 'Organization suspended' : 'Organization reinstated');
       else if (body.featureFlags) toast.success('Feature overrides saved');
+      else if (body.analyticsEnabled !== undefined) toast.success(body.analyticsEnabled ? 'Analytics turned on' : 'Analytics turned off');
     },
+    onSettled: () => void qc.invalidateQueries({ queryKey: adminPrefix('organizations') }),
+  });
+
+  const remove = useMutation({
+    mutationFn: (o: Org) => api.admin.deleteOrganization(o.id, o.slug),
+    onSuccess: (_r, o) => toast.success(`${o.name} was deleted`),
+    onError: (err) => toast.error(errorMessage(err, 'Could not delete organization')),
     onSettled: () => void qc.invalidateQueries({ queryKey: adminPrefix('organizations') }),
   });
 
@@ -221,7 +232,16 @@ export function AdminOrganizations() {
                       <TD muted className="hidden md:table-cell">
                         <span title={formatDate(o.createdAt)}>{timeAgo(o.createdAt)}</span>
                       </TD>
-                      <TD>{o.suspended ? <Badge tone="danger" dot>Suspended</Badge> : <Badge tone="success" dot>Active</Badge>}</TD>
+                      <TD>
+                        <div className="flex items-center gap-1.5">
+                          {o.suspended ? <Badge tone="danger" dot>Suspended</Badge> : <Badge tone="success" dot>Active</Badge>}
+                          {o.analyticsEnabled && (
+                            <Badge tone="neutral" title="Built-in analytics is collected">
+                              <BarChart3 /> Analytics
+                            </Badge>
+                          )}
+                        </div>
+                      </TD>
                       <TD align="right">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -266,11 +286,19 @@ export function AdminOrganizations() {
                             <DropdownMenuItem icon={<Flag />} onSelect={() => setFlagsFor(o)}>
                               Feature overrides…
                             </DropdownMenuItem>
+                            <DropdownMenuItem icon={<BarChart3 />} onSelect={() => update.mutate({ id: o.id, body: { analyticsEnabled: !o.analyticsEnabled } })}>
+                              {o.analyticsEnabled ? 'Turn analytics off' : 'Turn analytics on'}
+                            </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             {o.suspended ? (
-                              <DropdownMenuItem icon={<CircleCheck />} onSelect={() => setSuspending(o)}>
-                                Reinstate
-                              </DropdownMenuItem>
+                              <>
+                                <DropdownMenuItem icon={<CircleCheck />} onSelect={() => setSuspending(o)}>
+                                  Reinstate
+                                </DropdownMenuItem>
+                                <DropdownMenuItem icon={<Trash2 />} tone="danger" onSelect={() => setDeleting(o)}>
+                                  Delete organization…
+                                </DropdownMenuItem>
+                              </>
                             ) : (
                               <DropdownMenuItem icon={<Ban />} tone="danger" onSelect={() => setSuspending(o)}>
                                 Suspend
@@ -297,11 +325,26 @@ export function AdminOrganizations() {
         description={
           suspending?.suspended
             ? 'Members regain access to the admin and published websites come back online.'
-            : 'Members lose access to the admin and the organization’s published websites stop serving. This is logged in the audit trail.'
+            : 'Members lose access to the admin and the organization’s published websites stop serving. This is logged in the audit trail. A suspended organization can then be deleted permanently.'
         }
         confirmLabel={suspending?.suspended ? 'Reinstate' : 'Suspend organization'}
         confirmText={suspending?.suspended ? undefined : suspending?.slug || undefined}
         onConfirm={() => (suspending ? update.mutateAsync({ id: suspending.id, body: { suspended: !suspending.suspended } }) : undefined)}
+      />
+
+      <ConfirmDialog
+        open={!!deleting}
+        onOpenChange={(o) => !o && setDeleting(null)}
+        tone="danger"
+        title={`Delete ${deleting?.name ?? ''} permanently?`}
+        description={
+          deleting
+            ? `This removes the organization and everything in it: ${formatNumber(deleting.websites)} website${deleting.websites === 1 ? '' : 's'} with their pages, versions, domains, forms and submissions, plus media files, integrations, roles and its audit trail. Its ${formatNumber(deleting.members)} member${deleting.members === 1 ? '' : 's'} keep their accounts. This cannot be undone.`
+            : ''
+        }
+        confirmLabel="Delete organization"
+        confirmText={deleting?.slug || undefined}
+        onConfirm={() => (deleting ? remove.mutateAsync(deleting) : undefined)}
       />
 
       <FlagOverridesSheet

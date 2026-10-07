@@ -38,6 +38,7 @@ function normalize(a: Partial<Analytics> | undefined): Analytics {
   const arr = <T,>(v: T[] | undefined): T[] => (Array.isArray(v) ? v : []);
   const t = a?.totals;
   return {
+    enabled: a?.enabled !== false,
     totals: { pageviews: t?.pageviews ?? 0, visitors: t?.visitors ?? 0, sessions: t?.sessions ?? 0, conversions: t?.conversions ?? 0, conversionRate: t?.conversionRate ?? 0 },
     series: arr(a?.series),
     topPages: arr(a?.topPages),
@@ -77,7 +78,11 @@ function AnalyticsInner({ websiteId }: { websiteId: string }) {
         <AnalyticsSkeleton />
       ) : (
         <div className={cn('space-y-4 transition-opacity', q.isFetching && q.isPlaceholderData && 'opacity-60')} aria-busy={q.isFetching}>
-          {empty && (
+          {q.data && q.data.enabled === false ? (
+            <Banner tone="info" icon={<Info />}>
+              Analytics is off for this organization, so no visits are recorded. Ask your platform administrator to turn it on.
+            </Banner>
+          ) : empty && (
             <Banner tone="info" icon={<Info />}>
               No visits recorded between these dates. Data appears once the site is published and receiving traffic.
             </Banner>

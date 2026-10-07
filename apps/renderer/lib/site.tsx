@@ -167,7 +167,7 @@ export function SiteDocument({ r, req, children }: { r: Resolution; req: SiteReq
           mode={ctx.mode}
           websiteId={ctx.websiteId}
           apiBaseUrl={ctx.apiBaseUrl}
-          analytics={settings.analytics.builtIn}
+          analytics={settings.analytics.builtIn && ctx.runtime?.analytics === true}
           consent={settings.cookieConsent}
           scripts={gated}
           routeKey={`${page.id}:${r.locale}`}

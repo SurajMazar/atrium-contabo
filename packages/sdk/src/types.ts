@@ -410,6 +410,8 @@ export interface ActivityItem {
 }
 
 export interface Analytics {
+  /** Built-in analytics is collected for this website's organization (super admins switch it). */
+  enabled: boolean;
   totals: { pageviews: number; visitors: number; sessions: number; conversions: number; conversionRate: number };
   series: Array<{ date: string; pageviews: number; visitors: number }>;
   topPages: Array<{ path: string; pageviews: number }>;

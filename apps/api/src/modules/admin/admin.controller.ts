@@ -11,13 +11,15 @@ import { ApiError, badRequest, conflict, notFound } from '../../common/errors';
 import { limitOf } from '../../common/http';
 import { PrismaService } from '../../common/prisma.service';
 import { QueueService } from '../../common/queue.service';
+import { revalidateWebsites } from '../../common/renderer-revalidate';
 import { ZodBody } from '../../common/zod.pipe';
+import { OrganizationDeletionService } from './organization-deletion.service';
 
 /** Platform administration. Every route requires isSuperAdmin and is audited. */
 @SuperAdminOnly()
 @Controller('admin')
 export class AdminController {
-  constructor(private readonly prisma: PrismaService, private readonly queues: QueueService, private readonly audit: AuditService, private readonly orgs: OrganizationsService, private readonly adminHosts: AdminHostsService) {}
+  constructor(private readonly prisma: PrismaService, private readonly queues: QueueService, private readonly audit: AuditService, private readonly orgs: OrganizationsService, private readonly adminHosts: AdminHostsService, private readonly deletion: OrganizationDeletionService) {}
 
   private get db() {
     return this.prisma.client;
@@ -47,7 +49,7 @@ export class AdminController {
       where: q.search ? { OR: [{ name: { contains: q.search, mode: 'insensitive' } }, { slug: { contains: q.search } }] } : {},
       include: { _count: { select: { members: true, websites: true } } }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: limit + 1, ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}),
     });
-    const items = rows.slice(0, limit).map((o) => ({ id: o.id, name: o.name, slug: o.slug, planKey: o.planKey, suspended: !!o.suspendedAt, featureFlags: o.featureFlags, members: o._count.members, websites: o._count.websites, adminHostname: o.adminHostname, createdAt: o.createdAt.toISOString() }));
+    const items = rows.slice(0, limit).map((o) => ({ id: o.id, name: o.name, slug: o.slug, planKey: o.planKey, suspended: !!o.suspendedAt, featureFlags: o.featureFlags, members: o._count.members, websites: o._count.websites, adminHostname: o.adminHostname, analyticsEnabled: o.analyticsEnabled, createdAt: o.createdAt.toISOString() }));
     return { items, nextCursor: rows.length > limit ? items[items.length - 1]!.id : null };
   }
 
@@ -121,16 +123,30 @@ export class AdminController {
   async updateOrganization(
     @Req() req: AppRequest,
     @Param('id') id: string,
-    @Body(new ZodBody(z.object({ name: z.string().trim().min(1).max(120).optional(), planKey: z.string().optional(), suspended: z.boolean().optional(), featureFlags: z.record(z.string(), z.boolean()).optional(), limits: z.record(z.string(), z.number()).nullable().optional(), adminHostname: z.string().max(253).nullable().optional() })))
-    b: { name?: string; planKey?: string; suspended?: boolean; featureFlags?: Record<string, boolean>; limits?: Record<string, number> | null; adminHostname?: string | null },
+    @Body(new ZodBody(z.object({ name: z.string().trim().min(1).max(120).optional(), planKey: z.string().optional(), suspended: z.boolean().optional(), featureFlags: z.record(z.string(), z.boolean()).optional(), limits: z.record(z.string(), z.number()).nullable().optional(), adminHostname: z.string().max(253).nullable().optional(), analyticsEnabled: z.boolean().optional() })))
+    b: { name?: string; planKey?: string; suspended?: boolean; featureFlags?: Record<string, boolean>; limits?: Record<string, number> | null; adminHostname?: string | null; analyticsEnabled?: boolean },
     @CurrentUser() user: AuthUser,
   ) {
     if (b.planKey && !(await this.db.plan.findUnique({ where: { key: b.planKey } }))) throw badRequest('Unknown plan');
     const adminHostname = b.adminHostname === undefined ? undefined : await this.validAdminHostname(id, b.adminHostname);
-    const o = await this.db.organization.update({ where: { id }, data: { name: b.name, planKey: b.planKey, featureFlags: b.featureFlags, limits: b.limits === null ? undefined : b.limits, suspendedAt: b.suspended === undefined ? undefined : b.suspended ? new Date() : null, adminHostname } });
+    const o = await this.db.organization.update({ where: { id }, data: { name: b.name, planKey: b.planKey, featureFlags: b.featureFlags, limits: b.limits === null ? undefined : b.limits, suspendedAt: b.suspended === undefined ? undefined : b.suspended ? new Date() : null, adminHostname, analyticsEnabled: b.analyticsEnabled } });
     if (adminHostname !== undefined) await this.adminHosts.refresh();
+    // Suspension takes the sites offline and the analytics switch changes their pages: drop cached copies.
+    if (b.suspended !== undefined || b.analyticsEnabled !== undefined) await revalidateWebsites((await this.db.website.findMany({ where: { organizationId: id }, select: { id: true } })).map((w) => w.id));
     await this.audit.log({ organizationId: id, actor: user, action: 'platform.organization_updated', resourceType: 'organization', resourceId: id, summary: `Super admin ${user.name} updated organization`, metadata: b, req });
-    return { id: o.id, name: o.name, planKey: o.planKey, suspended: !!o.suspendedAt, featureFlags: o.featureFlags, adminHostname: o.adminHostname };
+    return { id: o.id, name: o.name, planKey: o.planKey, suspended: !!o.suspendedAt, featureFlags: o.featureFlags, adminHostname: o.adminHostname, analyticsEnabled: o.analyticsEnabled };
+  }
+
+  /**
+   * Permanently delete a SUSPENDED organization and everything it owns (see OrganizationDeletionService).
+   * `confirmSlug` must repeat its slug. Accounts of its members are kept. The audit entry is platform
+   * level, because the organization's own audit trail is deleted with it.
+   */
+  @HttpCode(204)
+  @Delete('organizations/:id')
+  async deleteOrganization(@Req() req: AppRequest, @Param('id') id: string, @Body(new ZodBody(z.object({ confirmSlug: z.string().max(120) }))) b: { confirmSlug: string }, @CurrentUser() user: AuthUser) {
+    const gone = await this.deletion.delete(id, b.confirmSlug);
+    await this.audit.log({ actor: user, action: 'platform.organization_deleted', resourceType: 'organization', resourceId: id, summary: `Super admin ${user.name} permanently deleted organization ${gone.name}`, metadata: gone, req });
   }
 
   /**

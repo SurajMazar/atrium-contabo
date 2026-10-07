@@ -50,11 +50,12 @@ export class PublicService {
     if (host.endsWith(`.${platform}`)) slug = host.slice(0, -(platform.length + 1));
     else if (hostNoPort.endsWith(`.${platformNoPort}`)) slug = hostNoPort.slice(0, -(platformNoPort.length + 1));
     else if (!host.includes('.') && !host.includes(':')) slug = host;
-    if (slug) return this.db.website.findFirst({ where: { slug, deletedAt: null, status: { not: 'SUSPENDED' } } });
-    const domain = await this.db.domain.findUnique({ where: { hostname: hostNoPort }, include: { website: true } });
+    // A suspended organization's websites are offline, whichever address they are reached on.
+    if (slug) return this.db.website.findFirst({ where: { slug, deletedAt: null, status: { not: 'SUSPENDED' }, organization: { suspendedAt: null } } });
+    const domain = await this.db.domain.findUnique({ where: { hostname: hostNoPort }, include: { website: { include: { organization: { select: { suspendedAt: true } } } } } });
     // Only domains whose ownership was proven (TXT) and that point at us are served — an unverified claim
     // must never be able to take over a hostname (e.g. a dangling CNAME left by a former customer).
-    if (!domain || !domain.verifiedAt || domain.status !== 'active' || domain.website.deletedAt || domain.website.status === 'SUSPENDED') return null;
+    if (!domain || !domain.verifiedAt || domain.status !== 'active' || domain.website.deletedAt || domain.website.status === 'SUSPENDED' || domain.website.organization.suspendedAt) return null;
     return domain.website;
   }
 
@@ -97,8 +98,8 @@ export class PublicService {
   }
 
   async submit(formId: string, body: { values?: Record<string, unknown>; captchaToken?: string; _hp?: string; _ts?: number; pageUrl?: string; locale?: string } & Record<string, unknown>, meta: { ip?: string; userAgent?: string; referrer?: string; origin?: string }, files: UploadedPart[] = []) {
-    const row = await this.db.form.findFirst({ where: { id: formId, archivedAt: null }, include: { fields: true, rules: true, website: { select: { id: true, organizationId: true, status: true, deletedAt: true, slug: true, publishedVersionId: true, domains: { where: { verifiedAt: { not: null } }, select: { hostname: true } } } } } });
-    if (!row || row.website.deletedAt || row.website.status === 'SUSPENDED') throw notFound('Form');
+    const row = await this.db.form.findFirst({ where: { id: formId, archivedAt: null }, include: { fields: true, rules: true, website: { select: { id: true, organizationId: true, status: true, deletedAt: true, slug: true, publishedVersionId: true, organization: { select: { suspendedAt: true, analyticsEnabled: true } }, domains: { where: { verifiedAt: { not: null } }, select: { hostname: true } } } } } });
+    if (!row || row.website.deletedAt || row.website.status === 'SUSPENDED' || row.website.organization.suspendedAt) throw notFound('Form');
     const form: FormDefinition = FormDefinitionSchema.parse(formFromRow(row));
     const ipHash = meta.ip ? sha(`${meta.ip}|${env().ANALYTICS_SALT}`) : undefined;
     await this.rateLimit(`${formId}:${ipHash ?? 'anon'}`, form.settings.rateLimitPerMinute);
@@ -179,15 +180,18 @@ export class PublicService {
     });
     if (!isSpam) {
       await this.queues.add('formRules', 'form.process', { submissionId: submission.id }, { attempts: 3 });
-      await this.db.analyticsEvent.create({ data: { websiteId: row.websiteId, type: 'conversion', name: `form:${form.slug}`, path: safePath(body.pageUrl), visitorHash: ipHash ? sha(`${ipHash}|${dayStamp()}`) : 'anon', sessionHash: ipHash ? sha(`${ipHash}|${meta.userAgent}|${dayStamp()}`) : 'anon' } }).catch(() => undefined);
+      if (row.website.organization.analyticsEnabled) await this.db.analyticsEvent.create({ data: { websiteId: row.websiteId, type: 'conversion', name: `form:${form.slug}`, path: safePath(body.pageUrl), visitorHash: ipHash ? sha(`${ipHash}|${dayStamp()}`) : 'anon', sessionHash: ipHash ? sha(`${ipHash}|${meta.userAgent}|${dayStamp()}`) : 'anon' } }).catch(() => undefined);
     }
     return { ok: true, message: form.settings.successMessage, redirectUrl: form.settings.redirectUrl ?? null };
   }
 
-  /** Cookie-less, privacy-preserving analytics: daily-rotating salted hashes, no raw IPs. */
+  /**
+   * Cookie-less, privacy-preserving analytics: daily-rotating salted hashes, no raw IPs. Nothing is
+   * stored unless a super admin turned analytics on for the website's organization.
+   */
   async collect(body: { websiteId: string; type: string; path: string; referrer?: string; name?: string; props?: Record<string, unknown> }, meta: { ip?: string; userAgent?: string; country?: string; dnt?: boolean }) {
     if (meta.dnt) return;
-    const site = await this.db.website.findFirst({ where: { id: body.websiteId, deletedAt: null }, select: { id: true } });
+    const site = await this.db.website.findFirst({ where: { id: body.websiteId, deletedAt: null, organization: { analyticsEnabled: true, suspendedAt: null } }, select: { id: true } });
     if (!site) return;
     const ua = meta.userAgent ?? '';
     if (/bot|crawl|spider|slurp|preview|headless|lighthouse/i.test(ua)) return;

@@ -30,5 +30,5 @@ export function sampleDefinition(): WebsiteDefinition {
 }
 
 export function sampleSnapshot(definition = sampleDefinition()): SiteSnapshot {
-  return { websiteId: 'w_123', versionId: 'v_1', version: 3, publishedAt: '2026-10-01T00:00:00.000Z', apiBaseUrl: 'https://api.atrium.example', definition, runtime: { captcha: {} } };
+  return { websiteId: 'w_123', versionId: 'v_1', version: 3, publishedAt: '2026-10-01T00:00:00.000Z', apiBaseUrl: 'https://api.atrium.example', definition, runtime: { captcha: {}, analytics: false } };
 }

@@ -238,11 +238,12 @@ export function createAtriumClient(opts: AtriumClientOptions) {
       /** Add someone to any organization: new emails get an account, existing accounts an invitation. */
       addOrganizationMember: (orgId: string, body: { email: string; name: string; roleId: string; websiteIds?: string[]; password?: string }) =>
         http.post<{ mode: 'created' | 'invited'; email: string; password?: string }>(`/admin/organizations/${orgId}/members`, body),
-      updateOrganization: (id: string, body: { name?: string; planKey?: string; suspended?: boolean; featureFlags?: Record<string, boolean>; adminHostname?: string | null }) => http.patch<Record<string, unknown>>(`/admin/organizations/${id}`, body),
+      updateOrganization: (id: string, body: { name?: string; planKey?: string; suspended?: boolean; featureFlags?: Record<string, boolean>; adminHostname?: string | null; analyticsEnabled?: boolean }) => http.patch<Record<string, unknown>>(`/admin/organizations/${id}`, body),
       users: (query: { search?: string; cursor?: string } = {}) => http.get<T.List<Record<string, unknown>>>('/admin/users', q(query)),
       updateUser: (id: string, body: { disabled?: boolean; isSuperAdmin?: boolean }) => http.patch<Record<string, unknown>>(`/admin/users/${id}`, body),
       /** Permanently delete an account; `confirmEmail` must repeat its email address. */
       deleteUser: (id: string, confirmEmail: string) => http.delete(`/admin/users/${id}`, { body: { confirmEmail } }),
+      deleteOrganization: (id: string, confirmSlug: string) => http.delete(`/admin/organizations/${id}`, { body: { confirmSlug } }),
       websites: (query: { search?: string; cursor?: string } = {}) => http.get<T.List<Record<string, unknown>>>('/admin/websites', q(query)),
       jobs: () => http.get<Array<{ queue: string; counts: Record<string, number>; failed: Array<{ id: string; name: string; failedReason: string; attemptsMade: number; timestamp: number }> }>>('/admin/jobs'),
       retryJob: (queue: string, jobId: string) => http.post<void>(`/admin/jobs/${enc(queue)}/${enc(jobId)}/retry`),

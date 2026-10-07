@@ -78,7 +78,9 @@ export const SiteSnapshotSchema = z.object({
   runtime: z
     .object({
       captcha: z.record(z.string(), z.object({ provider: z.string(), siteKey: z.string() })).default({}),
+      /** Built-in visitor analytics is on for the organization (super admins switch it). */
+      analytics: z.boolean().default(false),
     })
-    .default({ captcha: {} }),
+    .default({ captcha: {}, analytics: false }),
 });
 export type SiteSnapshot = z.infer<typeof SiteSnapshotSchema>;

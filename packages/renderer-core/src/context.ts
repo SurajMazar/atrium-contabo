@@ -119,7 +119,7 @@ export function createRenderContext(opts: RenderOptions & CreateContextExtras, p
     scope,
     websiteId: opts.websiteId,
     apiBaseUrl: opts.apiBaseUrl?.replace(/\/+$/, ''),
-    runtime: opts.runtime ?? { captcha: {} },
+    runtime: opts.runtime ?? { captcha: {}, analytics: false },
     basePath,
     domain: opts.domain,
     collectionItem: opts.collectionItem,
