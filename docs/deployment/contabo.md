@@ -48,11 +48,10 @@ apt-get update && apt-get install -y docker-ce docker-ce-cli containerd.io docke
 install -d -m 750 /opt/atrium          # DEPLOY_DIR
 ```
 
-`/opt/atrium/.env` holds the production configuration (database, Redis, storage, SMTP, secrets). When
-you move an existing installation, copy its `.env`: `ENCRYPTION_KEY`, the `JWT_*` secrets and
+The `ATRIUM_ENV` secret holds the production configuration, and every deploy writes it to `/opt/atrium/.env` (mode 600). To change a setting (database, Redis, storage, SMTP, secrets), edit the secret and re-run the workflow. When
+you move an existing installation, paste its `.env`: `ENCRYPTION_KEY`, the `JWT_*` secrets and
 `RENDERER_SECRET` must stay the same, or stored provider credentials can't be decrypted and everyone is
-signed out. `DATABASE_URL`, `MIGRATE_DATABASE_URL` and `REDIS_URL` must be reachable from the VPS. Then
-run `chmod 600 /opt/atrium/.env`.
+signed out. `DATABASE_URL`, `MIGRATE_DATABASE_URL` and `REDIS_URL` must be reachable from the VPS.
 
 The pipeline writes `compose.yaml` and sets `ATRIUM_IMAGE_REGISTRY` and `ATRIUM_IMAGE_TAG` in `.env`;
 everything else in `.env` is yours. It keeps the previous files as `.env.bak` and `compose.yaml.bak`.
@@ -78,6 +77,7 @@ Settings → Environments → **contabo**:
 
 | Type | Name | Value |
 | --- | --- | --- |
+| secret | `ATRIUM_ENV` | the full production `.env` (written to `/opt/atrium/.env` on every deploy) |
 | secret | `DEPLOY_SSH_KEY` | contents of `~/.ssh/atrium_contabo_deploy` (private key) |
 | secret | `DEPLOY_SSH_KNOWN_HOSTS` | output of `ssh-keyscan -t ed25519 <VPS_IP>` |
 | variable | `DEPLOY_HOST` | VPS IP or host name |

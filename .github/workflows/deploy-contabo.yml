@@ -8,14 +8,17 @@
 #   deploy  → SSH into the VPS:
 #               1. sync infra/compose.prod.yaml → $DEPLOY_DIR/compose.yaml (app only: migrate, api, worker,
 #                  renderer, admin — PostgreSQL, Redis, storage, mail and the reverse proxy are your own);
-#               2. set ATRIUM_IMAGE_REGISTRY/ATRIUM_IMAGE_TAG in .env, log in to GHCR with this run's
-#                  short-lived token, pull;
+#               2. write $DEPLOY_DIR/.env from the ATRIUM_ENV secret (mode 600), set
+#                  ATRIUM_IMAGE_REGISTRY/ATRIUM_IMAGE_TAG in it, log in to GHCR with this run's short-lived
+#                  token, pull;
 #               3. `compose up -d` (migrate runs first), wait for the API health check, roll back to the
 #                  previous tag if it fails, log out of GHCR.
-# The server's .env (database, Redis, secrets…) is never written by CI except those two variables.
+# The production configuration lives in the ATRIUM_ENV secret: edit it in GitHub and redeploy to change
+# it. Without ATRIUM_ENV the .env already on the server is used.
 #
 # GitHub environment `contabo` (Settings → Environments):
-#   secrets  DEPLOY_SSH_KEY          private key allowed to log in as DEPLOY_USER
+#   secrets  ATRIUM_ENV              full contents of the production .env (database, Redis, secrets…)
+#            DEPLOY_SSH_KEY          private key allowed to log in as DEPLOY_USER
 #            DEPLOY_SSH_KNOWN_HOSTS  the server's host key line(s) (ssh-keyscan, fingerprint verified)
 #   vars     DEPLOY_HOST             server IP or host name
 #            DEPLOY_USER             SSH user (default: root)
@@ -198,14 +201,20 @@ jobs:
           chmod 600 ~/.ssh/config
           ssh vps true
 
-      - name: Upload compose file
+      - name: Upload .env and compose file
+        env:
+          ATRIUM_ENV: ${{ secrets.ATRIUM_ENV }}
         run: |
           set -euo pipefail
-          ssh vps bash -s -- "$DEPLOY_DIR" <<'SSH'
-            set -euo pipefail
-            DIR="$1"
-            [[ -f "$DIR/.env" ]] || { echo "::error::$DIR/.env is missing on the server (create it once; see docs/deployment/contabo.md)" >&2; exit 1; }
-          SSH
+          ssh vps "install -d -m 750 '$DEPLOY_DIR'"
+          if [[ -n "$ATRIUM_ENV" ]]; then
+            # Streamed over SSH stdin (never in argv or logs); written 0600 next to compose.yaml.
+            printf '%s\n' "$ATRIUM_ENV" | tr -d '\r' | ssh vps "umask 077 && cat > '$DEPLOY_DIR/.env.next'"
+            echo "uploaded .env from the ATRIUM_ENV secret"
+          else
+            ssh vps "test -f '$DEPLOY_DIR/.env'" || { echo "::error::Add the ATRIUM_ENV secret (contents of the production .env) to the contabo environment"; exit 1; }
+            echo "ATRIUM_ENV is not set — using the .env already on the server"
+          fi
           scp -q infra/compose.prod.yaml "vps:$DEPLOY_DIR/compose.yaml.next"
 
       - name: Pull images and roll out
@@ -229,11 +238,16 @@ jobs:
             compose() { "$ENGINE" compose "$@"; }
             setenv() { if grep -q "^$1=" .env; then sed -i "s|^$1=.*|$1=$2|" .env; else printf '%s=%s\n' "$1" "$2" >> .env; fi; }
 
-            PREV_TAG=$(sed -n 's/^ATRIUM_IMAGE_TAG=//p' .env | tail -1)
-            PREV_NS=$(sed -n 's/^ATRIUM_IMAGE_REGISTRY=//p' .env | tail -1)
-            cp -p .env ".env.bak"
+            PREV_TAG=""; PREV_NS=""
+            if [[ -f .env ]]; then
+              PREV_TAG=$(sed -n 's/^ATRIUM_IMAGE_TAG=//p' .env | tail -1)
+              PREV_NS=$(sed -n 's/^ATRIUM_IMAGE_REGISTRY=//p' .env | tail -1)
+              cp -p .env .env.bak
+            fi
             [[ -f compose.yaml ]] && cp -p compose.yaml compose.yaml.bak
             mv compose.yaml.next compose.yaml
+            [[ -f .env.next ]] && mv .env.next .env
+            chmod 600 .env
 
             setenv ATRIUM_IMAGE_REGISTRY "$NS"
             setenv ATRIUM_IMAGE_TAG "$TAG"
@@ -260,7 +274,7 @@ jobs:
             compose logs --tail 80 migrate api 2>&1 | tail -160 >&2 || true
             if [[ -n "$PREV_TAG" ]]; then
               echo "↺ rolling back to ${PREV_NS:-$NS}:$PREV_TAG" >&2
-              cp -p .env.bak .env
+              [[ -f .env.bak ]] && cp -p .env.bak .env
               [[ -f compose.yaml.bak ]] && cp -p compose.yaml.bak compose.yaml
               compose up -d --no-build api worker renderer admin || true
             fi
