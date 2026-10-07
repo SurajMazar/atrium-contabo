@@ -115,9 +115,13 @@ function useDocumentTitle(productName: string) {
  */
 export function BrandingProvider({ children }: { children: ReactNode }) {
   const api = useApi();
-  const { currentOrg, status, scopedWebsiteIds } = useSession();
+  const { currentOrg, status, scopedWebsiteIds, memberships, setCurrentOrg } = useSession();
   const pathname = usePathname();
   const { resolved: theme, setDefaultTheme } = useTheme();
+  // The admin's own hostname: an organization's admin domain (e.g. admin.example.com) resolves to that
+  // organization's branding before sign-in. Read after mount so server and client markup match.
+  const [host, setHost] = useState<string | null>(null);
+  useIsoLayoutEffect(() => setHost(window.location.hostname), []);
   const orgId = status === 'authenticated' ? (currentOrg?.id ?? null) : null;
   // Inside a website its own dashboard branding applies; someone who only manages one website sees
   // that website's branding everywhere (account pages included).
@@ -127,15 +131,24 @@ export function BrandingProvider({ children }: { children: ReactNode }) {
   useIsoLayoutEffect(() => setCached(readCache()), []);
 
   const q = useQuery({
-    queryKey: brandingQueryKey(orgId, websiteId),
-    queryFn: () => api.branding.get(orgId ?? undefined, websiteId ?? undefined),
+    queryKey: [...brandingQueryKey(orgId, websiteId), host ?? ''],
+    queryFn: () => api.branding.get(orgId ?? undefined, websiteId ?? undefined, host ?? undefined),
     // Don't fetch the platform-only branding while the session is still booting.
-    enabled: status !== 'loading',
+    enabled: status !== 'loading' && host !== null,
     staleTime: 5 * 60_000,
     placeholderData: keepPreviousData,
   });
 
   const branding = useMemo<AdminBranding>(() => q.data?.resolved ?? cached ?? mergeBranding(), [q.data, cached]);
+  const hostOrganization = q.data?.hostOrganization ?? null;
+
+  // On an organization's admin domain, members work in that organization by default.
+  const hostOrgApplied = useRef(false);
+  useEffect(() => {
+    if (hostOrgApplied.current || status !== 'authenticated' || !hostOrganization) return;
+    hostOrgApplied.current = true;
+    if (currentOrg?.id !== hostOrganization.id && memberships.some((m) => m.organization.id === hostOrganization.id)) setCurrentOrg(hostOrganization.id);
+  }, [status, hostOrganization, currentOrg?.id, memberships, setCurrentOrg]);
 
   const known = !!q.data || !!cached;
   useIsoLayoutEffect(() => {
@@ -151,7 +164,10 @@ export function BrandingProvider({ children }: { children: ReactNode }) {
     setDefaultTheme((branding.defaultTheme ?? DEFAULT_ADMIN_BRANDING.defaultTheme) as ThemePreference);
   }, [branding.defaultTheme, setDefaultTheme]);
 
-  const productName = branding.productName || DEFAULT_PRODUCT_NAME;
+  // An organization's admin domain without its own product name shows the organization's name
+  // (while signed out, or while working in that organization).
+  const hostName = hostOrganization && (status !== 'authenticated' || currentOrg?.id === hostOrganization.id) ? hostOrganization.name : '';
+  const productName = (q.data?.organization?.productName ? branding.productName : hostName || branding.productName) || DEFAULT_PRODUCT_NAME;
   useDocumentTitle(productName);
 
   const value = useMemo<BrandingValue>(

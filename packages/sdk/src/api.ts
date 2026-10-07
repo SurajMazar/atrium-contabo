@@ -238,7 +238,7 @@ export function createAtriumClient(opts: AtriumClientOptions) {
       /** Add someone to any organization: new emails get an account, existing accounts an invitation. */
       addOrganizationMember: (orgId: string, body: { email: string; name: string; roleId: string; websiteIds?: string[]; password?: string }) =>
         http.post<{ mode: 'created' | 'invited'; email: string; password?: string }>(`/admin/organizations/${orgId}/members`, body),
-      updateOrganization: (id: string, body: { name?: string; planKey?: string; suspended?: boolean; featureFlags?: Record<string, boolean> }) => http.patch<Record<string, unknown>>(`/admin/organizations/${id}`, body),
+      updateOrganization: (id: string, body: { name?: string; planKey?: string; suspended?: boolean; featureFlags?: Record<string, boolean>; adminHostname?: string | null }) => http.patch<Record<string, unknown>>(`/admin/organizations/${id}`, body),
       users: (query: { search?: string; cursor?: string } = {}) => http.get<T.List<Record<string, unknown>>>('/admin/users', q(query)),
       updateUser: (id: string, body: { disabled?: boolean; isSuperAdmin?: boolean }) => http.patch<Record<string, unknown>>(`/admin/users/${id}`, body),
       /** Permanently delete an account; `confirmEmail` must repeat its email address. */
@@ -266,7 +266,9 @@ export function createAtriumClient(opts: AtriumClientOptions) {
     },
     branding: {
       /** Public: platform defaults merged with an organization's overrides. */
-      get: (organizationId?: string, websiteId?: string) => http.get<{ platform: AdminBranding; organization: AdminBranding | null; website?: AdminBranding | null; resolved: AdminBranding }>('/branding', q({ organizationId, websiteId })),
+      /** `host`: the admin's own hostname — an organization's admin domain resolves to its branding before sign-in. */
+      get: (organizationId?: string, websiteId?: string, host?: string) =>
+        http.get<{ platform: AdminBranding; organization: AdminBranding | null; website?: AdminBranding | null; hostOrganization?: { id: string; name: string } | null; resolved: AdminBranding }>('/branding', q({ organizationId, websiteId, host })),
       /** Dashboard branding for one website (over the organization's): `inherited` is what applies without it. */
       website: (websiteId: string) => http.get<{ website: AdminBranding; inherited: AdminBranding; resolved: AdminBranding }>(`/websites/${websiteId}/branding`),
       saveWebsite: (websiteId: string, branding: AdminBranding) => http.put<{ website: AdminBranding; inherited: AdminBranding; resolved: AdminBranding }>(`/websites/${websiteId}/branding`, branding),

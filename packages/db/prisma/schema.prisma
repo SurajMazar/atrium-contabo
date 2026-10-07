@@ -6,9 +6,9 @@
 // provider config, rule definitions) — relational data stays relational.
 
 generator client {
-  provider     = "prisma-client"
-  output       = "../src/generated/prisma"
-  moduleFormat = "cjs"
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "cjs"
   importFileExtension = ""
 }
 
@@ -19,26 +19,26 @@ datasource db {
 // ───────────────────────────── Identity ─────────────────────────────
 
 model User {
-  id              String    @id @default(cuid())
-  email           String    @unique
-  name            String
-  avatarUrl       String?   @map("avatar_url")
-  passwordHash    String?   @map("password_hash")
-  emailVerifiedAt DateTime? @map("email_verified_at")
-  isSuperAdmin    Boolean   @default(false) @map("is_super_admin")
-  mfaEnabled      Boolean   @default(false) @map("mfa_enabled")
-  mfaSecretEnc    String?   @map("mfa_secret_enc")
-  mfaRecoveryEnc  String?   @map("mfa_recovery_enc")
+  id                     String    @id @default(cuid())
+  email                  String    @unique
+  name                   String
+  avatarUrl              String?   @map("avatar_url")
+  passwordHash           String?   @map("password_hash")
+  emailVerifiedAt        DateTime? @map("email_verified_at")
+  isSuperAdmin           Boolean   @default(false) @map("is_super_admin")
+  mfaEnabled             Boolean   @default(false) @map("mfa_enabled")
+  mfaSecretEnc           String?   @map("mfa_secret_enc")
+  mfaRecoveryEnc         String?   @map("mfa_recovery_enc")
   /// Last accepted TOTP time-step (replay protection).
-  mfaLastStep     Int?      @map("mfa_last_step")
+  mfaLastStep            Int?      @map("mfa_last_step")
   /// Account created by someone else with a password they know: the user must choose their own
   /// before anything else works (cleared by a password change or reset).
-  passwordChangeRequired Boolean @default(false) @map("password_change_required")
-  locale          String    @default("en")
-  lastLoginAt     DateTime? @map("last_login_at")
-  disabledAt      DateTime? @map("disabled_at")
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
+  passwordChangeRequired Boolean   @default(false) @map("password_change_required")
+  locale                 String    @default("en")
+  lastLoginAt            DateTime? @map("last_login_at")
+  disabledAt             DateTime? @map("disabled_at")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
 
   sessions      Session[]
   memberships   OrganizationMember[]
@@ -49,19 +49,19 @@ model User {
 }
 
 model Session {
-  id               String    @id @default(cuid())
-  userId           String    @map("user_id")
-  refreshTokenHash String    @unique @map("refresh_token_hash")
+  id                       String    @id @default(cuid())
+  userId                   String    @map("user_id")
+  refreshTokenHash         String    @unique @map("refresh_token_hash")
   /// Hash of the refresh token this session rotated away from (reuse detection).
-  previousRefreshTokenHash String? @unique @map("previous_refresh_token_hash")
-  rotatedAt        DateTime? @map("rotated_at")
-  userAgent        String?   @map("user_agent")
-  ip               String?
-  mfaVerified      Boolean   @default(false) @map("mfa_verified")
-  lastUsedAt       DateTime  @default(now()) @map("last_used_at")
-  expiresAt        DateTime  @map("expires_at")
-  revokedAt        DateTime? @map("revoked_at")
-  createdAt        DateTime  @default(now()) @map("created_at")
+  previousRefreshTokenHash String?   @unique @map("previous_refresh_token_hash")
+  rotatedAt                DateTime? @map("rotated_at")
+  userAgent                String?   @map("user_agent")
+  ip                       String?
+  mfaVerified              Boolean   @default(false) @map("mfa_verified")
+  lastUsedAt               DateTime  @default(now()) @map("last_used_at")
+  expiresAt                DateTime  @map("expires_at")
+  revokedAt                DateTime? @map("revoked_at")
+  createdAt                DateTime  @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -108,12 +108,12 @@ model UserToken {
 // ───────────────────────────── Tenancy & RBAC ─────────────────────────────
 
 model Plan {
-  key          String  @id
+  key          String   @id
   name         String
   limits       Json
   features     String[]
-  priceMonthly Int     @default(0) @map("price_monthly")
-  active       Boolean @default(true)
+  priceMonthly Int      @default(0) @map("price_monthly")
+  active       Boolean  @default(true)
 
   organizations Organization[]
 
@@ -121,27 +121,30 @@ model Plan {
 }
 
 model Organization {
-  id           String    @id @default(cuid())
-  name         String
-  slug         String    @unique
-  planKey      String    @default("starter") @map("plan_key")
-  featureFlags Json      @default("{}") @map("feature_flags")
+  id            String    @id @default(cuid())
+  name          String
+  slug          String    @unique
+  planKey       String    @default("starter") @map("plan_key")
+  featureFlags  Json      @default("{}") @map("feature_flags")
   /// White-label overrides for the admin (AdminBranding); merged over platform defaults.
-  branding     Json?
-  limits       Json?
-  billingRef   String?   @map("billing_ref")
-  suspendedAt  DateTime? @map("suspended_at")
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
+  branding      Json?
+  /// The organization's own admin address (e.g. admin.example.com): its sign-in page shows this
+  /// organization's branding and the API trusts it as a sign-in origin. Set by super admins.
+  adminHostname String?   @unique @map("admin_hostname")
+  limits        Json?
+  billingRef    String?   @map("billing_ref")
+  suspendedAt   DateTime? @map("suspended_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
 
-  plan        Plan                 @relation(fields: [planKey], references: [key])
-  members     OrganizationMember[]
-  roles       Role[]
-  invitations Invitation[]
-  workspaces  Workspace[]
-  websites    Website[]
-  media       Media[]
-  folders     MediaFolder[]
+  plan             Plan                 @relation(fields: [planKey], references: [key])
+  members          OrganizationMember[]
+  roles            Role[]
+  invitations      Invitation[]
+  workspaces       Workspace[]
+  websites         Website[]
+  media            Media[]
+  folders          MediaFolder[]
   emailProviders   EmailProvider[]
   smsProviders     SmsProvider[]
   storageProviders StorageProvider[]
@@ -260,28 +263,28 @@ enum DeploymentMode {
 }
 
 model Website {
-  id                 String         @id @default(cuid())
-  organizationId     String         @map("organization_id")
-  workspaceId        String?        @map("workspace_id")
-  name               String
+  id                      String         @id @default(cuid())
+  organizationId          String         @map("organization_id")
+  workspaceId             String?        @map("workspace_id")
+  name                    String
   /// Platform subdomain: {slug}.sites.example.com
-  slug               String         @unique
+  slug                    String         @unique
   /// White-label overrides for this website's dashboard (AdminBranding); merged over the organization's.
-  adminBranding      Json?          @map("admin_branding")
-  status             WebsiteStatus  @default(DRAFT)
-  deploymentMode     DeploymentMode @default(PLATFORM) @map("deployment_mode")
-  deploymentProvider String?        @map("deployment_provider")
-  deploymentIntegrationId String?   @map("deployment_integration_id")
+  adminBranding           Json?          @map("admin_branding")
+  status                  WebsiteStatus  @default(DRAFT)
+  deploymentMode          DeploymentMode @default(PLATFORM) @map("deployment_mode")
+  deploymentProvider      String?        @map("deployment_provider")
+  deploymentIntegrationId String?        @map("deployment_integration_id")
   /// Provider-side project name/id for independent deployments.
-  externalProject    String?        @map("external_project")
-  publishedVersionId String?        @unique @map("published_version_id")
-  defaultLocale      String         @default("en") @map("default_locale")
-  thumbnailUrl       String?        @map("thumbnail_url")
-  createdById        String?        @map("created_by_id")
-  updatedById        String?        @map("updated_by_id")
-  createdAt          DateTime       @default(now()) @map("created_at")
-  updatedAt          DateTime       @updatedAt @map("updated_at")
-  deletedAt          DateTime?      @map("deleted_at")
+  externalProject         String?        @map("external_project")
+  publishedVersionId      String?        @unique @map("published_version_id")
+  defaultLocale           String         @default("en") @map("default_locale")
+  thumbnailUrl            String?        @map("thumbnail_url")
+  createdById             String?        @map("created_by_id")
+  updatedById             String?        @map("updated_by_id")
+  createdAt               DateTime       @default(now()) @map("created_at")
+  updatedAt               DateTime       @updatedAt @map("updated_at")
+  deletedAt               DateTime?      @map("deleted_at")
 
   organization     Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   workspace        Workspace?       @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
@@ -356,9 +359,9 @@ model WebsiteVersion {
   createdById String?       @map("created_by_id")
   createdAt   DateTime      @default(now()) @map("created_at")
 
-  website       Website     @relation("WebsiteVersions", fields: [websiteId], references: [id], onDelete: Cascade)
-  publishedFor  Website?    @relation("PublishedVersion")
-  deployments   Deployment[]
+  website      Website      @relation("WebsiteVersions", fields: [websiteId], references: [id], onDelete: Cascade)
+  publishedFor Website?     @relation("PublishedVersion")
+  deployments  Deployment[]
 
   @@unique([websiteId, number])
   @@map("website_versions")
@@ -409,17 +412,17 @@ model Page {
 }
 
 model PageVersion {
-  id          String        @id @default(cuid())
-  pageId      String        @map("page_id")
-  number      Int
-  document    Json
-  title       String
-  slug        String
-  message     String?
-  source      VersionSource @default(MANUAL)
-  aiGenerationId String?    @map("ai_generation_id")
-  createdById String?       @map("created_by_id")
-  createdAt   DateTime      @default(now()) @map("created_at")
+  id             String        @id @default(cuid())
+  pageId         String        @map("page_id")
+  number         Int
+  document       Json
+  title          String
+  slug           String
+  message        String?
+  source         VersionSource @default(MANUAL)
+  aiGenerationId String?       @map("ai_generation_id")
+  createdById    String?       @map("created_by_id")
+  createdAt      DateTime      @default(now()) @map("created_at")
 
   page Page @relation(fields: [pageId], references: [id], onDelete: Cascade)
 
@@ -633,15 +636,15 @@ model Media {
 // ───────────────────────────── Forms ─────────────────────────────
 
 model Form {
-  id        String   @id @default(cuid())
-  websiteId String   @map("website_id")
-  name      String
-  slug      String
-  settings  Json
-  revision  Int      @default(1)
+  id         String    @id @default(cuid())
+  websiteId  String    @map("website_id")
+  name       String
+  slug       String
+  settings   Json
+  revision   Int       @default(1)
   archivedAt DateTime? @map("archived_at")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
 
   website     Website          @relation(fields: [websiteId], references: [id], onDelete: Cascade)
   fields      FormField[]
@@ -671,15 +674,15 @@ model FormField {
 }
 
 model FormRule {
-  id        String  @id @default(cuid())
-  formId    String  @map("form_id")
-  ruleId    String  @map("rule_id")
-  name      String
-  enabled   Boolean @default(true)
-  position  Int     @default(0)
-  when      Json?
-  then      Json
-  otherwise Json    @default("[]")
+  id             String  @id @default(cuid())
+  formId         String  @map("form_id")
+  ruleId         String  @map("rule_id")
+  name           String
+  enabled        Boolean @default(true)
+  position       Int     @default(0)
+  when           Json?
+  then           Json
+  otherwise      Json    @default("[]")
   stopProcessing Boolean @default(false) @map("stop_processing")
 
   form Form @relation(fields: [formId], references: [id], onDelete: Cascade)
@@ -729,13 +732,13 @@ model FormSubmission {
 }
 
 model SubmissionValue {
-  id           String @id @default(cuid())
-  submissionId String @map("submission_id")
-  fieldName    String @map("field_name")
-  fieldLabel   String @map("field_label")
-  fieldType    String @map("field_type")
+  id           String  @id @default(cuid())
+  submissionId String  @map("submission_id")
+  fieldName    String  @map("field_name")
+  fieldLabel   String  @map("field_label")
+  fieldType    String  @map("field_type")
   value        String?
-  valueJson    Json?  @map("value_json")
+  valueJson    Json?   @map("value_json")
 
   submission FormSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
 
@@ -938,23 +941,23 @@ enum DeploymentTarget {
 }
 
 model Deployment {
-  id           String           @id @default(cuid())
-  websiteId    String           @map("website_id")
-  versionId    String?          @map("version_id")
-  provider     String
-  target       DeploymentTarget
-  status       DeploymentStatus @default(QUEUED)
-  externalId   String?          @map("external_id")
-  url          String?
-  inspectorUrl String?          @map("inspector_url")
-  error        String?
-  logs         Json             @default("[]")
-  meta         Json             @default("{}")
-  rollbackOfId String?          @map("rollback_of_id")
-  triggeredById String?         @map("triggered_by_id")
-  startedAt    DateTime?        @map("started_at")
-  finishedAt   DateTime?        @map("finished_at")
-  createdAt    DateTime         @default(now()) @map("created_at")
+  id            String           @id @default(cuid())
+  websiteId     String           @map("website_id")
+  versionId     String?          @map("version_id")
+  provider      String
+  target        DeploymentTarget
+  status        DeploymentStatus @default(QUEUED)
+  externalId    String?          @map("external_id")
+  url           String?
+  inspectorUrl  String?          @map("inspector_url")
+  error         String?
+  logs          Json             @default("[]")
+  meta          Json             @default("{}")
+  rollbackOfId  String?          @map("rollback_of_id")
+  triggeredById String?          @map("triggered_by_id")
+  startedAt     DateTime?        @map("started_at")
+  finishedAt    DateTime?        @map("finished_at")
+  createdAt     DateTime         @default(now()) @map("created_at")
 
   website Website         @relation(fields: [websiteId], references: [id], onDelete: Cascade)
   version WebsiteVersion? @relation(fields: [versionId], references: [id], onDelete: SetNull)

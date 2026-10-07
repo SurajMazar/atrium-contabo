@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Put, Query } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
 import { AdminBrandingSchema, mergeBranding, type AdminBranding } from '@atrium/schema';
+import { organizationForAdminHost } from '../../common/admin-hosts';
 import { AuditService } from '../../common/audit.service';
 import { Access, CurrentAccess, CurrentUser, Public, SuperAdminOnly, type AccessContext, type AuthUser } from '../../common/decorators';
 import { PrismaService } from '../../common/prisma.service';
@@ -24,8 +25,11 @@ export class BrandingController {
   @Public()
   @SkipThrottle()
   @Get('branding')
-  async resolved(@Query('organizationId') organizationId?: string, @Query('websiteId') websiteId?: string) {
+  async resolved(@Query('organizationId') organizationId?: string, @Query('websiteId') websiteId?: string, @Query('host') host?: string) {
     const platform = await this.platform();
+    // On an organization's own admin hostname the sign-in page (no session yet) shows its branding.
+    const hostOrgId = organizationForAdminHost(host);
+    if (!organizationId && !websiteId && hostOrgId) organizationId = hostOrgId;
     let org: AdminBranding | undefined;
     let site: AdminBranding | undefined;
     if (websiteId) {
@@ -40,7 +44,12 @@ export class BrandingController {
       const o = await this.prisma.client.organization.findUnique({ where: { id: organizationId }, select: { branding: true } });
       org = o?.branding ? AdminBrandingSchema.parse(o.branding) : undefined;
     }
-    return { platform, organization: org ?? null, website: site ?? null, resolved: mergeBranding(platform, org, site) };
+    let hostOrganization: { id: string; name: string } | null = null;
+    if (hostOrgId) {
+      const o = await this.prisma.client.organization.findFirst({ where: { id: hostOrgId, suspendedAt: null }, select: { id: true, name: true } });
+      hostOrganization = o ?? null;
+    }
+    return { platform, organization: org ?? null, website: site ?? null, hostOrganization, resolved: mergeBranding(platform, org, site) };
   }
 
   private async orgLayers(websiteId: string) {

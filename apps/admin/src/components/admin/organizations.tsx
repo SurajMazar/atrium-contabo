@@ -40,7 +40,7 @@ import {
 } from '@atrium/ui';
 import { FEATURE_FLAGS } from '@atrium/schema';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Ban, Building2, CircleCheck, CreditCard, Flag, MoreHorizontal, Pencil, Plus, UserPlus } from 'lucide-react';
+import { Ban, Building2, CircleCheck, CreditCard, Flag, Globe, MoreHorizontal, Pencil, Plus, UserPlus } from 'lucide-react';
 import { useState } from 'react';
 import { Page } from '@/components/common/page';
 import { AddMemberDialog } from '@/components/team/add-member-dialog';
@@ -62,6 +62,7 @@ interface Org {
   createdAt: string;
   suspended: boolean;
   featureFlags: Record<string, boolean>;
+  adminHostname: string | null;
 }
 
 function toOrg(r: Row): Org {
@@ -77,6 +78,7 @@ function toOrg(r: Row): Org {
     createdAt: str(r.createdAt),
     suspended: bool(r.suspended) || !!r.suspendedAt,
     featureFlags: flags,
+    adminHostname: str(r.adminHostname) || null,
   };
 }
 
@@ -92,6 +94,7 @@ export function AdminOrganizations() {
   const [flagsFor, setFlagsFor] = useState<Org | null>(null);
   const [renaming, setRenaming] = useState<Org | null>(null);
   const [addingTo, setAddingTo] = useState<Org | null>(null);
+  const [domainFor, setDomainFor] = useState<Org | null>(null);
   const [newName, setNewName] = useState('');
 
   const orgs = list.items.map(toOrg).filter((o) => o.id);
@@ -131,6 +134,7 @@ export function AdminOrganizations() {
       />
       <CreateOrganizationAdminDialog open={createOpen} onOpenChange={setCreateOpen} />
       {addingTo && <AdminAddMember org={addingTo} onClose={() => setAddingTo(null)} />}
+      {domainFor && <AdminDomainDialog org={domainFor} onClose={() => setDomainFor(null)} />}
       <Dialog open={!!renaming} onOpenChange={(o) => !o && setRenaming(null)}>
         <DialogContent size="sm">
           <form
@@ -255,6 +259,9 @@ export function AdminOrganizations() {
                               }}
                             >
                               Rename…
+                            </DropdownMenuItem>
+                            <DropdownMenuItem icon={<Globe />} onSelect={() => setDomainFor(o)}>
+                              Admin domain…
                             </DropdownMenuItem>
                             <DropdownMenuItem icon={<Flag />} onSelect={() => setFlagsFor(o)}>
                               Feature overrides…
@@ -385,4 +392,58 @@ function AdminAddMember({ org, onClose }: { org: Org; onClose: () => void }) {
   const api = useApi();
   const roles = useQuery({ queryKey: ['admin', 'org-roles', org.id], queryFn: () => api.organizations.roles(org.id) });
   return <AddMemberDialog platform orgId={org.id} orgName={org.name} open onOpenChange={(o) => !o && onClose()} roles={roles.data ?? []} rolesLoading={roles.isPending} />;
+}
+
+/**
+ * The organization's own admin address (e.g. admin.example.com). Its sign-in page shows the
+ * organization's branding and the API trusts it as a sign-in origin. DNS, the reverse proxy and the
+ * certificate for the hostname are set up outside the app.
+ */
+function AdminDomainDialog({ org, onClose }: { org: Org; onClose: () => void }) {
+  const api = useApi();
+  const qc = useQueryClient();
+  const [value, setValue] = useState(org.adminHostname ?? '');
+  const [error, setError] = useState<string | null>(null);
+  const save = useMutation({
+    mutationFn: (adminHostname: string | null) => api.admin.updateOrganization(org.id, { adminHostname }),
+    onSuccess: (_r, host) => {
+      toast.success(host ? `${org.name} now signs in at ${host}` : `Admin domain removed from ${org.name}`);
+      void qc.invalidateQueries({ queryKey: adminPrefix('organizations') });
+      onClose();
+    },
+    onError: (err) => setError(errorMessage(err, 'Could not save the admin domain')),
+  });
+  const host = value.trim().toLowerCase();
+  return (
+    <Dialog open onOpenChange={(o) => !o && !save.isPending && onClose()}>
+      <DialogContent size="sm">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            setError(null);
+            save.mutate(host || null);
+          }}
+          className="flex min-h-0 flex-col"
+        >
+          <DialogHeader title="Admin domain" description={`A sign-in address for ${org.name}. Its login screen shows the organization's branding, and members land in this organization.`} />
+          <DialogBody className="space-y-3">
+            <Field label="Hostname" error={error ?? undefined} help="Leave empty to remove it.">
+              <Input value={value} onChange={(e) => (setValue(e.target.value), setError(null))} placeholder="admin.example.com" maxLength={253} autoFocus spellCheck={false} autoCapitalize="none" />
+            </Field>
+            <p className="text-xs text-fg-muted">
+              Point the hostname at this server (DNS), add it to the reverse proxy for the admin app with an HTTPS certificate. No restart is needed: sign-in on it is allowed as soon as you save.
+            </p>
+          </DialogBody>
+          <DialogFooter>
+            <Button size="sm" variant="ghost" type="button" onClick={onClose} disabled={save.isPending}>
+              Cancel
+            </Button>
+            <Button size="sm" variant="primary" type="submit" loading={save.isPending} disabled={host === (org.adminHostname ?? '')}>
+              Save
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
 }

@@ -8,6 +8,7 @@ import helmet from 'helmet';
 import { Logger } from 'nestjs-pino';
 import { env } from './config/env';
 import { AppModule } from './app.module';
+import { adminHostOrigins } from './common/admin-hosts';
 
 async function bootstrap() {
   const config = env();
@@ -35,7 +36,7 @@ async function bootstrap() {
     const origin = req.headers.origin;
     // Public endpoints are called from customer domains: any origin, no credentials.
     if (req.url?.startsWith('/v1/public/')) return cb(null, { origin: true, credentials: false, methods: ['GET', 'POST', 'OPTIONS'], maxAge: 86_400 });
-    cb(null, { origin: !origin || allow.has(origin), credentials: true, exposedHeaders: ['Content-Disposition', 'ETag'], maxAge: 600 });
+    cb(null, { origin: !origin || allow.has(origin) || adminHostOrigins().has(origin), credentials: true, exposedHeaders: ['Content-Disposition', 'ETag'], maxAge: 600 });
   });
 
   if (config.SWAGGER && config.NODE_ENV !== 'production') {

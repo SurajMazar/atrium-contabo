@@ -45,7 +45,8 @@ host, so one tenant's pages and scripts can never render under another tenant's 
 - **Bootstrap** creates the first super admin only for an unused `SEED_ADMIN_EMAIL`, or promotes an
   existing account only when its password is `SEED_ADMIN_PASSWORD`. An email match alone is never
   enough.
-- **Login CSRF**: the auth controller checks the browser `Origin` against the admin origin.
+- **Login CSRF**: the auth controller checks the browser `Origin` against the admin origin, `CORS_ORIGINS`
+  and organization admin domains (set only by super admins; platform and website hostnames are refused).
 - **Query tokens**: accepted only on routes marked `@AllowQueryToken` (downloads, SSE tickets),
   and stripped from logs.
 

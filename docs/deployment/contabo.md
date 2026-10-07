@@ -140,3 +140,18 @@ migrated schema.
 | `.env is missing on the server` | create `$DEPLOY_DIR/.env` (see above) |
 | `denied` while pulling from ghcr.io | the packages must stay linked to `atrium-contabo` (Package settings → Manage Actions access) |
 | health check fails, rolled back | the job prints the `migrate`/`api` logs; on the server: `cd /opt/atrium && docker compose logs api` |
+
+## Organization admin domains (white-label sign-in)
+
+An organization can have its own admin address, for example `admin.leelagarden.com.np`. Its sign-in page
+shows that organization's branding (Organization → Branding: logo, colours, product name, login headline
+and image), and members who sign in there work in that organization.
+
+1. DNS: an A record for the hostname → the VPS (DNS only).
+2. Certificate: `certbot certonly --webroot -w /var/www/letsencrypt --cert-name <name> -d <hostname>`.
+3. nginx: a server block that proxies the hostname to the admin (`127.0.0.1:3000`), with the same upload
+   rules as `admin.sites…` (see `/etc/nginx/atrium-domains/leelagarden-admin.conf`).
+4. Super admin → Organizations → ⋯ → **Admin domain…** → enter the hostname.
+
+Step 4 also makes the API trust the hostname as a sign-in origin, so `CORS_ORIGINS` does not need to change.
+Platform hostnames, website domains and another organization's admin domain are refused.

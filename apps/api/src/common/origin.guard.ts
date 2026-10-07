@@ -1,12 +1,14 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import type { Request } from 'express';
 import { env } from '../config/env';
+import { adminHostOrigins } from './admin-hosts';
 import { forbidden } from './errors';
 
-/** Origins allowed to drive cookie-based auth (the admin app and configured CORS origins). */
+/** Origins allowed to drive cookie-based auth (the admin app, configured CORS origins and organization admin hostnames). */
 export function trustedOrigins(): Set<string> {
   const e = env();
   const out = new Set(e.CORS_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean));
+  for (const o of adminHostOrigins()) out.add(o);
   try {
     out.add(new URL(e.ADMIN_URL).origin);
   } catch {

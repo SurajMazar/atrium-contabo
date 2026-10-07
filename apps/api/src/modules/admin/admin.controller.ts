@@ -1,11 +1,13 @@
 import { Body, Controller, Get, HttpCode, Param, Patch, Post, Put, Query, Req, Delete } from '@nestjs/common';
 import { z } from 'zod';
 import * as argon2 from 'argon2';
+import { AdminHostsService } from '../../common/admin-hosts';
 import { AuditService } from '../../common/audit.service';
+import { env } from '../../config/env';
 import { assertPasswordStrength, generatePassword } from '../../common/passwords';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { CurrentUser, SuperAdminOnly, type AppRequest, type AuthUser } from '../../common/decorators';
-import { ApiError, badRequest, notFound } from '../../common/errors';
+import { ApiError, badRequest, conflict, notFound } from '../../common/errors';
 import { limitOf } from '../../common/http';
 import { PrismaService } from '../../common/prisma.service';
 import { QueueService } from '../../common/queue.service';
@@ -15,7 +17,7 @@ import { ZodBody } from '../../common/zod.pipe';
 @SuperAdminOnly()
 @Controller('admin')
 export class AdminController {
-  constructor(private readonly prisma: PrismaService, private readonly queues: QueueService, private readonly audit: AuditService, private readonly orgs: OrganizationsService) {}
+  constructor(private readonly prisma: PrismaService, private readonly queues: QueueService, private readonly audit: AuditService, private readonly orgs: OrganizationsService, private readonly adminHosts: AdminHostsService) {}
 
   private get db() {
     return this.prisma.client;
@@ -45,7 +47,7 @@ export class AdminController {
       where: q.search ? { OR: [{ name: { contains: q.search, mode: 'insensitive' } }, { slug: { contains: q.search } }] } : {},
       include: { _count: { select: { members: true, websites: true } } }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: limit + 1, ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}),
     });
-    const items = rows.slice(0, limit).map((o) => ({ id: o.id, name: o.name, slug: o.slug, planKey: o.planKey, suspended: !!o.suspendedAt, featureFlags: o.featureFlags, members: o._count.members, websites: o._count.websites, createdAt: o.createdAt.toISOString() }));
+    const items = rows.slice(0, limit).map((o) => ({ id: o.id, name: o.name, slug: o.slug, planKey: o.planKey, suspended: !!o.suspendedAt, featureFlags: o.featureFlags, members: o._count.members, websites: o._count.websites, adminHostname: o.adminHostname, createdAt: o.createdAt.toISOString() }));
     return { items, nextCursor: rows.length > limit ? items[items.length - 1]!.id : null };
   }
 
@@ -116,11 +118,44 @@ export class AdminController {
   }
 
   @Patch('organizations/:id')
-  async updateOrganization(@Req() req: AppRequest, @Param('id') id: string, @Body(new ZodBody(z.object({ name: z.string().trim().min(1).max(120).optional(), planKey: z.string().optional(), suspended: z.boolean().optional(), featureFlags: z.record(z.string(), z.boolean()).optional(), limits: z.record(z.string(), z.number()).nullable().optional() }))) b: { name?: string; planKey?: string; suspended?: boolean; featureFlags?: Record<string, boolean>; limits?: Record<string, number> | null }, @CurrentUser() user: AuthUser) {
+  async updateOrganization(
+    @Req() req: AppRequest,
+    @Param('id') id: string,
+    @Body(new ZodBody(z.object({ name: z.string().trim().min(1).max(120).optional(), planKey: z.string().optional(), suspended: z.boolean().optional(), featureFlags: z.record(z.string(), z.boolean()).optional(), limits: z.record(z.string(), z.number()).nullable().optional(), adminHostname: z.string().max(253).nullable().optional() })))
+    b: { name?: string; planKey?: string; suspended?: boolean; featureFlags?: Record<string, boolean>; limits?: Record<string, number> | null; adminHostname?: string | null },
+    @CurrentUser() user: AuthUser,
+  ) {
     if (b.planKey && !(await this.db.plan.findUnique({ where: { key: b.planKey } }))) throw badRequest('Unknown plan');
-    const o = await this.db.organization.update({ where: { id }, data: { name: b.name, planKey: b.planKey, featureFlags: b.featureFlags, limits: b.limits === null ? undefined : b.limits, suspendedAt: b.suspended === undefined ? undefined : b.suspended ? new Date() : null } });
+    const adminHostname = b.adminHostname === undefined ? undefined : await this.validAdminHostname(id, b.adminHostname);
+    const o = await this.db.organization.update({ where: { id }, data: { name: b.name, planKey: b.planKey, featureFlags: b.featureFlags, limits: b.limits === null ? undefined : b.limits, suspendedAt: b.suspended === undefined ? undefined : b.suspended ? new Date() : null, adminHostname } });
+    if (adminHostname !== undefined) await this.adminHosts.refresh();
     await this.audit.log({ organizationId: id, actor: user, action: 'platform.organization_updated', resourceType: 'organization', resourceId: id, summary: `Super admin ${user.name} updated organization`, metadata: b, req });
-    return { id: o.id, name: o.name, planKey: o.planKey, suspended: !!o.suspendedAt, featureFlags: o.featureFlags };
+    return { id: o.id, name: o.name, planKey: o.planKey, suspended: !!o.suspendedAt, featureFlags: o.featureFlags, adminHostname: o.adminHostname };
+  }
+
+  /**
+   * An organization's own admin address. It becomes a trusted sign-in origin, so it must be a plain
+   * hostname that is not one of the platform's own hosts, a published site domain or another
+   * organization's admin address. `null` / empty clears it.
+   */
+  private async validAdminHostname(orgId: string, raw: string | null): Promise<string | null> {
+    const host = (raw ?? '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/\.$/, '');
+    if (!host) return null;
+    if (!/^(?=.{4,253}$)(?!-)([a-z0-9-]{1,63}(?<!-)\.)+[a-z]{2,63}$/.test(host)) throw badRequest('Enter a hostname such as admin.example.com', { field: 'adminHostname' });
+    const platform = new Set<string>();
+    for (const u of [env().ADMIN_URL, env().API_URL, env().RENDERER_URL, env().PREVIEW_URL]) {
+      try {
+        platform.add(new URL(u).hostname.toLowerCase());
+      } catch {
+        /* unset */
+      }
+    }
+    const sites = env().PLATFORM_SITES_DOMAIN?.toLowerCase().split(':')[0];
+    if (platform.has(host) || (sites && (host === sites || host.endsWith(`.${sites}`)))) throw badRequest('That hostname belongs to the platform itself', { field: 'adminHostname' });
+    if (await this.db.domain.findFirst({ where: { hostname: host } })) throw conflict('That hostname is connected to a website', { field: 'adminHostname' });
+    const taken = await this.db.organization.findFirst({ where: { adminHostname: host, id: { not: orgId } }, select: { id: true } });
+    if (taken) throw conflict('Another organization already uses that admin hostname', { field: 'adminHostname' });
+    return host;
   }
 
   @Get('users')
