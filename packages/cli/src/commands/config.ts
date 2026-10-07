@@ -11,14 +11,18 @@ const VALIDATORS: Record<string, (v: string) => string | undefined> = {
     assessSecret('ENCRYPTION_KEY', v).reason === 'wrong-length'
       ? 'must be 32 random bytes, base64-encoded'
       : undefined,
+  R2_JURISDICTION: (v) =>
+    ['default', 'eu', 'fedramp'].includes(v) ? undefined : 'must be default | eu | fedramp',
+  R2_ACCOUNT_ID: (v) =>
+    /^[a-fA-F0-9]{32}$/.test(v) ? undefined : 'must be the 32-character Cloudflare account ID',
   NODE_ENV: (v) =>
     ['development', 'production', 'test'].includes(v)
       ? undefined
       : 'must be development | production | test',
   STORAGE_DRIVER: (v) =>
-    ['local', 's3', 'azure-blob'].includes(v)
+    ['local', 's3', 'r2', 'azure-blob'].includes(v)
       ? undefined
-      : 'must be s3 | local | azure-blob (R2, MinIO, SeaweedFS, Spaces… use s3)',
+      : 'must be s3 | r2 | local | azure-blob (MinIO, SeaweedFS, Spaces, B2… use s3)',
 };
 for (const k of [
   'API_PORT',

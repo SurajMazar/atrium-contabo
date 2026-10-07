@@ -13,7 +13,7 @@ import { ProviderList } from './provider-list';
 const ENV_HINT: Record<PlatformProviderKind, string> = {
   email: 'SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASSWORD / MAIL_FROM',
   sms: '—',
-  storage: 'STORAGE_DRIVER / S3_* / AZURE_STORAGE_* (local disk otherwise)',
+  storage: 'STORAGE_DRIVER / S3_* / R2_* / AZURE_STORAGE_* (local disk otherwise)',
   ai: 'ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY',
 };
 

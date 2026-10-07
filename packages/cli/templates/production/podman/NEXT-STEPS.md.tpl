@@ -14,7 +14,7 @@ Generated {{generatedAt}} by `atrium setup production --target {{target}}`. Full
 ## 2. Configure
 - `compose.yaml` runs **only the application** (migrate, api, worker, renderer, admin). Point `.env` at
   your own services: `DATABASE_URL` + `MIGRATE_DATABASE_URL` (PostgreSQL), `REDIS_URL`, storage
-  (`STORAGE_DRIVER=local` or `S3_*`) and `SMTP_*`, and put your reverse proxy in front of
+  (`STORAGE_DRIVER=local`, `r2` with `R2_*`, or `s3` with `S3_*`) and `SMTP_*`, and put your reverse proxy in front of
   127.0.0.1:3000 (admin), :4000 (api) and :3001 (sites). Bundled Caddy, PostgreSQL, Redis and SeaweedFS
   are in `compose.yaml`, commented out — uncomment a service with its `depends_on` entries and volume.
 - The API adds missing reference data, built-in roles and the first super admin (SEED_ADMIN_EMAIL /

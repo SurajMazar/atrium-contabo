@@ -150,8 +150,8 @@ export interface ProductionOptions {
   domain: string;
   /** Where tenant sites live ({slug}.<sitesDomain>); default sites.<domain>. May equal <domain>. */
   sitesDomain?: string;
-  /** Platform storage: S3-compatible (default) or the server's disk (single-node only). */
-  storage?: 's3' | 'local';
+  /** Platform storage: S3-compatible (default), Cloudflare R2, or the server's disk (single-node only). */
+  storage?: 's3' | 'r2' | 'local';
   email: string;
   registry: string;
   tag: string;
@@ -247,7 +247,7 @@ export function buildProductionEnv(example: EnvFile, vars: TemplateVars, mode: E
     set(k, generateSecret(k));
   set('SEED_ADMIN_EMAIL', String(vars.acmeEmail));
   set('MAIL_FROM', `Atrium <no-reply@${d}>`);
-  set('STORAGE_DRIVER', vars.storage === 'local' ? 'local' : 's3');
+  set('STORAGE_DRIVER', vars.storage === 'local' || vars.storage === 'r2' ? vars.storage : 's3');
   if (vars.storage === 'local') {
     // Files on the server's disk (api-storage volume shared by api + worker), served by the API.
     set('LOCAL_STORAGE_DIR', '/app/apps/api/storage');
@@ -301,6 +301,15 @@ export function buildProductionEnv(example: EnvFile, vars: TemplateVars, mode: E
     set('S3_ACCESS_KEY_ID', MANAGED_PLACEHOLDER);
     set('S3_SECRET_ACCESS_KEY', MANAGED_PLACEHOLDER);
     set('S3_FORCE_PATH_STYLE', 'false');
+  }
+  if (vars.storage === 'r2') {
+    // Cloudflare R2: fill these in from the dashboard (R2 → Account details / Manage API tokens).
+    set('R2_ACCOUNT_ID', MANAGED_PLACEHOLDER);
+    set('R2_BUCKET', 'atrium-media');
+    set('R2_ACCESS_KEY_ID', MANAGED_PLACEHOLDER);
+    set('R2_SECRET_ACCESS_KEY', MANAGED_PLACEHOLDER);
+    set('R2_PUBLIC_URL', `https://${vars.mediaHost}`);
+    set('R2_JURISDICTION', 'default');
   }
   set('SMTP_HOST', `smtp.${MANAGED_PLACEHOLDER}.example`);
   set('SMTP_PORT', '587');

@@ -15,6 +15,7 @@ import {
 } from '@atrium/providers';
 import type { PrismaClient } from '@atrium/db';
 import { decryptJson, deriveSecret, encryptJson } from './crypto';
+import { R2_REQUIRED_ENV } from './env';
 
 // ───────────────────────────── Row shapes (subset of Prisma models) ─────────────────────────────
 
@@ -341,8 +342,25 @@ export class ProviderResolver {
 
   platformStorage(): Resolved<StorageProvider> {
     const env = this.env;
-    const driver = (env.STORAGE_DRIVER || 'local') as 's3' | 'local' | 'azure-blob';
+    const driver = (env.STORAGE_DRIVER || 'local') as 's3' | 'r2' | 'local' | 'azure-blob';
     const provider = this.cached(`storage:platform:${driver}`, null, () => {
+      if (driver === 'r2') {
+        const missing = R2_REQUIRED_ENV.filter((k) => !env[k]);
+        if (missing.length) throw new ProviderError(`STORAGE_DRIVER=r2 requires ${missing.join(', ')}`, 'resolver', false);
+        return instantiateProvider(
+          'storage',
+          'r2',
+          {
+            accountId: env.R2_ACCOUNT_ID,
+            bucket: env.R2_BUCKET,
+            jurisdiction: env.R2_JURISDICTION || 'default',
+            accessKeyId: env.R2_ACCESS_KEY_ID,
+            publicUrl: env.R2_PUBLIC_URL,
+          },
+          { secretAccessKey: env.R2_SECRET_ACCESS_KEY },
+          this.platformContext(),
+        );
+      }
       if (driver === 's3') {
         if (!env.S3_BUCKET) throw new ProviderError('STORAGE_DRIVER=s3 requires S3_BUCKET', 'resolver', false);
         return instantiateProvider(

@@ -241,7 +241,7 @@ export function registerSetup(program: Command) {
       'base domain; produces admin.<d>, api.<d>, *.sites.<d>, media.<d>',
     )
     .option('--sites-domain <domain>', 'domain for tenant sites ({slug}.<sites-domain>); default sites.<domain>. Use the base domain itself to put everything under one root')
-    .option('--storage <driver>', 'platform storage: s3 (default) or local (server disk, single node)', 's3')
+    .option('--storage <driver>', 'platform storage: s3 (default), r2 (Cloudflare R2) or local (server disk, single node)', 's3')
     .option('--email <email>', 'ACME / super-admin email (default admin@<domain>)')
     .option('--registry <registry>', 'container registry/namespace for images', 'ghcr.io/your-org')
     .option('--tag <tag>', 'image tag', 'latest')
@@ -307,7 +307,7 @@ export function registerSetup(program: Command) {
             target,
             domain: domain!,
             sitesDomain: opts.sitesDomain,
-            storage: opts.storage === 'local' ? 'local' : 's3',
+            storage: opts.storage === 'local' || opts.storage === 'r2' ? opts.storage : 's3',
             email: opts.email ?? `admin@${domain}`,
             registry: opts.registry,
             tag: opts.tag,

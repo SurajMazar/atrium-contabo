@@ -103,7 +103,7 @@ export const PLATFORM_SCOPE = 'platform';
 export const PLATFORM_KINDS: KindMeta[] = [
   { ...KINDS[0]!, platform: true, scoped: false, emptyTitle: 'Using environment SMTP', emptyDescription: 'Password resets, invitations and organizations without their own mailer send through this provider. Until you add one, SMTP_* environment variables are used.' },
   { ...KINDS[1]!, platform: true, scoped: false, emptyTitle: 'No platform SMS provider', emptyDescription: 'A shared SMS gateway for organizations that have not connected their own. Without one, SMS form actions stay inactive.' },
-  { ...KINDS[2]!, platform: true, scoped: false, emptyTitle: 'Using environment storage', emptyDescription: 'Where uploads go for organizations without their own bucket. Until you add one, STORAGE_DRIVER / S3_* environment variables (or the local disk) are used.' },
+  { ...KINDS[2]!, platform: true, scoped: false, emptyTitle: 'Using environment storage', emptyDescription: 'Where uploads go for organizations without their own bucket. Until you add one, STORAGE_DRIVER with S3_* / R2_* environment variables (or the local disk) are used.' },
   { ...KINDS[3]!, platform: true, scoped: false, toggleable: true, emptyTitle: 'No platform AI key', emptyDescription: 'A shared Claude, OpenAI or Gemini key that powers AI generation and editing for every organization that has not connected its own. Usage counts against each plan’s AI credits.' },
 ];
 

@@ -109,6 +109,16 @@ describe('ProviderResolver', () => {
     await expect(prodOrg.storage({ organizationId: 'org1' })).rejects.toThrow(/not available for organization storage in production/);
   });
 
+  it('storage: STORAGE_DRIVER=r2 builds the R2 driver from R2_*', async () => {
+    const env = { STORAGE_DRIVER: 'r2', R2_ACCOUNT_ID: 'f'.repeat(32), R2_BUCKET: 'atrium-media', R2_ACCESS_KEY_ID: 'AKID', R2_SECRET_ACCESS_KEY: 'secret', R2_PUBLIC_URL: 'https://media.example.com', ENCRYPTION_KEY: process.env.ENCRYPTION_KEY };
+    const s = await new ProviderResolver(prisma({}), { env }).storage();
+    expect(s).toMatchObject({ source: 'platform', driver: 'r2' });
+    expect(s.provider.getPublicUrl('media/a.png')).toBe('https://media.example.com/media/a.png');
+    expect(new URL(await s.provider.getSignedUrl('private/a.pdf')).host).toBe(`${'f'.repeat(32)}.r2.cloudflarestorage.com`);
+    const { R2_PUBLIC_URL: _omit, ...incomplete } = env;
+    expect(() => new ProviderResolver(prisma({}), { env: incomplete }).platformStorage()).toThrow(/STORAGE_DRIVER=r2 requires R2_PUBLIC_URL/);
+  });
+
   it('tenant rows are public-only; platform (env) providers are trusted', async () => {
     const prev = process.env.OUTBOUND_ALLOW_PRIVATE;
     process.env.OUTBOUND_ALLOW_PRIVATE = 'false';
@@ -241,6 +251,8 @@ describe('logger + env', () => {
     expect(() => loadEnv({ source: { DATABASE_URL: 'x' }, required: ['ENCRYPTION_KEY'] })).toThrow(/ENCRYPTION_KEY is required/);
     expect(() => loadEnv({ source: { DATABASE_URL: 'x', ENCRYPTION_KEYS: 'a:b' }, required: ['ENCRYPTION_KEY'] })).not.toThrow();
     expect(boolish(true).parse(undefined)).toBe(true);
+    expect(() => loadEnv({ source: { DATABASE_URL: 'x', STORAGE_DRIVER: 'r2', R2_BUCKET: 'b' } })).toThrow(/R2_ACCOUNT_ID is required with STORAGE_DRIVER=r2/);
+    expect(() => loadEnv({ source: { DATABASE_URL: 'x', STORAGE_DRIVER: 'r2', R2_JURISDICTION: 'apac' } })).toThrow(/R2_JURISDICTION/);
   });
 });
 

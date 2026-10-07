@@ -151,7 +151,11 @@ describe('recaptcha v3', () => {
 
 describe('registry', () => {
   it('lists and describes drivers per kind', () => {
-    expect(DRIVERS.storage.map((d) => d.id)).toEqual(['local', 's3', 'azure-blob']);
+    expect(DRIVERS.storage.map((d) => d.id)).toEqual(['local', 's3', 'r2', 'azure-blob']);
+    // The admin form renders R2 fields from the JSON Schema (titles, help, jurisdiction labels).
+    const r2 = describeDrivers('storage').find((d) => d.id === 'r2')!;
+    expect(r2.config).toMatchObject({ required: expect.arrayContaining(['accountId', 'bucket', 'accessKeyId', 'publicUrl']), properties: { accountId: { title: 'Account ID' }, jurisdiction: { enum: ['default', 'eu', 'fedramp'], enumNames: ['Default', 'European Union (EU)', 'FedRAMP'] } } });
+    expect(r2.secrets).toMatchObject({ required: ['secretAccessKey'] });
     expect(DRIVERS.email.map((d) => d.id)).toEqual(['smtp', 'resend', 'mailgun', 'sendgrid', 'postmark']);
     expect(DRIVERS.sms.map((d) => d.id)).toEqual(['twilio', 'vonage', 'aws-sns', 'http', 'sparrow', 'aakash']);
     expect(DRIVERS.ai.map((d) => d.id)).toEqual(['anthropic', 'openai', 'gemini']);

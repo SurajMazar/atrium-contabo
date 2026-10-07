@@ -11,7 +11,7 @@
 # Env:   DATABASE_URL (required), BACKUP_DIR (default ./backups), KEEP (default 14),
 #        PG_CONTAINER (use `podman/docker exec` into this container instead of local pg_dump),
 #        BACKUP_S3_URI (optional, e.g. s3://my-backups/atrium — uploaded with the aws CLI),
-#        STORAGE_DRIVER/S3_* or LOCAL_STORAGE_DIR (for --with-files).
+#        STORAGE_DRIVER/S3_* (or R2_*) or LOCAL_STORAGE_DIR (for --with-files).
 # Restore: gunzip -c database.sql.gz | psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction
 set -euo pipefail
 
@@ -69,6 +69,12 @@ if [[ "$WITH_FILES" == 1 ]]; then
     [[ -d "$SRC" ]] && tar -cf "$TMP/local.tar" -C "$SRC" .
   else
     command -v aws >/dev/null 2>&1 || { echo "aws CLI is required for --with-files with S3 storage (or use \`atrium backup --with-files\`)" >&2; exit 1; }
+    if [[ "${STORAGE_DRIVER}" == "r2" ]]; then
+      # Cloudflare R2: the S3 endpoint is derived from the account id (+ jurisdiction).
+      J="${R2_JURISDICTION:-default}"; [[ "$J" == "default" ]] && J="" || J="$J."
+      S3_BUCKET="${R2_BUCKET:-}" S3_ENDPOINT="https://${R2_ACCOUNT_ID:-}.${J}r2.cloudflarestorage.com" S3_REGION=auto
+      S3_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID:-}" S3_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY:-}"
+    fi
     log "syncing s3://${S3_BUCKET} (${S3_ENDPOINT:-aws})"
     AWS_ACCESS_KEY_ID="${S3_ACCESS_KEY_ID:-}" AWS_SECRET_ACCESS_KEY="${S3_SECRET_ACCESS_KEY:-}" AWS_DEFAULT_REGION="${S3_REGION:-us-east-1}" \
       aws ${S3_ENDPOINT:+--endpoint-url "$S3_ENDPOINT"} s3 sync "s3://${S3_BUCKET}" "$TMP/objects" --only-show-errors

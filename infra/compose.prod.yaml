@@ -10,7 +10,8 @@
 # Bring your own services (set in .env):
 #   PostgreSQL 15+   DATABASE_URL (app role) + MIGRATE_DATABASE_URL (owner role, migrations only)
 #   Redis 7+         REDIS_URL (maxmemory-policy noeviction — BullMQ queues)
-#   Storage          STORAGE_DRIVER=local (api-storage volume, served by the API) or S3_* for S3/R2/B2/…
+#   Storage          STORAGE_DRIVER=local (api-storage volume, served by the API), r2 (Cloudflare R2, R2_*)
+#                    or s3 (S3_* for AWS S3, B2, Spaces, MinIO…)
 #   Email            SMTP_* (or configure it later in the super-admin panel → Providers)
 #   HTTPS / proxy    your reverse proxy → admin 127.0.0.1:3000, api 127.0.0.1:4000, renderer 127.0.0.1:3001
 #                    (ATRIUM_BIND=0.0.0.0 publishes on every interface instead of loopback)
@@ -123,11 +124,11 @@ services:
   #   security_opt: ['no-new-privileges:true']
   #   networks: [data]
   #
-  # Self-hosted S3 (SeaweedFS). Replace with AWS S3 / R2 / B2 / Azure by changing S3_* in .env
+  # Self-hosted S3 (SeaweedFS). Replace with AWS S3 / B2 / Azure (S3_*) or Cloudflare R2 (R2_*) in .env
   # and removing this service + s3-init. -ip/-ip.bind=127.0.0.1 keeps master (9333), volume (8080),
   # filer (8888) and their gRPC ports container-local; -s3.ip.bind=0.0.0.0 exposes only the S3 gateway.
   # ── Optional: bundled S3-compatible storage (SeaweedFS) + bucket setup. Off by default — use
-  #    STORAGE_DRIVER=local (the api-storage volume) or your own S3/R2/B2 via S3_* in .env.
+  #    STORAGE_DRIVER=local (the api-storage volume), r2 (R2_*) or your own S3/B2 via S3_* in .env.
   #    To use it: uncomment s3 and s3-init and the s3-data volume.
   # s3:
   #   image: docker.io/chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d

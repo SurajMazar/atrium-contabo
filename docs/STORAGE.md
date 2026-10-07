@@ -8,14 +8,14 @@ Azure SDK; it asks the **ProviderResolver** for a `StorageProvider` and calls it
 API / worker ──► ProviderResolver.storage({ organizationId, providerId? })
                     │  explicit providerId → organization default → platform env
                     ▼
-               StorageProvider  (local | s3 | azure-blob)
+               StorageProvider  (local | s3 | r2 | azure-blob)
                     │
      upload · download · delete · move · copy · exists
      getPublicUrl · getSignedUrl · getUploadUrl · test
 ```
 
 - Contract: `packages/providers/src/storage/types.ts`
-- Drivers: `packages/providers/src/storage/{local,s3,azure}.ts`
+- Drivers: `packages/providers/src/storage/{local,s3,r2,azure}.ts`
 - Resolution, secret decryption and caching: `packages/server-kit/src/providers.ts`
 - Image pipeline: `apps/worker/src/processors/media.ts`
 
@@ -55,7 +55,7 @@ characters. Every driver supports an optional `keyPrefix` so several environment
 ## Platform storage (environment)
 
 ```dotenv
-STORAGE_DRIVER=s3            # s3 | local | azure-blob
+STORAGE_DRIVER=s3            # s3 | r2 | local | azure-blob
 # S3-compatible
 S3_ENDPOINT=http://localhost:59000
 S3_PUBLIC_URL=http://localhost:59000/atrium-media
@@ -64,6 +64,8 @@ S3_BUCKET=atrium-media
 S3_ACCESS_KEY_ID=atrium
 S3_SECRET_ACCESS_KEY=atrium-secret
 S3_FORCE_PATH_STYLE=true
+# Cloudflare R2 (STORAGE_DRIVER=r2; all but R2_JURISDICTION required)
+R2_ACCOUNT_ID= R2_BUCKET= R2_ACCESS_KEY_ID= R2_SECRET_ACCESS_KEY= R2_PUBLIC_URL= R2_JURISDICTION=default
 # local filesystem
 LOCAL_STORAGE_DIR=./storage
 LOCAL_STORAGE_PUBLIC_URL=http://localhost:4000/v1/storage
@@ -107,7 +109,7 @@ virtual-hosted URL. Make public objects readable with a bucket policy (recommend
 | Service | Preset | Endpoint | Region | Path style | Notes |
 | --- | --- | --- | --- | --- | --- |
 | Amazon S3 | `aws-s3` | — | your region | no | Block public ACLs; grant `s3:GetObject` on `media/*` via bucket policy or CloudFront OAC. |
-| Cloudflare R2 | `cloudflare-r2` | `https://<ACCOUNT_ID>.r2.cloudflarestorage.com` | `auto` | yes | No ACLs; enable an `r2.dev` or custom domain and set `publicUrl`. |
+| Cloudflare R2 | `cloudflare-r2` | `https://<ACCOUNT_ID>.r2.cloudflarestorage.com` | `auto` | yes | Prefer the dedicated `r2` driver (below). |
 | MinIO | `minio` | `http://minio:9000` | `us-east-1` | yes | `mc anonymous set download local/atrium-media/media`. |
 | SeaweedFS | `seaweedfs` | `http://localhost:59000` | `us-east-1` | yes | Local dev default. |
 | Oracle Object Storage | `oracle` | `https://<NAMESPACE>.compat.objectstorage.<REGION>.oraclecloud.com` | your region | yes | Create a *Customer Secret Key* for S3 compatibility; public buckets or pre-authenticated requests for reads. |
@@ -117,6 +119,29 @@ virtual-hosted URL. Make public objects readable with a bucket policy (recommend
 **CORS (direct browser uploads).** `getUploadUrl` returns a presigned `PUT` URL + headers. If the
 admin uploads directly to the bucket, allow `PUT` from the admin origin with `Content-Type` in the
 bucket's CORS rules. Without it the API proxies uploads (the default flow).
+
+### `r2` — Cloudflare R2
+
+The S3 driver with R2's settings fixed (`packages/providers/src/storage/r2.ts`):
+
+- endpoint `https://<accountId>.r2.cloudflarestorage.com`, or `.eu.` / `.fedramp.` for those
+  jurisdictions;
+- region `auto`, path-style requests;
+- no ACL or server-side-encryption headers (R2 encrypts at rest);
+- integrity checksums only when required.
+
+| Config | Description |
+| --- | --- |
+| `accountId` | Cloudflare account ID (32 hex characters) |
+| `bucket` | R2 bucket name |
+| `jurisdiction` | `default`, `eu` or `fedramp`; must match the bucket |
+| `accessKeyId` | Access key ID of an R2 API token (Object Read & Write on the bucket) |
+| `publicUrl` | **Required.** The bucket's custom domain or `r2.dev` URL; R2's S3 endpoint is not publicly readable |
+| `keyPrefix`, `defaultCacheControl`, `signedUrlTtlSeconds` | As for `s3` |
+
+Secret: `secretAccessKey` (required). Changing `accountId`, `jurisdiction`, `bucket` or `accessKeyId`
+requires re-entering the secret. Private files (form uploads) use presigned URLs on the R2 endpoint.
+Setup steps are in [deployment/cloudflare.md](deployment/cloudflare.md#r2-as-platform-storage).
 
 ### `azure-blob` — Azure Blob Storage
 

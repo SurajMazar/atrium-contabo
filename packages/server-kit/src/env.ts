@@ -43,7 +43,7 @@ export const EnvSchema = z.object({
   RENDERER_SECRET: optionalString,
   ANALYTICS_SALT: optionalString,
 
-  STORAGE_DRIVER: z.enum(['s3', 'local', 'azure-blob']).default('local'),
+  STORAGE_DRIVER: z.enum(['s3', 'r2', 'local', 'azure-blob']).default('local'),
   S3_ENDPOINT: optionalString,
   S3_PUBLIC_URL: optionalString,
   S3_REGION: z.string().default('us-east-1'),
@@ -51,6 +51,13 @@ export const EnvSchema = z.object({
   S3_ACCESS_KEY_ID: optionalString,
   S3_SECRET_ACCESS_KEY: optionalString,
   S3_FORCE_PATH_STYLE: boolish(false),
+  /** STORAGE_DRIVER=r2 (Cloudflare R2). */
+  R2_ACCOUNT_ID: optionalString,
+  R2_BUCKET: optionalString,
+  R2_ACCESS_KEY_ID: optionalString,
+  R2_SECRET_ACCESS_KEY: optionalString,
+  R2_PUBLIC_URL: optionalString,
+  R2_JURISDICTION: z.enum(['default', 'eu', 'fedramp']).default('default'),
   LOCAL_STORAGE_DIR: z.string().default('./storage'),
   LOCAL_STORAGE_PUBLIC_URL: z.string().default('http://localhost:4000/v1/storage'),
   LOCAL_STORAGE_SIGNING_SECRET: optionalString,
@@ -112,6 +119,9 @@ export function loadDotenvOnce(path?: string): string | undefined {
   return file;
 }
 
+/** Environment variables `STORAGE_DRIVER=r2` needs (R2_JURISDICTION is optional). */
+export const R2_REQUIRED_ENV = ['R2_ACCOUNT_ID', 'R2_BUCKET', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_PUBLIC_URL'] as const;
+
 export class EnvValidationError extends Error {
   constructor(public readonly issues: string[]) {
     super(`Invalid environment configuration:\n${issues.map((i) => `  - ${i}`).join('\n')}`);
@@ -147,6 +157,10 @@ export function loadEnv(
     return parsed.data[k] === undefined || parsed.data[k] === '';
   });
   if (missing.length) throw new EnvValidationError(missing.map((k) => `${String(k)} is required`));
+  if (parsed.data.STORAGE_DRIVER === 'r2') {
+    const r2Missing = R2_REQUIRED_ENV.filter((k) => !parsed.data[k]);
+    if (r2Missing.length) throw new EnvValidationError(r2Missing.map((k) => `${k} is required with STORAGE_DRIVER=r2`));
+  }
   if (opts.production !== false) {
     const required = (opts.required ?? []).map(String).filter((k) => k in APP_SECRETS);
     const spec = opts.production ?? {

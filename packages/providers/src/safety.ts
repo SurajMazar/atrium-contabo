@@ -25,6 +25,7 @@ export const CREDENTIAL_BINDING_FIELDS = [
   'accountSid',
   'apiKeySid',
   'accountId',
+  'jurisdiction',
   'teamId',
   'teamSlug',
   'siteId',

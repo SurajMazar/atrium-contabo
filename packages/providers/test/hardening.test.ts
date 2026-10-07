@@ -8,6 +8,7 @@ import { publicTestResult, secretReentryDecision, isSuppliedSecret } from '../sr
 import { LocalStorageProvider, localStorageConfigSchema } from '../src/storage/local';
 import { assertAzureEndpoint, azureConnectionStringEndpoint, AzureBlobStorageProvider, azureConfigSchema } from '../src/storage/azure';
 import { s3ConfigSchema } from '../src/storage/s3';
+import { r2ConfigSchema, r2Endpoint } from '../src/storage/r2';
 import { captchaConfigSchema, matchesExpectedHostname, SiteverifyCaptcha } from '../src/captcha/drivers';
 import { SmtpEmailProvider, smtpConfigSchema } from '../src/email/smtp';
 
@@ -189,6 +190,42 @@ describe('storage endpoint restrictions', () => {
     expect(s3ConfigSchema.safeParse({ bucket: 'b', region: 'auto' }).success).toBe(true);
     expect(s3ConfigSchema.safeParse({ bucket: 'b', region: 'x.evil.com#' }).success).toBe(false);
     expect(s3ConfigSchema.safeParse({ bucket: 'a/b', region: 'us-east-1' }).success).toBe(false);
+  });
+
+  it('R2: endpoint from account id + jurisdiction, validated config, presigned URLs on the R2 host', async () => {
+    const acct = '0123456789abcdef0123456789ABCDEF';
+    expect(r2Endpoint(acct)).toBe('https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com');
+    expect(r2Endpoint(acct, 'eu')).toBe('https://0123456789abcdef0123456789abcdef.eu.r2.cloudflarestorage.com');
+    expect(r2Endpoint(acct, 'fedramp')).toBe('https://0123456789abcdef0123456789abcdef.fedramp.r2.cloudflarestorage.com');
+    const base = { accountId: acct, bucket: 'atrium-media', accessKeyId: 'AKID', publicUrl: 'https://media.example.com' };
+    expect(r2ConfigSchema.safeParse(base).success).toBe(true);
+    // The account id becomes part of the host name: anything but 32 hex characters is refused.
+    expect(r2ConfigSchema.safeParse({ ...base, accountId: 'evil.com#' }).success).toBe(false);
+    expect(r2ConfigSchema.safeParse({ ...base, bucket: 'Bad_Bucket' }).success).toBe(false);
+    expect(r2ConfigSchema.safeParse({ ...base, jurisdiction: 'apac' }).success).toBe(false);
+    // R2's S3 endpoint is never public: a (https) public URL is required.
+    expect(r2ConfigSchema.safeParse({ ...base, publicUrl: undefined }).success).toBe(false);
+    expect(r2ConfigSchema.safeParse({ ...base, publicUrl: 'http://media.example.com' }).success).toBe(false);
+    expect(() => instantiateProvider('storage', 'r2', base, {})).toThrow();
+
+    const r2 = instantiateProvider('storage', 'r2', { ...base, jurisdiction: 'eu', keyPrefix: 'prod' }, { secretAccessKey: 'secret' });
+    expect(r2.driver).toBe('r2');
+    expect(r2.getPublicUrl('media/o/a b.png')).toBe('https://media.example.com/prod/media/o/a%20b.png');
+    const signed = new URL(await r2.getSignedUrl('private/x.pdf', { expiresInSeconds: 120 }));
+    expect(signed.host).toBe('0123456789abcdef0123456789abcdef.eu.r2.cloudflarestorage.com');
+    expect(signed.pathname).toBe('/atrium-media/prod/private/x.pdf');
+    expect(signed.searchParams.get('X-Amz-Credential')).toMatch(/^AKID\/\d{8}\/auto\/s3\/aws4_request$/);
+    const put = await r2.getUploadUrl('media/o/b.png', 'image/png');
+    expect(new URL(put.url).searchParams.has('x-amz-acl')).toBe(false);
+  });
+
+  it('R2: changing the account, jurisdiction or bucket requires re-entering the secret', () => {
+    const cfg = { accountId: 'a'.repeat(32), bucket: 'b-1', accessKeyId: 'k', publicUrl: 'https://m.example.com', jurisdiction: 'default' };
+    for (const change of [{ jurisdiction: 'eu' }, { accountId: 'b'.repeat(32) }, { bucket: 'b-2' }]) {
+      const d = secretReentryDecision({ existingDriver: 'r2', nextDriver: 'r2', existingConfig: cfg, nextConfig: { ...cfg, ...change }, existingSecretKeys: ['secretAccessKey'], incomingSecrets: undefined });
+      expect(d.ok).toBe(false);
+    }
+    expect(secretReentryDecision({ existingDriver: 'r2', nextDriver: 'r2', existingConfig: cfg, nextConfig: { ...cfg, publicUrl: 'https://cdn.example.com' }, existingSecretKeys: ['secretAccessKey'], incomingSecrets: undefined }).ok).toBe(true);
   });
 
   it('tenant S3 endpoints on private IP literals are refused before connecting', async () => {

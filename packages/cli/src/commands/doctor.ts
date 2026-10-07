@@ -8,6 +8,7 @@ import { EnvFile } from '../lib/env';
 import { tryCapture } from '../lib/exec';
 import { examples } from '../lib/help';
 import { hostPort, httpProbe, tcpProbe } from '../lib/net';
+import { s3Settings } from '../lib/object-storage';
 import { isListening, PORT_KEYS, type PortKey, currentPorts } from '../lib/ports';
 import { compareVersions, prerequisiteChecks } from '../lib/prereqs';
 import { MiniRedis } from '../lib/redis';
@@ -142,6 +143,15 @@ async function connectivityChecks(ctx: Context): Promise<CheckResult[]> {
           status: 'info',
           detail: 'azure-blob (not probed by the CLI)',
         };
+      const st = s3Settings(v);
+      if (driver === 'r2' && (!st.bucket || !st.endpoint || !st.credentials))
+        return {
+          group: g,
+          label: 'Object storage',
+          status: 'fail',
+          detail: 'STORAGE_DRIVER=r2 needs R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_PUBLIC_URL',
+          hint: 'atrium config set R2_ACCOUNT_ID <id> (see docs/deployment/cloudflare.md)',
+        };
       try {
         const sdk = requireFrom<{
           S3Client: new (c: Record<string, unknown>) => {
@@ -151,24 +161,22 @@ async function connectivityChecks(ctx: Context): Promise<CheckResult[]> {
           HeadBucketCommand: new (i: Record<string, unknown>) => unknown;
         }>(ctx.root, 'packages/providers', '@aws-sdk/client-s3');
         const client = new sdk.S3Client({
-          region: v.S3_REGION ?? 'us-east-1',
-          endpoint: v.S3_ENDPOINT || undefined,
-          forcePathStyle: v.S3_FORCE_PATH_STYLE === 'true',
-          credentials: v.S3_ACCESS_KEY_ID
-            ? { accessKeyId: v.S3_ACCESS_KEY_ID, secretAccessKey: v.S3_SECRET_ACCESS_KEY ?? '' }
-            : undefined,
+          region: st.region,
+          endpoint: st.endpoint,
+          forcePathStyle: st.forcePathStyle,
+          credentials: st.credentials,
           maxAttempts: 1,
         });
         try {
           await Promise.race([
-            client.send(new sdk.HeadBucketCommand({ Bucket: v.S3_BUCKET })),
+            client.send(new sdk.HeadBucketCommand({ Bucket: st.bucket })),
             new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 4000)),
           ]);
           return {
             group: g,
             label: 'Object storage',
             status: 'ok',
-            detail: `${driver} · bucket ${v.S3_BUCKET} @ ${v.S3_ENDPOINT ?? 'AWS'}`,
+            detail: `${driver} · bucket ${st.bucket} @ ${st.endpoint ?? 'AWS'}`,
           };
         } finally {
           client.destroy();
@@ -178,15 +186,15 @@ async function connectivityChecks(ctx: Context): Promise<CheckResult[]> {
         const status = err.$metadata?.httpStatusCode;
         const detail =
           status === 404
-            ? `bucket ${v.S3_BUCKET} does not exist`
+            ? `bucket ${st.bucket} does not exist`
             : status === 403
-              ? 'access denied (check S3_ACCESS_KEY_ID/S3_SECRET_ACCESS_KEY)'
+              ? `access denied (check ${st.keyVars})`
               : err.message || err.name || 'error';
-        if (/Cannot find module/.test(err.message ?? '') && v.S3_ENDPOINT) {
-          const hp = hostPort(v.S3_ENDPOINT, 443);
+        if (/Cannot find module/.test(err.message ?? '') && st.endpoint) {
+          const hp = hostPort(st.endpoint, 443);
           const t = hp
             ? await tcpProbe(hp.host, hp.port)
-            : { ok: false, detail: 'bad S3_ENDPOINT' };
+            : { ok: false, detail: 'bad storage endpoint' };
           return {
             group: g,
             label: 'Object storage',
@@ -200,9 +208,11 @@ async function connectivityChecks(ctx: Context): Promise<CheckResult[]> {
           status: 'fail',
           detail: `${driver}: ${detail}`,
           hint:
-            status === 404
-              ? 'atrium setup infra up (s3-init creates the bucket)'
-              : 'atrium setup infra up · check S3_* settings',
+            driver === 'r2'
+              ? 'check R2_* settings (the bucket must exist and the API token needs Object Read & Write on it)'
+              : status === 404
+                ? 'atrium setup infra up (s3-init creates the bucket)'
+                : 'atrium setup infra up · check S3_* settings',
         };
       }
     })(),

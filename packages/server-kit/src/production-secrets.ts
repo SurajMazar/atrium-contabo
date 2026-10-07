@@ -163,7 +163,7 @@ export interface ProductionCheckSpec {
 export const API_PRODUCTION_SPEC: ProductionCheckSpec = {
   required: ['JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET', 'ENCRYPTION_KEY', 'RENDERER_SECRET', 'ANALYTICS_SALT'],
   optional: ['LOCAL_STORAGE_SIGNING_SECRET'],
-  urls: ['ADMIN_URL', 'API_URL', 'RENDERER_URL', 'PREVIEW_URL', 'MEDIA_ORIGIN', 'S3_PUBLIC_URL'],
+  urls: ['ADMIN_URL', 'API_URL', 'RENDERER_URL', 'PREVIEW_URL', 'MEDIA_ORIGIN', 'S3_PUBLIC_URL', 'R2_PUBLIC_URL'],
   requiredUrls: ['ADMIN_URL', 'API_URL', 'RENDERER_URL'],
   originLists: ['CORS_ORIGINS'],
   cookieSecure: true,
@@ -174,7 +174,7 @@ export const API_PRODUCTION_SPEC: ProductionCheckSpec = {
 export const WORKER_PRODUCTION_SPEC: ProductionCheckSpec = {
   required: ['ENCRYPTION_KEY'],
   optional: ['JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET', 'RENDERER_SECRET', 'ANALYTICS_SALT'],
-  urls: ['ADMIN_URL', 'API_URL', 'RENDERER_URL', 'PREVIEW_URL', 'S3_PUBLIC_URL'],
+  urls: ['ADMIN_URL', 'API_URL', 'RENDERER_URL', 'PREVIEW_URL', 'S3_PUBLIC_URL', 'R2_PUBLIC_URL'],
   requiredUrls: ['ADMIN_URL', 'API_URL', 'RENDERER_URL'],
   distinct: [['JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET']],
 };

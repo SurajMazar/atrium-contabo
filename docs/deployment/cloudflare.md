@@ -14,26 +14,47 @@ APIs, long-lived Redis connections and sharp, which Workers do not provide).
 
 ## R2 as platform storage
 
-1. R2 → create bucket `atrium-media`; R2 → _Manage API tokens_ → create an S3 token with Object Read & Write
-   on that bucket.
-2. Public access: connect a custom domain (`media.example.com`) to the bucket (or enable the `r2.dev`
-   URL for testing).
+R2 has its own storage driver, `r2`. It derives the S3 endpoint from your account ID, always uses
+region `auto` and path-style requests, and never sends ACL or encryption headers (R2 has no object
+ACLs and encrypts everything at rest).
+
+1. **Bucket**: R2 → _Create bucket_ → `atrium-media`. Note the jurisdiction if you pick EU or FedRAMP.
+2. **Public access**: bucket → _Settings_ → _Custom Domains_ → connect `media.example.com` (recommended,
+   cached by Cloudflare). The `r2.dev` URL also works, but it is rate-limited and meant for testing.
+   R2's S3 endpoint is never publicly readable, so a public URL is required.
+3. **API token**: R2 → _Manage API tokens_ → _Create API token_ → **Object Read & Write**, limited
+   to that bucket. Copy the _Access Key ID_ and _Secret Access Key_ (shown once).
+4. **Account ID**: R2 overview → _Account details_ (32 hexadecimal characters).
 
 ```dotenv
-STORAGE_DRIVER=s3
-S3_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com
-S3_REGION=auto
-S3_BUCKET=atrium-media
-S3_FORCE_PATH_STYLE=true
-S3_ACCESS_KEY_ID=<R2 access key id>
-S3_SECRET_ACCESS_KEY=<R2 secret>
-S3_PUBLIC_URL=https://media.example.com
+STORAGE_DRIVER=r2
+R2_ACCOUNT_ID=<32-character account id>
+R2_BUCKET=atrium-media
+R2_ACCESS_KEY_ID=<access key id>
+R2_SECRET_ACCESS_KEY=<secret access key>
+R2_PUBLIC_URL=https://media.example.com
+R2_JURISDICTION=default        # eu or fedramp if the bucket was created there
 ```
 
-There is no separate `r2` driver: R2 uses the `s3` driver (`STORAGE_DRIVER` accepts `s3`, `local`,
-`azure-blob`), and the admin's storage form has a **Cloudflare R2** preset (`region: auto`, path-style,
-no public ACLs) for organizations that bring their own bucket. If browsers upload directly with
-presigned URLs, add a CORS rule on the bucket allowing `PUT` from `https://admin.example.com`.
+The API and worker refuse to start if `STORAGE_DRIVER=r2` and one of these is missing. `atrium doctor`
+checks that the bucket is reachable with these credentials, and `atrium setup production --storage r2`
+writes the variables with placeholders to fill in.
+
+**Organizations' own buckets**: in the admin, Integrations → Storage → _Cloudflare R2_ asks for the same
+values (account ID, bucket, jurisdiction, access key, public URL, secret). A super admin can set it as
+the platform storage under Platform providers → Storage instead of using the environment.
+
+**Moving to R2 from another bucket**: copy the objects with the same keys (for example
+`rclone copy old:atrium-media r2:atrium-media`), then switch the variables and restart the API and worker.
+Media already embedded in published pages keeps its old URL until the page is published again, so keep
+the old bucket readable until then.
+
+**CORS**: uploads go through the API, so no bucket CORS rule is needed. Only add one (allowing `PUT`
+from `https://admin.example.com` with `Content-Type`) if you build direct browser uploads with
+presigned URLs.
+
+Existing setups that use `STORAGE_DRIVER=s3` with `S3_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com`
+keep working; the `r2` driver is the simpler, validated way to do the same thing.
 
 ## Pages for static exports
 

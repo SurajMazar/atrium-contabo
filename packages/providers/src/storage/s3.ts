@@ -46,7 +46,7 @@ function isNotFound(err: unknown): boolean {
 }
 
 export class S3StorageProvider implements StorageProvider {
-  readonly driver = PROVIDER;
+  readonly driver: string = PROVIDER;
   private sdk?: Promise<{ s3: S3Module; client: S3Client }>;
 
   constructor(
@@ -201,7 +201,7 @@ export const s3Driver = defineDriver({
   kind: 'storage',
   id: 's3',
   name: 'S3-compatible object storage',
-  description: 'Amazon S3 and S3-compatible services: Cloudflare R2, MinIO, SeaweedFS, Oracle Object Storage, DigitalOcean Spaces, Backblaze B2.',
+  description: 'Amazon S3 and S3-compatible services: MinIO, SeaweedFS, Oracle Object Storage, DigitalOcean Spaces, Backblaze B2 (Cloudflare R2 has its own driver).',
   configSchema: s3ConfigSchema,
   secretsSchema: s3SecretsSchema,
   presets: [

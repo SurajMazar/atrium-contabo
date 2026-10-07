@@ -29,6 +29,7 @@ import { context, type Context } from '../lib/context';
 import { localMigrations, migrationStatus, requireFrom, withPg } from '../lib/db';
 import { run, spawnRaw, tryCapture, waitFor, which } from '../lib/exec';
 import { examples } from '../lib/help';
+import { s3Settings } from '../lib/object-storage';
 import { cliVersion, rootPackageJson } from '../lib/paths';
 import { alivePids } from '../lib/procs';
 import { requireEngine, serviceContainer } from '../lib/runtime';
@@ -134,16 +135,14 @@ function s3Client(ctx: Context): { sdk: S3Sdk; client: S3Like; bucket: string } 
   } catch {
     throw new CliError('@aws-sdk/client-s3 not found in packages/providers', 'Run `pnpm install`.');
   }
-  const v = ctx.vars;
-  const bucket = v.S3_BUCKET;
-  if (!bucket) throw new CliError('S3_BUCKET is not set');
+  const st = s3Settings(ctx.vars);
+  const bucket = st.bucket;
+  if (!bucket) throw new CliError(`${ctx.vars.STORAGE_DRIVER === 'r2' ? 'R2_BUCKET' : 'S3_BUCKET'} is not set`);
   const client = new sdk.S3Client({
-    region: v.S3_REGION ?? 'us-east-1',
-    endpoint: v.S3_ENDPOINT || undefined,
-    forcePathStyle: v.S3_FORCE_PATH_STYLE === 'true',
-    credentials: v.S3_ACCESS_KEY_ID
-      ? { accessKeyId: v.S3_ACCESS_KEY_ID, secretAccessKey: v.S3_SECRET_ACCESS_KEY ?? '' }
-      : undefined,
+    region: st.region,
+    endpoint: st.endpoint,
+    forcePathStyle: st.forcePathStyle,
+    credentials: st.credentials,
   });
   return { sdk, client, bucket };
 }
