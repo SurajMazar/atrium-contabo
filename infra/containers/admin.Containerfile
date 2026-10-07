@@ -52,6 +52,8 @@ ENV ATRIUM_API_INTERNAL_URL=${ATRIUM_API_INTERNAL_URL} \
     NODE_OPTIONS=${NODE_OPTIONS} \
     NODE_ENV=production
 COPY --from=pruner /out/full/ ./
+# `next build` runs through scripts/with-env.mjs (package.json), which turbo prune does not copy.
+COPY --from=pruner /repo/scripts/with-env.mjs ./scripts/with-env.mjs
 RUN pnpm exec turbo run build --filter=@atrium/admin --output-logs=errors-only --concurrency=${TURBO_CONCURRENCY}
 # Production-only node_modules for the pruned workspace (offline, from the in-layer store).
 RUN rm -rf node_modules apps/*/node_modules packages/*/node_modules apps/admin/.next/cache \
