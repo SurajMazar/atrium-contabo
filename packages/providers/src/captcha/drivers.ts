@@ -22,16 +22,17 @@ const ENDPOINTS: Record<CaptchaId, string> = {
 };
 
 export const captchaConfigSchema = z.object({
-  siteKey: z.string().min(1),
+  // Keys are pasted from vendor consoles: stray whitespace would make the widget script reject them.
+  siteKey: z.string().trim().min(1),
   /** Optional allow-list of hostnames the token must have been issued for. */
-  allowedHostnames: z.array(z.string()).default([]),
+  allowedHostnames: z.array(z.string().trim().min(1)).default([]),
   /** reCAPTCHA v3 only: default minimum score (0–1) when the form doesn't specify one. */
   minScore: z.number().min(0).max(1).default(0.5),
   // NOTE: a tenant-configurable `verifyUrl` used to exist; it was removed (SSRF + it let a
   // tenant point verification at a server that always answers success). Stored values are
   // stripped by the schema and the official vendor endpoint is always used.
 });
-export const captchaSecretsSchema = z.object({ secretKey: z.string().min(1) });
+export const captchaSecretsSchema = z.object({ secretKey: z.string().trim().min(1) });
 export type CaptchaConfig = z.output<typeof captchaConfigSchema>;
 
 function normalizeHostname(h: string): string {

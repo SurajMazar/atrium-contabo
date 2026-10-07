@@ -184,6 +184,15 @@ describe('captcha hardening (INT-6)', () => {
   });
 });
 
+describe('captcha config', () => {
+  it('trims pasted keys and hostnames', () => {
+    const c = captchaConfigSchema.parse({ siteKey: ' 6LeKEY ', allowedHostnames: [' example.com ', '*.sites.example.com'] });
+    expect(c.siteKey).toBe('6LeKEY');
+    expect(c.allowedHostnames).toEqual(['example.com', '*.sites.example.com']);
+    expect(captchaConfigSchema.safeParse({ siteKey: '   ' }).success).toBe(false);
+  });
+});
+
 describe('storage endpoint restrictions', () => {
   it('S3 region/bucket must be host-name safe', () => {
     expect(s3ConfigSchema.safeParse({ bucket: 'b', region: 'us-east-1' }).success).toBe(true);
