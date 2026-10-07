@@ -58,6 +58,33 @@ everything else in `.env` is yours. It keeps the previous files as `.env.bak` an
 The containers listen on `127.0.0.1` only (admin `:3000`, renderer `:3001`, API `:4000`), so nginx
 proxies to them.
 
+## Database and Redis (on the VPS host)
+
+PostgreSQL 18 (from the official apt.postgresql.org repository) and Redis 7 run on the host as systemd
+services. They listen on `127.0.0.1` and the Docker bridge (`172.17.0.1`) only, so they are not reachable
+from the internet; containers reach them as `host.docker.internal`. Both start after Docker so the bridge
+address exists.
+
+- **Roles**: `atrium` owns the database and runs migrations (`MIGRATE_DATABASE_URL`); `atrium_app`
+  can only read and write rows (`DATABASE_URL`). `atrium_app` has `statement_timeout` 5 min,
+  `idle_in_transaction_session_timeout` 2 min and `lock_timeout` 30 s.
+- **Tuning** (`/etc/postgresql/18/main/conf.d/90-atrium.conf`, 8 GB shared with the app):
+  - memory: `shared_buffers` 1 GB, `effective_cache_size` 3 GB, `work_mem` 8 MB,
+    `max_connections` 60;
+  - autovacuum runs early (scale factors 0.05 / 0.02, naptime 30 s, cost limit 1000) so dead rows
+    (MVCC bloat) are cleaned up continuously;
+  - idle-in-transaction sessions are ended after 5 min so they cannot block vacuum;
+  - TCP keepalives, `pg_stat_statements` and data checksums are on.
+- **Redis** (`/etc/redis/atrium.conf`): password required, `maxmemory 512mb` with `noeviction`
+  (BullMQ must never drop jobs), AOF `everysec`, `FLUSHALL`/`FLUSHDB`/`DEBUG` disabled.
+- **Host**: 4 GB swap (`vm.swappiness=10`), `vm.overcommit_memory=1`, and ufw enabled. ufw allows
+  SSH, 80 and 443 from anywhere; 5432 and 6379 only from 172.16.0.0/12.
+- **Backups**: `/etc/cron.daily/atrium-db-backup` writes `pg_dump -Fc` to `/var/backups/atrium` and keeps
+  14 days. Copy them off the server too.
+
+Shell access on the server: `sudo -u postgres psql -d atrium`. From your machine, open a tunnel with
+`ssh -L 5433:127.0.0.1:5432 root@<VPS_IP>` and connect to `localhost:5433`.
+
 ## Deploy key
 
 Use a key that exists only for deployments:
