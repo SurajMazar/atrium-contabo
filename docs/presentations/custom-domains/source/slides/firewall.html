@@ -1,0 +1,28 @@
+<section id="firewall" data-transition="fade" style="background:#F6F4EF;color:#4A5568;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:48px">
+<div style="display:flex;flex-direction:column;gap:12px">
+<p style="font-size:24px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#2F5BD8">The server</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#16202E">Arriving at 169.58.157.28: the front door</h2>
+</div>
+<div style="display:flex;flex-direction:row;gap:32px">
+<div style="flex:1;display:flex;flex-direction:column;gap:20px;background:#FDFCF9;border:2px solid #2F5BD8;border-radius:20px;padding:36px">
+<div style="display:flex;flex-direction:row;align-items:center;gap:16px">
+<x-icon name="Globe" style="color:#2F5BD8;width:44px;height:44px"></x-icon>
+<h3 style="font-size:34px;font-weight:600;color:#16202E">Open to the internet</h3>
+</div>
+<p style="font-size:28px;line-height:1.4;color:#2B3443"><b>22 · SSH</b>: you, and the GitHub deploys</p>
+<p style="font-size:28px;line-height:1.4;color:#2B3443"><b>80 · HTTP</b>: redirects to HTTPS, certificate checks</p>
+<p style="font-size:28px;line-height:1.4;color:#2B3443"><b>443 · HTTPS</b>: every real visitor</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:20px;background:#EFECE5;border:2px solid #D5CFC3;border-radius:20px;padding:36px">
+<div style="display:flex;flex-direction:row;align-items:center;gap:16px">
+<x-icon name="Lock" style="color:#5F6878;width:44px;height:44px"></x-icon>
+<h3 style="font-size:34px;font-weight:600;color:#16202E">Closed: inside the server only</h3>
+</div>
+<p style="font-size:28px;line-height:1.4;color:#2B3443"><b>3000</b> admin app · <b>3001</b> renderer · <b>4000</b> API</p>
+<p style="font-size:28px;line-height:1.4;color:#2B3443"><b>5432</b> Postgres · <b>6379</b> Redis</p>
+<p style="font-size:26px;line-height:1.4;color:#4A5568">Reachable only from the server itself (127.0.0.1) and its Docker containers.</p>
+</div>
+</div>
+<p style="font-size:26px;line-height:1.45">The firewall is <b>ufw</b>. Because the apps hide behind it, the only way in from outside is through <b>nginx</b> on 80 and 443.</p>
+<aside>A port is a numbered door on a server. The VPS has one public address but many programs; each listens on its own port. The firewall (ufw) only opens 22, 80 and 443 to the world. The apps listen on 127.0.0.1, the server's "talk to myself" address, and Postgres and Redis accept only the Docker network. So even if someone knew the database password, they could not reach the database from the internet.</aside>
+</section>

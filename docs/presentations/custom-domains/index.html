@@ -1,0 +1,693 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How Custom Domains Work</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+html,body{margin:0;height:100%;background:#05080d;overflow:hidden;font-family:'IBM Plex Sans',Arial,sans-serif}
+#stage{position:absolute;left:50%;top:50%;width:1920px;height:1080px;transform-origin:0 0}
+section{position:absolute;inset:0;width:1920px;height:1080px;box-sizing:border-box;overflow:hidden}
+section:not(.on){display:none!important}
+section *{box-sizing:border-box}
+section p,section h1,section h2,section h3,section table{margin:0}
+section h1{font-size:96px;font-weight:600;line-height:1.1}
+section h2{font-size:64px;font-weight:600;line-height:1.15}
+section h3{font-size:44px;font-weight:600;line-height:1.2}
+section p{font-size:32px;line-height:1.4}
+section div{display:flex;flex-direction:column}
+section div[style*="display:grid"]{display:grid}
+section table{border-collapse:collapse}
+section th,section td{padding:.35em .6em;border-bottom:1px solid rgba(128,128,128,.35);vertical-align:top;text-align:left}
+section aside{display:none}
+x-shape{display:block;flex:none}
+x-shape[kind=arrow-right]{clip-path:polygon(0 30%,60% 30%,60% 0,100% 50%,60% 100%,60% 70%,0 70%)}
+x-shape[kind=arrow-down]{clip-path:polygon(30% 0,70% 0,70% 60%,100% 60%,50% 100%,0 60%,30% 60%)}
+.x-icon{flex:none}
+.x-connector{position:absolute;left:0;top:0;pointer-events:none}
+#bar{position:fixed;left:0;right:0;bottom:0;display:flex;gap:12px;align-items:center;justify-content:center;padding:10px;color:#BFC9D9;font:14px system-ui,sans-serif;background:rgba(5,8,13,.75);opacity:.2;transition:opacity .2s}
+#bar:hover{opacity:1}
+#bar button{background:#172235;color:#F6F4EF;border:1px solid #26344D;border-radius:8px;padding:6px 12px;cursor:pointer;font:inherit}
+#notes{position:fixed;left:16px;right:16px;bottom:56px;max-width:900px;margin:0 auto;background:#F6F4EF;color:#16202E;border-radius:12px;padding:16px 20px;font:16px/1.5 system-ui,sans-serif;display:none;box-shadow:0 8px 30px rgba(0,0,0,.4)}
+</style></head><body>
+<div id="stage">
+<section id="cover" data-transition="fade" style="background:#0E1622;color:#BFC9D9;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;justify-content:center;gap:40px">
+<p style="font-size:24px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#7FA2FF">Atrium · custom domains, end to end</p>
+<h1 style="font-size:96px;font-weight:600;line-height:1.1;color:#F6F4EF">What happens when someone types <span style="color:#F2A541">leelagarden.com.np</span></h1>
+<p style="font-size:32px;line-height:1.45;width:1240px">From the address bar to a finished page: DNS, verification, the server, HTTPS and the renderer, explained for beginners.</p>
+<div style="display:flex;flex-direction:row;flex-wrap:wrap;align-items:center;gap:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#F6F4EF;background:#172235;border:1px solid #26344D;border-radius:12px;padding:10px 20px">Browser</p>
+<p style="font-size:28px;color:#5A6B85">→</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#F6F4EF;background:#172235;border:1px solid #26344D;border-radius:12px;padding:10px 20px">DNS</p>
+<p style="font-size:28px;color:#5A6B85">→</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#F6F4EF;background:#172235;border:1px solid #26344D;border-radius:12px;padding:10px 20px">Firewall</p>
+<p style="font-size:28px;color:#5A6B85">→</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#F6F4EF;background:#172235;border:1px solid #26344D;border-radius:12px;padding:10px 20px">nginx</p>
+<p style="font-size:28px;color:#5A6B85">→</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#F6F4EF;background:#172235;border:1px solid #26344D;border-radius:12px;padding:10px 20px">Renderer</p>
+<p style="font-size:28px;color:#5A6B85">→</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#F6F4EF;background:#172235;border:1px solid #26344D;border-radius:12px;padding:10px 20px">API</p>
+<p style="font-size:28px;color:#5A6B85">→</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#F6F4EF;background:#172235;border:1px solid #26344D;border-radius:12px;padding:10px 20px">Postgres</p>
+</div>
+<aside>This deck follows one request for leelagarden.com.np from the visitor's address bar all the way to the database and back. Every name, address and file in it is the real one from your setup. Use the arrow keys to move; Present mode reveals some diagrams step by step.</aside>
+</section>
+
+<section id="map" data-transition="fade" style="background:#F6F4EF;color:#4A5568;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:48px">
+<div style="display:flex;flex-direction:column;gap:12px">
+<p style="font-size:24px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#2F5BD8">The big picture</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#16202E">Six stops between Enter and a finished page</h2>
+</div>
+<iframe class="x-embed" style="position:absolute;left:128px;top:296px;width:1664px;height:640px;border:0" sandbox="allow-scripts" srcdoc="&lt;!doctype html&gt;&lt;html&gt;&lt;head&gt;&lt;meta charset=&quot;utf-8&quot;&gt;&lt;style&gt;
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:transparent;font-family:-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,Helvetica,Arial,sans-serif;color:#16202E;overflow:hidden}
+.lane{position:absolute;top:0;height:300px;border:2px dashed #CFC8BA;border-radius:24px}
+.lane p{margin:0;position:absolute;top:16px;left:24px;font-size:24px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:#5F6878}
+.b{position:absolute;top:84px;width:220px;height:180px;border-radius:20px;background:#FDFCF9;border:2px solid #DCD6CA;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:12px;transition:transform .35s,border-color .35s,box-shadow .35s}
+.b b{font-size:30px}
+.b i{font-style:normal;font-size:24px;color:#5A6474;margin-top:8px;line-height:1.25}
+.b.on{border-color:#2F5BD8;box-shadow:0 0 0 8px rgba(76,125,255,.22);transform:translateY(-8px)}
+.rail{position:absolute;left:136px;width:1373px;top:360px;height:4px;background:#DCD6CA;border-radius:2px}
+.dot{position:absolute;top:346px;left:136px;width:32px;height:32px;margin-left:-16px;border-radius:50%;background:#2F5BD8;box-shadow:0 0 0 10px rgba(76,125,255,.25);transition:left .9s cubic-bezier(.6,0,.3,1),background .3s}
+.dot.back{background:#E08A1E;box-shadow:0 0 0 10px rgba(242,165,65,.3)}
+.cap{position:absolute;left:0;right:0;top:420px;text-align:center;font-size:34px;line-height:1.35;padding:0 120px;transition:opacity .25s}
+.n{display:inline-block;width:52px;height:52px;line-height:52px;border-radius:26px;background:#16202E;color:#F6F4EF;font-weight:700;margin-right:14px;font-size:28px;text-align:center}
+.dots{position:absolute;left:0;right:0;top:590px;text-align:center}
+.dots span{display:inline-block;width:14px;height:14px;border-radius:7px;background:#D5CFC3;margin:0 6px}
+.dots span.on{background:#2F5BD8}
+&lt;/style&gt;&lt;/head&gt;&lt;body&gt;
+&lt;div class=&quot;lane&quot; style=&quot;left:0;width:520px&quot;&gt;&lt;p&gt;On the internet&lt;/p&gt;&lt;/div&gt;
+&lt;div class=&quot;lane&quot; style=&quot;left:560px;width:1104px&quot;&gt;&lt;p&gt;Your VPS · 169.58.157.28&lt;/p&gt;&lt;/div&gt;
+&lt;div class=&quot;b&quot; id=&quot;b0&quot; style=&quot;left:26px&quot;&gt;&lt;b&gt;Browser&lt;/b&gt;&lt;i&gt;the visitor&#x27;s Chrome&lt;/i&gt;&lt;/div&gt;
+&lt;div class=&quot;b&quot; id=&quot;b1&quot; style=&quot;left:274px&quot;&gt;&lt;b&gt;DNS&lt;/b&gt;&lt;i&gt;Cloudflare&lt;/i&gt;&lt;/div&gt;
+&lt;div class=&quot;b&quot; id=&quot;b2&quot; style=&quot;left:605px&quot;&gt;&lt;b&gt;nginx&lt;/b&gt;&lt;i&gt;front door, HTTPS&lt;/i&gt;&lt;/div&gt;
+&lt;div class=&quot;b&quot; id=&quot;b3&quot; style=&quot;left:870px&quot;&gt;&lt;b&gt;Renderer&lt;/b&gt;&lt;i&gt;draws websites&lt;/i&gt;&lt;/div&gt;
+&lt;div class=&quot;b&quot; id=&quot;b4&quot; style=&quot;left:1134px&quot;&gt;&lt;b&gt;API&lt;/b&gt;&lt;i&gt;the brain&lt;/i&gt;&lt;/div&gt;
+&lt;div class=&quot;b&quot; id=&quot;b5&quot; style=&quot;left:1399px&quot;&gt;&lt;b&gt;Postgres&lt;/b&gt;&lt;i&gt;the database&lt;/i&gt;&lt;/div&gt;
+&lt;div class=&quot;rail&quot;&gt;&lt;/div&gt;
+&lt;div class=&quot;dot&quot; id=&quot;dot&quot;&gt;&lt;/div&gt;
+&lt;div class=&quot;cap&quot; id=&quot;cap&quot;&gt;&lt;/div&gt;
+&lt;div class=&quot;dots&quot; id=&quot;dots&quot;&gt;&lt;/div&gt;
+&lt;script&gt;
+var C=[136,384,715,980,1244,1509];
+var S=[[0,&quot;You type leelagarden.com.np and press Enter.&quot;],[1,&quot;The browser asks DNS for the address. Cloudflare answers: 169.58.157.28.&quot;],[2,&quot;The browser connects to that address. nginx shows its certificate and sets up HTTPS.&quot;],[3,&quot;nginx hands the request to the renderer, the app that draws websites.&quot;],[4,&quot;The renderer asks the API which website this is and what has been published.&quot;],[5,&quot;The API reads the published version of the site from Postgres.&quot;],[0,&quot;The finished page travels back the same way, and it appears on screen.&quot;]];
+var dots=document.getElementById(&#x27;dots&#x27;),cap=document.getElementById(&#x27;cap&#x27;),dot=document.getElementById(&#x27;dot&#x27;);
+for(var k=0;k&lt;S.length;k++){dots.appendChild(document.createElement(&#x27;span&#x27;));}
+var i=0;
+function show(){
+  var s=S[i];
+  for(var j=0;j&lt;6;j++){document.getElementById(&#x27;b&#x27;+j).className=&#x27;b&#x27;+(j===s[0]?&#x27; on&#x27;:&#x27;&#x27;);}
+  dot.style.left=C[s[0]]+&#x27;px&#x27;;
+  dot.className=&#x27;dot&#x27;+(i===S.length-1?&#x27; back&#x27;:&#x27;&#x27;);
+  cap.style.opacity=0;
+  setTimeout(function(){cap.innerHTML=&#x27;&lt;span class=&quot;n&quot;&gt;&#x27;+(i+1)+&#x27;&lt;/span&gt;&#x27;+s[1];cap.style.opacity=1;},250);
+  var d=dots.children;for(var m=0;m&lt;d.length;m++){d[m].className=m===i?&#x27;on&#x27;:&#x27;&#x27;;}
+}
+show();
+setInterval(function(){i=(i+1)%S.length;show();},3200);
+&lt;/script&gt;
+&lt;/body&gt;&lt;/html&gt;" title="Animated diagram"></iframe>
+<aside>Watch the dot: it is one request. Blue is the trip out, orange is the page coming back. The first two stops happen on the public internet; the other four all run on your one Contabo VPS at 169.58.157.28. nginx, the renderer, the API and Postgres are separate programs on that machine. In the PDF or PowerPoint export this slide becomes a still picture.</aside>
+</section>
+
+<section id="dns-what" data-transition="fade" style="background:#0E1622;color:#BFC9D9;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:48px">
+<div style="display:flex;flex-direction:column;gap:12px">
+<p style="font-size:24px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#7FA2FF">DNS · part 1</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#F6F4EF">DNS is the internet's contacts app</h2>
+</div>
+<div style="display:flex;flex-direction:row;gap:64px;align-items:center">
+<p style="flex:1;font-size:36px;line-height:1.4;color:#E4E9F2">Computers find each other by number, an <b>IP address</b>. People remember names. <span style="color:#F2A541">DNS turns the name into the number.</span></p>
+<div style="width:640px;display:flex;flex-direction:column;align-items:center;gap:16px;background:#172235;border:1px solid #26344D;border-radius:20px;padding:36px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:40px;color:#F6F4EF">leelagarden.com.np</p>
+<x-shape kind="arrow-down" style="width:32px;height:64px;background:#F2A541"></x-shape>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:48px;font-weight:600;color:#F2A541">169.58.157.28</p>
+</div>
+</div>
+<div style="display:flex;flex-direction:row;gap:32px">
+<div style="flex:1;display:flex;flex-direction:column;gap:12px;background:#172235;border:1px solid #26344D;border-radius:20px;padding:32px">
+<h3 style="font-size:30px;font-weight:600;color:#F6F4EF">Registrar</h3>
+<p style="font-size:24px;line-height:1.4">Where the name was bought: the .np registry. It records which <b>nameservers</b> are in charge. Yours: eugene and kara.ns.cloudflare.com.</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:12px;background:#172235;border:1px solid #F2A541;border-radius:20px;padding:32px">
+<h3 style="font-size:30px;font-weight:600;color:#F6F4EF">Nameservers · Cloudflare</h3>
+<p style="font-size:24px;line-height:1.4">Hold your <b>records</b>, the actual answers, such as “leelagarden.com.np is at 169.58.157.28”. You edit them in Cloudflare.</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:12px;background:#172235;border:1px solid #26344D;border-radius:20px;padding:32px">
+<h3 style="font-size:30px;font-weight:600;color:#F6F4EF">Resolver</h3>
+<p style="font-size:24px;line-height:1.4">Does the asking for the visitor: their router, Google (8.8.8.8) or Cloudflare (1.1.1.1). It remembers answers for a while, the <b>TTL</b>.</p>
+</div>
+</div>
+<aside>Three different parties are involved, and mixing them up is the source of most DNS confusion. The registrar is only consulted to find out WHO holds the records (the nameservers). Cloudflare holds the records themselves. Resolvers ask on the visitor's behalf and cache what they hear. When you change a record in Cloudflare, resolvers that cached the old answer keep using it until its TTL runs out.</aside>
+</section>
+
+<section id="dns-chain" data-transition="fade" style="background:#F6F4EF;color:#4A5568;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:48px">
+<div style="display:flex;flex-direction:column;gap:12px">
+<p style="font-size:24px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#2F5BD8">DNS · part 2</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#16202E">One lookup, step by step</h2>
+</div>
+
+<div style="position:absolute;left:128px;top:470px;width:320px;height:150px;display:flex;flex-direction:column;justify-content:center;gap:6px;background:#FDFCF9;border:2px solid #DCD6CA;border-radius:20px;padding:24px">
+<h3 style="font-size:30px;font-weight:600;color:#16202E">Browser</h3>
+<p style="font-size:24px">wants leelagarden.com.np</p>
+</div>
+<div style="position:absolute;left:640px;top:470px;width:320px;height:150px;display:flex;flex-direction:column;justify-content:center;gap:6px;background:#FDFCF9;border:2px solid #DCD6CA;border-radius:20px;padding:24px">
+<h3 style="font-size:30px;font-weight:600;color:#16202E">Resolver</h3>
+<p style="font-size:24px">router, 1.1.1.1 or 8.8.8.8</p>
+</div>
+<div data-build-in="fade 1" style="position:absolute;left:1472px;top:300px;width:320px;height:150px;display:flex;flex-direction:column;justify-content:center;gap:6px;background:#FDFCF9;border:2px solid #DCD6CA;border-radius:20px;padding:24px">
+<h3 style="font-size:30px;font-weight:600;color:#16202E">.np registry</h3>
+<p style="font-size:24px">knows who's in charge</p>
+</div>
+<div data-build-in="fade 2" style="position:absolute;left:1472px;top:640px;width:320px;height:150px;display:flex;flex-direction:column;justify-content:center;gap:6px;background:#FFF6E8;border:2px solid #E08A1E;border-radius:20px;padding:24px">
+<h3 style="font-size:30px;font-weight:600;color:#16202E">Cloudflare</h3>
+<p style="font-size:24px">holds your records</p>
+</div>
+<svg class="x-connector" width="1920" height="1080" viewBox="0 0 1920 1080" aria-hidden="true"><defs><marker id="m61048" orient="auto" markerWidth="5" markerHeight="5" refX="2" refY="2" overflow="visible"><path d="M0 0 L4 2 L0 4 Z" fill="#2F5BD8"/></marker></defs><path d="M 448.0 545.0 L 640.0 545.0" fill="none" stroke="#2F5BD8" stroke-width="3.0" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#m61048)"/></svg>
+<svg class="x-connector" data-build-in="fade 1" width="1920" height="1080" viewBox="0 0 1920 1080" aria-hidden="true"><defs><marker id="m67808" orient="auto" markerWidth="5" markerHeight="5" refX="2" refY="2" overflow="visible"><path d="M0 0 L4 2 L0 4 Z" fill="#2F5BD8"/></marker></defs><path d="M 800.0 470.0 L 800.0 375.0 L 1472.0 375.0" fill="none" stroke="#2F5BD8" stroke-width="3.0" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#m67808)"/></svg>
+<svg class="x-connector" data-build-in="fade 2" width="1920" height="1080" viewBox="0 0 1920 1080" aria-hidden="true"><defs><marker id="m37776" orient="auto" markerWidth="5" markerHeight="5" refX="2" refY="2" overflow="visible"><path d="M0 0 L4 2 L0 4 Z" fill="#E08A1E"/></marker></defs><path d="M 800.0 620.0 L 800.0 715.0 L 1472.0 715.0" fill="none" stroke="#E08A1E" stroke-width="3.0" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#m37776)"/></svg>
+<p style="position:absolute;left:520px;top:490px;width:48px;font-size:28px;font-weight:700;color:#2F5BD8;text-align:center">①</p>
+<p data-build-in="fade 1" style="position:absolute;left:820px;top:296px;width:620px;font-size:24px;line-height:1.4;color:#2B3443"><b>②</b> “Who answers for leelagarden.com.np?” The registry: “ask Cloudflare (eugene and kara)”.</p>
+<p data-build-in="fade 2" style="position:absolute;left:820px;top:727px;width:620px;font-size:24px;line-height:1.4;color:#2B3443"><b>③</b> “What is the A record?” Cloudflare: “169.58.157.28”.</p>
+<p data-build-in="fade 3" style="position:absolute;left:128px;top:660px;width:620px;font-size:24px;line-height:1.4;color:#2B3443"><b>①</b> The browser asks a resolver. <b>④</b> The resolver hands back 169.58.157.28 and remembers it for the TTL, so the next visit skips the lookup.</p>
+<aside>In Present mode click to reveal the steps. 1: the browser asks a resolver. 2: the resolver asks the .np registry who is in charge of the name; the registry points to Cloudflare's nameservers eugene and kara. 3: the resolver asks Cloudflare for the A record and gets 169.58.157.28. 4: the answer goes back to the browser and is cached. All of this usually takes a few milliseconds, and most visits skip it entirely because the answer is already cached.</aside>
+</section>
+
+<section id="records" data-transition="fade" style="background:#0E1622;color:#BFC9D9;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:48px">
+<div style="display:flex;flex-direction:column;gap:12px">
+<p style="font-size:24px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#7FA2FF">Your Domains page</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#F6F4EF">The two records, explained</h2>
+</div>
+<div style="display:flex;flex-direction:row;gap:32px">
+<div style="flex:1;display:flex;flex-direction:column;gap:24px;background:#172235;border:1px solid #26344D;border-radius:20px;padding:36px">
+<div style="display:flex;flex-direction:row;align-items:center;gap:20px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:28px;font-weight:600;color:#0E1622;background:#F2A541;border-radius:10px;padding:4px 18px">A</p>
+<h3 style="font-size:36px;font-weight:600;color:#F6F4EF">Where the site lives</h3>
+</div>
+<div style="display:flex;flex-direction:column;gap:4px">
+<p style="font-size:24px;color:#8A97AD">Name</p>
+<p style="font-size:28px;color:#E4E9F2"><span style="color:#F2A541">@</span>, the root itself: leelagarden.com.np</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:4px">
+<p style="font-size:24px;color:#8A97AD">Value</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:28px;color:#F2A541">169.58.157.28</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:4px">
+<p style="font-size:24px;color:#8A97AD">Who uses it</p>
+<p style="font-size:28px;color:#E4E9F2">Every visitor's browser, to find your VPS</p>
+</div>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:24px;background:#172235;border:1px solid #26344D;border-radius:20px;padding:36px">
+<div style="display:flex;flex-direction:row;align-items:center;gap:20px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:28px;font-weight:600;color:#0E1622;background:#7FA2FF;border-radius:10px;padding:4px 18px">TXT</p>
+<h3 style="font-size:36px;font-weight:600;color:#F6F4EF">Proof that you own it</h3>
+</div>
+<div style="display:flex;flex-direction:column;gap:4px">
+<p style="font-size:24px;color:#8A97AD">Name</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:26px;color:#7FA2FF">_atrium-verify.leelagarden.com.np</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:4px">
+<p style="font-size:24px;color:#8A97AD">Value</p>
+<p style="font-size:28px;color:#E4E9F2"><span style="color:#7FA2FF">atrium-verify=jBqc0F…</span>, a random code made for this domain</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:4px">
+<p style="font-size:24px;color:#8A97AD">Who uses it</p>
+<p style="font-size:28px;color:#E4E9F2">Only Atrium's Verify button. Visitors never see it.</p>
+</div>
+</div>
+</div>
+<p style="font-size:26px;line-height:1.45;color:#BFC9D9">A root domain needs an <b>A record</b> (a number). Subdomains such as www can use a <b>CNAME</b> (a nickname pointing at another name). In Cloudflare keep the cloud <b>grey, “DNS only”</b>, so visitors reach nginx directly.</p>
+<aside>The @ sign is DNS shorthand for "the domain itself", with nothing in front. The A record is the one that actually sends visitors to your server. The TXT record does nothing for visitors; it is a note that only someone who controls the domain's DNS could have written, which is why Atrium uses it as proof of ownership. Root domains cannot use a CNAME by the DNS rules, which is why Atrium asks for an A record here. Grey cloud matters: with the orange cloud, visitors talk to Cloudflare instead of nginx, and certificate checks behave differently.</aside>
+</section>
+
+<section id="dns-gotchas" data-transition="fade" style="background:#F6F4EF;color:#4A5568;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:48px">
+<div style="display:flex;flex-direction:column;gap:12px">
+<p style="font-size:24px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#2F5BD8">DNS · lessons from launch day</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#16202E">Why it “didn't work” for a while</h2>
+</div>
+<table style="width:1664px;font-size:24px;line-height:1.4;color:#2B3443">
+<tr style="background:#E9E5DC"><th style="width:30%;text-align:left">What you saw</th><th style="width:40%;text-align:left">Why</th><th style="width:30%;text-align:left">The fix</th></tr>
+<tr><td>Some visitors got errors or an old page</td><td>An old Cloudflare zone in another account still answered for leelagarden.com.np</td><td>Delete the old zone. Only the one using the registrar's nameservers (eugene and kara) counts</td></tr>
+<tr><td>“Could not resolve host” for admin.leelagarden.com.np</td><td>Your router remembered “this does not exist” from before the record was added</td><td>Wait out the TTL, or use 1.1.1.1 as your DNS</td></tr>
+<tr><td>Odd HTTPS errors with the orange cloud on</td><td>Proxied mode puts Cloudflare between visitors and nginx, with its own certificate and rules</td><td>Keep the record grey: “DNS only”</td></tr>
+<tr><td>Verify said “not pointing”</td><td>The VPS's own resolver had stale answers, and Atrium misread .com.np as a subdomain</td><td>VPS switched to 1.1.1.1 and 9.9.9.9; Atrium's code fixed</td></tr>
+</table>
+<aside>The big lesson: DNS has memory everywhere. Every resolver caches answers, including "this name does not exist" (negative caching), so after a change different people can see different results for a while. And two Cloudflare zones for the same domain can both exist; only the one whose nameservers are listed at the registrar is real, but resolvers that cached the old nameservers keep asking the old zone until their cache expires. When something looks inconsistent, check with dig against 1.1.1.1 and 8.8.8.8 before changing anything.</aside>
+</section>
+
+<section id="verify" data-transition="fade" style="background:#0E1622;color:#BFC9D9;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:48px">
+<div style="display:flex;flex-direction:column;gap:12px">
+<p style="font-size:24px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#7FA2FF">Verification</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#F6F4EF">What the Verify button checks</h2>
+</div>
+<div style="display:flex;flex-direction:row;gap:48px">
+<div style="width:720px;display:flex;flex-direction:column;gap:24px">
+<div style="display:flex;flex-direction:column;gap:12px;background:#172235;border:1px solid #26344D;border-radius:20px;padding:32px">
+<h3 style="font-size:32px;font-weight:600;color:#7FA2FF">Check 1 · Ownership</h3>
+<p style="font-size:26px;line-height:1.4">Look up the TXT record at _atrium-verify.leelagarden.com.np. Does it match this domain's code?</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:12px;background:#172235;border:1px solid #26344D;border-radius:20px;padding:32px">
+<h3 style="font-size:32px;font-weight:600;color:#F2A541">Check 2 · Pointing</h3>
+<p style="font-size:26px;line-height:1.4">Look up the A records for leelagarden.com.np. Is 169.58.157.28 one of them? A CNAME to the platform address also counts.</p>
+</div>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:24px">
+<table style="font-size:26px;line-height:1.4;color:#E4E9F2">
+<tr style="background:#1E2B42"><th style="width:28%;text-align:left">TXT matches</th><th style="width:30%;text-align:left">Points here</th><th style="width:42%;text-align:left">DNS shows</th></tr>
+<tr><td>No</td><td>No</td><td>Unverified</td></tr>
+<tr><td>Yes</td><td>No</td><td>Not pointing</td></tr>
+<tr><td>No</td><td>Yes</td><td>Ownership pending</td></tr>
+<tr style="background:#173326"><td>Yes</td><td>Yes</td><td>Valid, and Status: Active</td></tr>
+</table>
+<p style="font-size:24px;line-height:1.4;color:#8A97AD">Each click runs both lookups again, live. That is the “Checked: just now” on your screen.</p>
+</div>
+</div>
+<aside>Verify does two independent DNS lookups from the server. Ownership: the TXT record must contain exactly the code Atrium generated for this domain. Pointing: the domain's A records must include the server's address, 169.58.157.28 (or, for a subdomain, a CNAME to the platform address). Only when both pass does the domain become Active, and the first time that happens Atrium records the verification date and announces a domain.verified event.</aside>
+</section>
+
+<section id="why-txt" data-transition="fade" style="background:#2F4FC9;color:#DCE4FF;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;justify-content:center;gap:48px">
+<p style="font-size:24px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#DCE4FF">Why the TXT record exists</p>
+<h2 style="font-size:72px;font-weight:600;line-height:1.15;color:#F6F4EF">Anyone can type a domain into a dashboard. Only its owner can change its DNS.</h2>
+<p style="font-size:32px;line-height:1.45;width:1400px">Without the TXT check, a stranger could claim leelagarden.com.np on their own Atrium account. If someone grabs a domain first, the real owner adds a second TXT record, a claim code, and takes it back.</p>
+<aside>This is the whole idea of domain verification, used by Google, Microsoft, Vercel and others too: ask for something only the owner can do. Editing the domain's DNS is that thing. Atrium also refuses platform names (like admin.sites.surajthapa247.com.np), so nobody can attach those to a client site.</aside>
+</section>
+
+<section id="firewall" data-transition="fade" style="background:#F6F4EF;color:#4A5568;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:48px">
+<div style="display:flex;flex-direction:column;gap:12px">
+<p style="font-size:24px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#2F5BD8">The server</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#16202E">Arriving at 169.58.157.28: the front door</h2>
+</div>
+<div style="display:flex;flex-direction:row;gap:32px">
+<div style="flex:1;display:flex;flex-direction:column;gap:20px;background:#FDFCF9;border:2px solid #2F5BD8;border-radius:20px;padding:36px">
+<div style="display:flex;flex-direction:row;align-items:center;gap:16px">
+<svg class="x-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#2F5BD8;width:44px;height:44px" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15 15 0 0 1 0 20a15 15 0 0 1 0-20"/></svg>
+<h3 style="font-size:34px;font-weight:600;color:#16202E">Open to the internet</h3>
+</div>
+<p style="font-size:28px;line-height:1.4;color:#2B3443"><b>22 · SSH</b>: you, and the GitHub deploys</p>
+<p style="font-size:28px;line-height:1.4;color:#2B3443"><b>80 · HTTP</b>: redirects to HTTPS, certificate checks</p>
+<p style="font-size:28px;line-height:1.4;color:#2B3443"><b>443 · HTTPS</b>: every real visitor</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:20px;background:#EFECE5;border:2px solid #D5CFC3;border-radius:20px;padding:36px">
+<div style="display:flex;flex-direction:row;align-items:center;gap:16px">
+<svg class="x-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#5F6878;width:44px;height:44px" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+<h3 style="font-size:34px;font-weight:600;color:#16202E">Closed: inside the server only</h3>
+</div>
+<p style="font-size:28px;line-height:1.4;color:#2B3443"><b>3000</b> admin app · <b>3001</b> renderer · <b>4000</b> API</p>
+<p style="font-size:28px;line-height:1.4;color:#2B3443"><b>5432</b> Postgres · <b>6379</b> Redis</p>
+<p style="font-size:26px;line-height:1.4;color:#4A5568">Reachable only from the server itself (127.0.0.1) and its Docker containers.</p>
+</div>
+</div>
+<p style="font-size:26px;line-height:1.45">The firewall is <b>ufw</b>. Because the apps hide behind it, the only way in from outside is through <b>nginx</b> on 80 and 443.</p>
+<aside>A port is a numbered door on a server. The VPS has one public address but many programs; each listens on its own port. The firewall (ufw) only opens 22, 80 and 443 to the world. The apps listen on 127.0.0.1, the server's "talk to myself" address, and Postgres and Redis accept only the Docker network. So even if someone knew the database password, they could not reach the database from the internet.</aside>
+</section>
+
+<section id="nginx" data-transition="fade" style="background:#0E1622;color:#BFC9D9;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
+<div style="display:flex;flex-direction:column;gap:12px">
+<p style="font-size:24px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#7FA2FF">The server</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#F6F4EF">nginx: the receptionist who reads the name</h2>
+</div>
+<p style="font-size:28px;line-height:1.4">Many sites share one IP address. nginx reads which name the visitor asked for and follows the matching rule.</p>
+<div style="display:flex;flex-direction:column;gap:16px">
+<div style="display:flex;flex-direction:row;align-items:center;gap:32px">
+<p style="width:700px;font-family:'JetBrains Mono', 'Courier New', monospace;font-size:26px;color:#E4E9F2;background:#172235;border:1px solid #26344D;border-radius:12px;padding:16px 24px">http://leelagarden.com.np</p>
+<x-shape kind="arrow-right" style="width:64px;height:32px;background:#7FA2FF"></x-shape>
+<p style="flex:1;font-size:26px;color:#BFC9D9">Redirect to https://, the secure version</p>
+</div>
+<div style="display:flex;flex-direction:row;align-items:center;gap:32px">
+<p style="width:700px;font-family:'JetBrains Mono', 'Courier New', monospace;font-size:26px;color:#E4E9F2;background:#172235;border:1px solid #26344D;border-radius:12px;padding:16px 24px">https://www.leelagarden.com.np</p>
+<x-shape kind="arrow-right" style="width:64px;height:32px;background:#7FA2FF"></x-shape>
+<p style="flex:1;font-size:26px;color:#BFC9D9">Redirect to https://leelagarden.com.np</p>
+</div>
+<div style="display:flex;flex-direction:row;align-items:center;gap:32px">
+<p style="width:700px;font-family:'JetBrains Mono', 'Courier New', monospace;font-size:26px;color:#F6F4EF;background:#172235;border:2px solid #F2A541;border-radius:12px;padding:16px 24px">https://leelagarden.com.np</p>
+<x-shape kind="arrow-right" style="width:64px;height:32px;background:#F2A541"></x-shape>
+<p style="flex:1;font-size:26px;color:#F6F4EF"><b>Renderer</b> · 127.0.0.1:3001, the website</p>
+</div>
+<div style="display:flex;flex-direction:row;align-items:center;gap:32px">
+<p style="width:700px;font-family:'JetBrains Mono', 'Courier New', monospace;font-size:26px;color:#E4E9F2;background:#172235;border:1px solid #26344D;border-radius:12px;padding:16px 24px">https://admin.leelagarden.com.np</p>
+<x-shape kind="arrow-right" style="width:64px;height:32px;background:#7FA2FF"></x-shape>
+<p style="flex:1;font-size:26px;color:#BFC9D9"><b>Admin app</b> · 127.0.0.1:3000, the dashboard</p>
+</div>
+<div style="display:flex;flex-direction:row;align-items:center;gap:32px">
+<p style="width:700px;font-family:'JetBrains Mono', 'Courier New', monospace;font-size:26px;color:#E4E9F2;background:#172235;border:1px solid #26344D;border-radius:12px;padding:16px 24px">https://api.sites.surajthapa247.com.np</p>
+<x-shape kind="arrow-right" style="width:64px;height:32px;background:#7FA2FF"></x-shape>
+<p style="flex:1;font-size:26px;color:#BFC9D9"><b>API</b> · 127.0.0.1:4000</p>
+</div>
+</div>
+<p style="font-size:24px;color:#8A97AD">The rules for this domain live in /etc/nginx/atrium-domains/leelagarden.conf on the VPS.</p>
+<aside>nginx is a reverse proxy: it is the only program facing the internet, and it forwards each request to the right app behind it. With HTTPS it learns the requested name at the very start of the connection (that is called SNI), so it can also pick the right certificate. Plain http and www both get a 301 redirect, which tells browsers and Google that https://leelagarden.com.np is the one true address.</aside>
+</section>
+
+<section id="https" data-transition="fade" style="background:#F6F4EF;color:#4A5568;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:48px">
+<div style="display:flex;flex-direction:column;gap:12px">
+<p style="font-size:24px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#2F5BD8">The server</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#16202E">HTTPS: how the padlock was earned</h2>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:24px">
+<div style="display:flex;flex-direction:column;gap:16px;background:#FDFCF9;border:1px solid #E2DDD2;border-radius:20px;padding:32px">
+<p style="width:56px;height:56px;border-radius:28px;background:#16202E;color:#F6F4EF;font-size:28px;font-weight:700;line-height:2;text-align:center">1</p>
+<p style="font-size:24px;line-height:1.4;color:#2B3443"><b>certbot</b>, on the VPS, asks <b>Let's Encrypt</b> for a certificate for leelagarden.com.np.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:16px;background:#FDFCF9;border:1px solid #E2DDD2;border-radius:20px;padding:32px">
+<p style="width:56px;height:56px;border-radius:28px;background:#16202E;color:#F6F4EF;font-size:28px;font-weight:700;line-height:2;text-align:center">2</p>
+<p style="font-size:24px;line-height:1.4;color:#2B3443">Let's Encrypt replies: “prove it. Put this random file under /.well-known/ on that domain.”</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:16px;background:#FDFCF9;border:1px solid #E2DDD2;border-radius:20px;padding:32px">
+<p style="width:56px;height:56px;border-radius:28px;background:#16202E;color:#F6F4EF;font-size:28px;font-weight:700;line-height:2;text-align:center">3</p>
+<p style="font-size:24px;line-height:1.4;color:#2B3443">It fetches the file over port 80. DNS sends it to your VPS, and nginx serves the file.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:16px;background:#FDFCF9;border:2px solid #2F5BD8;border-radius:20px;padding:32px">
+<p style="width:56px;height:56px;border-radius:28px;background:#2F5BD8;color:#F6F4EF;font-size:28px;font-weight:700;line-height:2;text-align:center">4</p>
+<p style="font-size:24px;line-height:1.4;color:#2B3443">The file matches, so the certificate is issued. It lasts <b>90 days</b>; certbot renews it automatically.</p>
+</div>
+</div>
+<div style="display:flex;flex-direction:row;gap:32px">
+<div style="flex:1;display:flex;flex-direction:row;gap:20px;align-items:center;background:#E9E5DC;border-radius:20px;padding:28px 32px">
+<svg class="x-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#2F5BD8;width:44px;height:44px" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+<p style="font-size:26px;line-height:1.4;color:#2B3443"><b>Privacy:</b> nobody on the café Wi-Fi can read or change the page.</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:row;gap:20px;align-items:center;background:#E9E5DC;border-radius:20px;padding:28px 32px">
+<svg class="x-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#2F5BD8;width:44px;height:44px" aria-hidden="true"><path d="M12 2l2.4 2.2 3.2-.4.8 3.1 2.8 1.6-1.2 3 1.2 3-2.8 1.6-.8 3.1-3.2-.4L12 22l-2.4-2.2-3.2.4-.8-3.1-2.8-1.6 1.2-3-1.2-3 2.8-1.6.8-3.1 3.2.4z"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></svg>
+<p style="font-size:26px;line-height:1.4;color:#2B3443"><b>Identity:</b> the certificate proves this server really is leelagarden.com.np.</p>
+</div>
+</div>
+<aside>A certificate is a signed statement: "the holder of this key is leelagarden.com.np". Browsers trust Let's Encrypt's signature, so they trust the certificate. To issue it, Let's Encrypt needs proof you control the domain, and the simplest proof is serving a file it asks for on that domain (the HTTP-01 challenge). That is why port 80 stays open and why the DNS must already point at the VPS before a certificate can be issued. Your certificate files are in /etc/letsencrypt/live/leelagarden on the server.</aside>
+</section>
+
+<section id="ssl-badge" data-transition="fade" style="background:#0E1622;color:#BFC9D9;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:48px">
+<div style="display:flex;flex-direction:column;gap:12px">
+<p style="font-size:24px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#F2A541">One honest caveat</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#F6F4EF">“SSL Active” in the dashboard is a label, not the certificate</h2>
+</div>
+<div style="display:flex;flex-direction:row;gap:32px">
+<div style="flex:1;display:flex;flex-direction:column;gap:16px;background:#172235;border:1px solid #26344D;border-radius:20px;padding:36px">
+<h3 style="font-size:32px;font-weight:600;color:#7FA2FF">What the dashboard knows</h3>
+<p style="font-size:26px;line-height:1.45">DNS is right: the TXT matches and the A record points at 169.58.157.28. Atrium then marks SSL “Active”, because it was built for an edge server (Caddy) that issues certificates on its own.</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:16px;background:#172235;border:1px solid #F2A541;border-radius:20px;padding:36px">
+<h3 style="font-size:32px;font-weight:600;color:#F2A541">What actually serves HTTPS</h3>
+<p style="font-size:26px;line-height:1.45">On your VPS it is nginx, with the certificate certbot issued. I added the certificate and the nginx rules by hand:</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#E4E9F2">/etc/letsencrypt/live/leelagarden</p>
+</div>
+</div>
+<p style="font-size:28px;line-height:1.45;color:#E4E9F2">So each new client domain still needs its nginx rules and a certificate on the server. That can be automated later, for example with Caddy's on-demand certificates or a small script.</p>
+<aside>Atrium's code assumes an edge like Caddy with on-demand TLS: it would ask Atrium "is this domain allowed?" and issue a certificate automatically the first time a visitor arrives. Your production setup uses nginx and certbot instead, because you asked for the app only. The platform's own subdomains (anything.sites.surajthapa247.com.np) can share one wildcard certificate once a Cloudflare API token is placed on the server; client domains like leelagarden.com.np need their own certificate each.</aside>
+</section>
+
+<section id="renderer" data-transition="fade" style="background:#F6F4EF;color:#4A5568;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
+<div style="display:flex;flex-direction:column;gap:12px">
+<p style="font-size:24px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#2F5BD8">Building the page</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#16202E">The renderer: from a name to a page</h2>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:24px">
+<div style="display:flex;flex-direction:column;gap:14px;background:#FDFCF9;border:1px solid #E2DDD2;border-radius:20px;padding:30px">
+<p style="font-size:24px;font-weight:600;color:#2F5BD8">1 · nginx</p>
+<h3 style="font-size:30px;font-weight:600;line-height:1.2;color:#16202E">Hands it over</h3>
+<p style="font-size:24px;line-height:1.4">The request reaches the renderer (port 3001) with the website's name attached, in the <b>Host header</b>.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:14px;background:#FDFCF9;border:1px solid #E2DDD2;border-radius:20px;padding:30px">
+<p style="font-size:24px;font-weight:600;color:#2F5BD8">2 · API</p>
+<h3 style="font-size:30px;font-weight:600;line-height:1.2;color:#16202E">Which website?</h3>
+<p style="font-size:24px;line-height:1.4">The API matches the name to a verified custom domain, or to a platform address (leela-garden is the site's slug).</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:14px;background:#FDFCF9;border:1px solid #E2DDD2;border-radius:20px;padding:30px">
+<p style="font-size:24px;font-weight:600;color:#2F5BD8">3 · Postgres</p>
+<h3 style="font-size:30px;font-weight:600;line-height:1.2;color:#16202E">What's published?</h3>
+<p style="font-size:24px;line-height:1.4">The API reads the last <b>published</b> version: pages, theme, text, images. Drafts never leak.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:14px;background:#FDFCF9;border:2px solid #2F5BD8;border-radius:20px;padding:30px">
+<p style="font-size:24px;font-weight:600;color:#2F5BD8">4 · Renderer</p>
+<h3 style="font-size:30px;font-weight:600;line-height:1.2;color:#16202E">Draw and remember</h3>
+<p style="font-size:24px;line-height:1.4">It builds the HTML and keeps a cached copy, so the next visitor gets it instantly. Publishing clears the cache.</p>
+</div>
+</div>
+<div style="display:flex;flex-direction:column;gap:8px;background:#FFF6E8;border-left:6px solid #E08A1E;border-radius:12px;padding:28px 32px">
+<p style="font-size:24px;font-weight:600;color:#9A5A0B">About your setup today</p>
+<p style="font-size:26px;line-height:1.45;color:#2B3443">nginx tells the renderer “this is leela-garden.sites.surajthapa247.com.np” instead of passing leelagarden.com.np through. Both lead to the same website. Passing the real name through later would let Atrium apply its own primary-domain and redirect rules.</p>
+</div>
+<aside>The renderer is a Next.js app that can draw any Atrium website; the name in the request decides which one. It asks the API at /v1/public/sites/resolve?host=... and gets back a snapshot of the last published version. It caches the result, so a busy site barely touches the database. When you click Publish, Atrium tells the renderer to forget its copy, and the next visitor sees the new version.</aside>
+</section>
+
+<section id="journey" data-transition="fade" style="background:#0E1622;color:#BFC9D9;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:48px">
+<div style="display:flex;flex-direction:column;gap:12px">
+<p style="font-size:24px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#7FA2FF">Putting it together</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#F6F4EF">A first visit, from Enter to photos</h2>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:24px">
+<div style="display:flex;flex-direction:column;gap:10px;background:#172235;border:1px solid #26344D;border-radius:20px;padding:28px">
+<h3 style="font-size:28px;font-weight:600;color:#F6F4EF"><span style="color:#F2A541">1</span> DNS lookup</h3>
+<p style="font-size:24px;line-height:1.4">A cached answer, or a quick ask to Cloudflare: 169.58.157.28.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:10px;background:#172235;border:1px solid #26344D;border-radius:20px;padding:28px">
+<h3 style="font-size:28px;font-weight:600;color:#F6F4EF"><span style="color:#F2A541">2</span> Knock on the door</h3>
+<p style="font-size:24px;line-height:1.4">Connect to port 443. The firewall lets it through.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:10px;background:#172235;border:1px solid #26344D;border-radius:20px;padding:28px">
+<h3 style="font-size:28px;font-weight:600;color:#F6F4EF"><span style="color:#F2A541">3</span> Handshake</h3>
+<p style="font-size:24px;line-height:1.4">nginx shows the certificate; the browser checks it and shows the padlock.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:10px;background:#172235;border:1px solid #26344D;border-radius:20px;padding:28px">
+<h3 style="font-size:28px;font-weight:600;color:#F6F4EF"><span style="color:#F2A541">4</span> Route by name</h3>
+<p style="font-size:24px;line-height:1.4">nginx matches leelagarden.com.np and passes it to the renderer.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:10px;background:#172235;border:1px solid #26344D;border-radius:20px;padding:28px">
+<h3 style="font-size:28px;font-weight:600;color:#F6F4EF"><span style="color:#F2A541">5</span> Cache or build</h3>
+<p style="font-size:24px;line-height:1.4">Cached? Sent at once. If not: renderer, API, Postgres, then cached.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:10px;background:#172235;border:1px solid #26344D;border-radius:20px;padding:28px">
+<h3 style="font-size:28px;font-weight:600;color:#F6F4EF"><span style="color:#F2A541">6</span> HTML arrives</h3>
+<p style="font-size:24px;line-height:1.4">The browser then fetches CSS, scripts and fonts from the same server.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:10px;background:#172235;border:1px solid #26344D;border-radius:20px;padding:28px">
+<h3 style="font-size:28px;font-weight:600;color:#F6F4EF"><span style="color:#F2A541">7</span> Photos from R2</h3>
+<p style="font-size:24px;line-height:1.4">Images come straight from Cloudflare R2 storage, so they never load your VPS.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:10px;background:#172235;border:1px solid #26344D;border-radius:20px;padding:28px">
+<h3 style="font-size:28px;font-weight:600;color:#F6F4EF"><span style="color:#F2A541">8</span> Contact form</h3>
+<p style="font-size:24px;line-height:1.4">reCAPTCHA gives a token; the API checks it with Google, then saves the message.</p>
+</div>
+</div>
+<aside>This is the full sequence for someone visiting for the first time. Steps 1 to 6 bring the page; most of them take a few milliseconds each. Step 7 is why you set up R2: photos are the heaviest part of a page, and they are served by Cloudflare from media.sites.surajthapa247.com.np, not by your 7-dollar VPS. Step 8 only happens when someone submits the contact form.</aside>
+</section>
+
+<section id="admin" data-transition="fade" style="background:#F6F4EF;color:#4A5568;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:48px">
+<div style="display:flex;flex-direction:column;gap:12px">
+<p style="font-size:24px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#2F5BD8">Same trip, different door</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#16202E">admin.leelagarden.com.np</h2>
+</div>
+<div style="display:flex;flex-direction:row;gap:32px">
+<div style="flex:1;display:flex;flex-direction:column;gap:14px;background:#FDFCF9;border:1px solid #E2DDD2;border-radius:20px;padding:36px">
+<p style="font-size:24px;font-weight:600;color:#2F5BD8">1</p>
+<h3 style="font-size:32px;font-weight:600;color:#16202E">DNS and nginx</h3>
+<p style="font-size:26px;line-height:1.45">Its A record points to the same VPS. nginx sends this name to the admin app (port 3000), with its own certificate.</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:14px;background:#FDFCF9;border:1px solid #E2DDD2;border-radius:20px;padding:36px">
+<p style="font-size:24px;font-weight:600;color:#2F5BD8">2</p>
+<h3 style="font-size:32px;font-weight:600;color:#16202E">Branding by name</h3>
+<p style="font-size:26px;line-height:1.45">The sign-in page asks the API who owns this hostname. It is saved as Leela Garden's admin domain, so the page shows Leela Garden's name and logo.</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:14px;background:#FDFCF9;border:1px solid #E2DDD2;border-radius:20px;padding:36px">
+<p style="font-size:24px;font-weight:600;color:#2F5BD8">3</p>
+<h3 style="font-size:32px;font-weight:600;color:#16202E">Trusted for sign-in</h3>
+<p style="font-size:26px;line-height:1.45">Because it is a saved admin domain, the API accepts sign-ins from it automatically. New accounts come by invitation only.</p>
+</div>
+</div>
+<p style="font-size:26px;line-height:1.45">Set it as a super admin: <b>Organizations</b>, the organization's menu, <b>Admin domain…</b></p>
+<aside>The admin domain follows the same path as the website up to nginx; nginx then sends it to the dashboard app instead of the renderer. The dashboard reads the hostname in the browser and asks the API for branding, which is how one dashboard can look like Leela Garden on admin.leelagarden.com.np and like Atrium on admin.sites.surajthapa247.com.np. Browsers block sign-ins from unknown sites, so the API keeps a list of trusted addresses; saved admin domains are added to it automatically, within a minute.</aside>
+</section>
+
+<section id="rc-flow" data-transition="fade" style="background:#F6F4EF;color:#4A5568;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:48px">
+<div style="display:flex;flex-direction:column;gap:12px">
+<p style="font-size:24px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#2F5BD8">Case study · reCAPTCHA</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#16202E">How the contact form tells humans from bots</h2>
+</div>
+<iframe class="x-embed" style="position:absolute;left:128px;top:296px;width:1664px;height:640px;border:0" sandbox="allow-scripts" srcdoc="&lt;!doctype html&gt;&lt;html&gt;&lt;head&gt;&lt;meta charset=&quot;utf-8&quot;&gt;&lt;style&gt;
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:transparent;font-family:-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,Helvetica,Arial,sans-serif;color:#16202E;overflow:hidden}
+.lane{position:absolute;top:0;height:300px;border:2px dashed #CFC8BA;border-radius:24px}
+.lane p{margin:0;position:absolute;top:16px;left:24px;font-size:24px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:#5F6878}
+.b{position:absolute;top:84px;width:260px;height:180px;border-radius:20px;background:#FDFCF9;border:2px solid #DCD6CA;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:12px;transition:transform .35s,border-color .35s,box-shadow .35s}
+.b b{font-size:30px}
+.b i{font-style:normal;font-size:24px;color:#5A6474;margin-top:8px;line-height:1.25}
+.b.on{border-color:#2F5BD8;box-shadow:0 0 0 8px rgba(76,125,255,.22);transform:translateY(-8px)}
+.b.g.on{border-color:#E08A1E;box-shadow:0 0 0 8px rgba(242,165,65,.28)}
+.rail{position:absolute;left:200px;width:1264px;top:360px;height:4px;background:#DCD6CA;border-radius:2px}
+.dot{position:absolute;top:346px;left:200px;width:32px;height:32px;margin-left:-16px;border-radius:50%;background:#2F5BD8;box-shadow:0 0 0 10px rgba(76,125,255,.25);transition:left .9s cubic-bezier(.6,0,.3,1),background .3s}
+.dot.g{background:#E08A1E;box-shadow:0 0 0 10px rgba(242,165,65,.3)}
+.dot.ok{background:#2E9E62;box-shadow:0 0 0 10px rgba(46,158,98,.28)}
+.cap{position:absolute;left:0;right:0;top:420px;text-align:center;font-size:34px;line-height:1.35;padding:0 120px;transition:opacity .25s}
+.n{display:inline-block;width:52px;height:52px;line-height:52px;border-radius:26px;background:#16202E;color:#F6F4EF;font-weight:700;margin-right:14px;font-size:28px;text-align:center}
+.dots{position:absolute;left:0;right:0;top:590px;text-align:center}
+.dots span{display:inline-block;width:14px;height:14px;border-radius:7px;background:#D5CFC3;margin:0 6px}
+.dots span.on{background:#2F5BD8}
+&lt;/style&gt;&lt;/head&gt;&lt;body&gt;
+&lt;div class=&quot;lane&quot; style=&quot;left:0;width:800px&quot;&gt;&lt;p&gt;On the internet&lt;/p&gt;&lt;/div&gt;
+&lt;div class=&quot;lane&quot; style=&quot;left:864px;width:800px&quot;&gt;&lt;p&gt;Your VPS&lt;/p&gt;&lt;/div&gt;
+&lt;div class=&quot;b&quot; id=&quot;b0&quot; style=&quot;left:70px&quot;&gt;&lt;b&gt;Browser&lt;/b&gt;&lt;i&gt;the contact page&lt;/i&gt;&lt;/div&gt;
+&lt;div class=&quot;b g&quot; id=&quot;b1&quot; style=&quot;left:470px&quot;&gt;&lt;b&gt;Google&lt;/b&gt;&lt;i&gt;reCAPTCHA v3&lt;/i&gt;&lt;/div&gt;
+&lt;div class=&quot;b&quot; id=&quot;b2&quot; style=&quot;left:934px&quot;&gt;&lt;b&gt;API&lt;/b&gt;&lt;i&gt;checks and decides&lt;/i&gt;&lt;/div&gt;
+&lt;div class=&quot;b&quot; id=&quot;b3&quot; style=&quot;left:1334px&quot;&gt;&lt;b&gt;Postgres&lt;/b&gt;&lt;i&gt;saves the message&lt;/i&gt;&lt;/div&gt;
+&lt;div class=&quot;rail&quot;&gt;&lt;/div&gt;
+&lt;div class=&quot;dot&quot; id=&quot;dot&quot;&gt;&lt;/div&gt;
+&lt;div class=&quot;cap&quot; id=&quot;cap&quot;&gt;&lt;/div&gt;
+&lt;div class=&quot;dots&quot; id=&quot;dots&quot;&gt;&lt;/div&gt;
+&lt;script&gt;
+var C=[200,600,1064,1464];
+var S=[[0,&quot;The visitor clicks into the form. The page loads Google&#x27;s script with your site key.&quot;,&quot;&quot;],[1,&quot;Google quietly watches how the visitor behaves and hands the browser a token.&quot;,&quot;g&quot;],[2,&quot;The form sends the message together with the token to the API.&quot;,&quot;&quot;],[1,&quot;The API asks Google, using the secret key: is this token real, how human is it (0 to 1), and which site made it?&quot;,&quot;g&quot;],[2,&quot;The API checks that the site is on the allowed list and the score is at least 0.5.&quot;,&quot;&quot;],[3,&quot;Passed: the message is saved, and the visitor sees a thank-you message.&quot;,&quot;ok&quot;]];
+var dots=document.getElementById(&#x27;dots&#x27;),cap=document.getElementById(&#x27;cap&#x27;),dot=document.getElementById(&#x27;dot&#x27;);
+for(var k=0;k&lt;S.length;k++){dots.appendChild(document.createElement(&#x27;span&#x27;));}
+var i=0;
+function show(){
+  var s=S[i];
+  for(var j=0;j&lt;4;j++){var el=document.getElementById(&#x27;b&#x27;+j);el.className=el.className.replace(/ on/g,&#x27;&#x27;)+(j===s[0]?&#x27; on&#x27;:&#x27;&#x27;);}
+  dot.style.left=C[s[0]]+&#x27;px&#x27;;
+  dot.className=&#x27;dot&#x27;+(s[2]?&#x27; &#x27;+s[2]:&#x27;&#x27;);
+  cap.style.opacity=0;
+  setTimeout(function(){cap.innerHTML=&#x27;&lt;span class=&quot;n&quot;&gt;&#x27;+(i+1)+&#x27;&lt;/span&gt;&#x27;+s[1];cap.style.opacity=1;},250);
+  var d=dots.children;for(var m=0;m&lt;d.length;m++){d[m].className=m===i?&#x27;on&#x27;:&#x27;&#x27;;}
+}
+show();
+setInterval(function(){i=(i+1)%S.length;show();},3600);
+&lt;/script&gt;
+&lt;/body&gt;&lt;/html&gt;" title="Animated diagram"></iframe>
+<aside>reCAPTCHA v3 is invisible: there is no checkbox. It uses two keys. The site key is public and goes into the page so Google's script knows which account it is working for. The secret key stays on the server and is only used by the API when it asks Google whether a token is genuine. Google's answer includes a score from 0 (bot) to 1 (human) and the hostname the token was made on; Atrium rejects scores under 0.5 and hostnames that aren't allowed. If any link in this chain breaks, the form refuses the message.</aside>
+</section>
+
+<section id="rc-bugs" data-transition="fade" style="background:#0E1622;color:#BFC9D9;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
+<div style="display:flex;flex-direction:column;gap:12px">
+<p style="font-size:24px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#7FA2FF">Case study · reCAPTCHA</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#F6F4EF">Three things were wrong, one after another</h2>
+</div>
+<div style="display:flex;flex-direction:row;gap:32px">
+<div style="flex:1;display:flex;flex-direction:column;gap:14px;background:#172235;border:1px solid #26344D;border-radius:20px;padding:32px">
+<h3 style="font-size:30px;font-weight:600;color:#F6F4EF"><span style="color:#F2A541">1</span> Not published</h3>
+<p style="font-size:24px;font-weight:600;color:#8A97AD">Why</p>
+<p style="font-size:24px;line-height:1.4">reCAPTCHA was switched on in the draft, but visitors get the published version, where it was still off.</p>
+<p style="font-size:24px;font-weight:600;color:#8A97AD">Fix</p>
+<p style="font-size:24px;line-height:1.4;color:#E4E9F2">Publish the website.</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:14px;background:#172235;border:1px solid #26344D;border-radius:20px;padding:32px">
+<h3 style="font-size:30px;font-weight:600;color:#F6F4EF"><span style="color:#F2A541">2</span> Site not allowed</h3>
+<p style="font-size:24px;font-weight:600;color:#8A97AD">Why</p>
+<p style="font-size:24px;line-height:1.4">Atrium accepts tokens only from listed names, matched exactly. The .sites address wasn't listed.</p>
+<p style="font-size:24px;font-weight:600;color:#8A97AD">Fix</p>
+<p style="font-size:24px;line-height:1.4;color:#E4E9F2">Add this to Atrium's Allowed hostnames:</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#7FA2FF">*.sites.surajthapa247.com.np</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:14px;background:#172235;border:2px solid #F2A541;border-radius:20px;padding:32px">
+<h3 style="font-size:30px;font-weight:600;color:#F6F4EF"><span style="color:#F2A541">3</span> A hidden space</h3>
+<p style="font-size:24px;font-weight:600;color:#8A97AD">Why</p>
+<p style="font-size:24px;line-height:1.4">The pasted site key ended in a space. Google received <span style="color:#F2A541">…9lE%20</span>, refused the key and never gave a token.</p>
+<p style="font-size:24px;font-weight:600;color:#8A97AD">Fix</p>
+<p style="font-size:24px;line-height:1.4;color:#E4E9F2">Trim it, clear the cached page, and make Atrium trim keys from now on.</p>
+</div>
+</div>
+<div style="display:flex;flex-direction:column;gap:8px;background:#172235;border-left:6px solid #7FA2FF;border-radius:12px;padding:24px 32px">
+<p style="font-size:24px;font-weight:600;color:#7FA2FF">Two lists, two jobs</p>
+<p style="font-size:24px;line-height:1.4;color:#E4E9F2"><b>Google's console:</b> surajthapa247.com.np and leelagarden.com.np. Subdomains are included; wildcards are rejected. <b>Atrium:</b> matches exactly, so it needs the *.sites wildcard.</p>
+</div>
+<aside>Each problem hid the next one. Until the site was published, there was no reCAPTCHA on the page at all. Once it was there, submissions from the .sites address would have been refused because Atrium's allow-list did not include it. And even then, Google refused to issue any token because the site key had a trailing space: %20 is how a space looks inside a web address. That last one is invisible on screen, which is why it took the longest. The code fix (commit 1af7b6f) trims spaces from the site key, secret key and hostnames whenever they are saved.</aside>
+</section>
+
+<section id="rc-debug" data-transition="fade" style="background:#F6F4EF;color:#4A5568;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
+<div style="display:flex;flex-direction:column;gap:12px">
+<p style="font-size:24px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#2F5BD8">Case study · reCAPTCHA</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#16202E">How I tracked it down</h2>
+</div>
+<div style="display:flex;flex-direction:column;gap:14px">
+<div style="display:flex;flex-direction:row;align-items:center;gap:24px;background:#FDFCF9;border:1px solid #E2DDD2;border-radius:16px;padding:18px 28px">
+<p style="width:52px;height:52px;border-radius:26px;background:#16202E;color:#F6F4EF;font-size:26px;font-weight:700;line-height:2;text-align:center">1</p>
+<p style="flex:1;font-size:26px;line-height:1.4;color:#2B3443"><b>Read the live page's HTML.</b> No reCAPTCHA at all. The draft had it on, the published version didn't, so the website was published.</p>
+</div>
+<div style="display:flex;flex-direction:row;align-items:center;gap:24px;background:#FDFCF9;border:1px solid #E2DDD2;border-radius:16px;padding:18px 28px">
+<p style="width:52px;height:52px;border-radius:26px;background:#16202E;color:#F6F4EF;font-size:26px;font-weight:700;line-height:2;text-align:center">2</p>
+<p style="flex:1;font-size:26px;line-height:1.4;color:#2B3443"><b>Read the captcha integration.</b> Its allowed hostnames missed the .sites address. I added it, re-entering all four, because the edit form hides saved ones.</p>
+</div>
+<div style="display:flex;flex-direction:row;align-items:center;gap:24px;background:#FDFCF9;border:2px solid #E08A1E;border-radius:16px;padding:18px 28px">
+<p style="width:52px;height:52px;border-radius:26px;background:#E08A1E;color:#16202E;font-size:26px;font-weight:700;line-height:2;text-align:center">3</p>
+<p style="flex:1;font-size:26px;line-height:1.4;color:#2B3443"><b>Looked at what the form really received</b>, in Chrome. The site key ended in a space. I trimmed it in the database.</p>
+</div>
+<div style="display:flex;flex-direction:row;align-items:center;gap:24px;background:#FDFCF9;border:2px solid #2E9E62;border-radius:16px;padding:18px 28px">
+<p style="width:52px;height:52px;border-radius:26px;background:#2E9E62;color:#F6F4EF;font-size:26px;font-weight:700;line-height:2;text-align:center">4</p>
+<p style="flex:1;font-size:26px;line-height:1.4;color:#2B3443"><b>Cleared the renderer's cached page</b> and watched Google issue a token. Working. The code now trims keys, so it can't recur.</p>
+</div>
+</div>
+<p style="font-size:28px;line-height:1.45;color:#16202E"><b>Lesson:</b> check what visitors actually get, the live page, not what the editor shows. And invisible characters are real.</p>
+<aside>The method matters more than the specific bugs: start from what the visitor's browser actually receives and work backwards. Step 1 compared the live HTML with the draft. Step 3 read the settings the form component was given inside the browser, which is where the trailing space finally showed up. After changing the database directly, the renderer still had the old page cached, so it had to be told to refresh. One thing is still open: the captcha edit form does not show already-saved hostnames, so saving it can wipe them. That is flagged as a separate fix.</aside>
+</section>
+
+<section id="checklist" data-transition="fade" style="background:#0E1622;color:#BFC9D9;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:48px">
+<div style="display:flex;flex-direction:column;gap:12px">
+<p style="font-size:24px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#7FA2FF">Your playbook</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#F6F4EF">Connecting the next client's domain</h2>
+</div>
+<div style="display:flex;flex-direction:column;gap:14px">
+<div style="display:flex;flex-direction:row;align-items:center;gap:24px;background:#172235;border-radius:16px;padding:18px 28px">
+<p style="width:52px;height:52px;border-radius:26px;background:#2F5BD8;color:#F6F4EF;font-size:26px;font-weight:700;line-height:2;text-align:center">1</p>
+<p style="flex:1;font-size:28px;line-height:1.4;color:#E4E9F2"><b>In Atrium:</b> Website, Domains, Add domain (for example clientsite.com).</p>
+</div>
+<div style="display:flex;flex-direction:row;align-items:center;gap:24px;background:#172235;border-radius:16px;padding:18px 28px">
+<p style="width:52px;height:52px;border-radius:26px;background:#2F5BD8;color:#F6F4EF;font-size:26px;font-weight:700;line-height:2;text-align:center">2</p>
+<p style="flex:1;font-size:28px;line-height:1.4;color:#E4E9F2"><b>In the client's DNS:</b> the A record (@ to 169.58.157.28) and the TXT record Atrium shows. Grey cloud.</p>
+</div>
+<div style="display:flex;flex-direction:row;align-items:center;gap:24px;background:#172235;border-radius:16px;padding:18px 28px">
+<p style="width:52px;height:52px;border-radius:26px;background:#2F5BD8;color:#F6F4EF;font-size:26px;font-weight:700;line-height:2;text-align:center">3</p>
+<p style="flex:1;font-size:28px;line-height:1.4;color:#E4E9F2"><b>Wait a few minutes,</b> then click Verify until it shows Active and Valid.</p>
+</div>
+<div style="display:flex;flex-direction:row;align-items:center;gap:24px;background:#172235;border:2px solid #F2A541;border-radius:16px;padding:18px 28px">
+<p style="width:52px;height:52px;border-radius:26px;background:#F2A541;color:#0E1622;font-size:26px;font-weight:700;line-height:2;text-align:center">4</p>
+<p style="flex:1;font-size:28px;line-height:1.4;color:#E4E9F2"><b>On the server:</b> add the nginx rules and issue the certificate with certbot. Ask me, or we script it.</p>
+</div>
+<div style="display:flex;flex-direction:row;align-items:center;gap:24px;background:#172235;border-radius:16px;padding:18px 28px">
+<p style="width:52px;height:52px;border-radius:26px;background:#2F5BD8;color:#F6F4EF;font-size:26px;font-weight:700;line-height:2;text-align:center">5</p>
+<p style="flex:1;font-size:28px;line-height:1.4;color:#E4E9F2"><b>Test:</b> open https://clientsite.com in a private window and check the padlock.</p>
+</div>
+<div style="display:flex;flex-direction:row;align-items:center;gap:24px;background:#172235;border-radius:16px;padding:18px 28px">
+<p style="width:52px;height:52px;border-radius:26px;background:#2F5BD8;color:#F6F4EF;font-size:26px;font-weight:700;line-height:2;text-align:center">6</p>
+<p style="flex:1;font-size:28px;line-height:1.4;color:#E4E9F2"><b>Want www too?</b> Add a www record and include it in the certificate; nginx redirects it to the root.</p>
+</div>
+</div>
+<aside>Steps 1 to 3 happen in dashboards and need no server access. Step 4 is the manual one today, highlighted in orange: until certificates are automated, every new client domain needs a server change. Step 5: a private window avoids your browser's own cache. If Verify keeps failing, check the records with an online DNS lookup tool against 1.1.1.1 and 8.8.8.8 first.</aside>
+</section>
+
+<section id="glossary" data-transition="fade" style="background:#F6F4EF;color:#4A5568;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
+<div style="display:flex;flex-direction:column;gap:12px">
+<p style="font-size:24px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#2F5BD8">Cheat sheet</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#16202E">Words you'll meet</h2>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:16px">
+<div style="display:flex;flex-direction:column;gap:8px;background:#FDFCF9;border:1px solid #E2DDD2;border-radius:16px;padding:24px"><h3 style="font-size:28px;font-weight:600;color:#16202E">DNS</h3><p style="font-size:24px;line-height:1.35">The system that turns names into IP addresses.</p></div>
+<div style="display:flex;flex-direction:column;gap:8px;background:#FDFCF9;border:1px solid #E2DDD2;border-radius:16px;padding:24px"><h3 style="font-size:28px;font-weight:600;color:#16202E">Nameserver</h3><p style="font-size:24px;line-height:1.35">Holds a domain's records. Yours: Cloudflare.</p></div>
+<div style="display:flex;flex-direction:column;gap:8px;background:#FDFCF9;border:1px solid #E2DDD2;border-radius:16px;padding:24px"><h3 style="font-size:28px;font-weight:600;color:#16202E">Resolver</h3><p style="font-size:24px;line-height:1.35">Looks names up for you and caches the answers.</p></div>
+<div style="display:flex;flex-direction:column;gap:8px;background:#FDFCF9;border:1px solid #E2DDD2;border-radius:16px;padding:24px"><h3 style="font-size:28px;font-weight:600;color:#16202E">TTL</h3><p style="font-size:24px;line-height:1.35">How long an answer may be remembered.</p></div>
+<div style="display:flex;flex-direction:column;gap:8px;background:#FDFCF9;border:1px solid #E2DDD2;border-radius:16px;padding:24px"><h3 style="font-size:28px;font-weight:600;color:#16202E">A record</h3><p style="font-size:24px;line-height:1.35">Name to address: @ to 169.58.157.28.</p></div>
+<div style="display:flex;flex-direction:column;gap:8px;background:#FDFCF9;border:1px solid #E2DDD2;border-radius:16px;padding:24px"><h3 style="font-size:28px;font-weight:600;color:#16202E">CNAME</h3><p style="font-size:24px;line-height:1.35">Name to another name. Not allowed on the root.</p></div>
+<div style="display:flex;flex-direction:column;gap:8px;background:#FDFCF9;border:1px solid #E2DDD2;border-radius:16px;padding:24px"><h3 style="font-size:28px;font-weight:600;color:#16202E">TXT record</h3><p style="font-size:24px;line-height:1.35">Free text in DNS; here, proof of ownership.</p></div>
+<div style="display:flex;flex-direction:column;gap:8px;background:#FDFCF9;border:1px solid #E2DDD2;border-radius:16px;padding:24px"><h3 style="font-size:28px;font-weight:600;color:#16202E">VPS</h3><p style="font-size:24px;line-height:1.35">Your rented Contabo server: 4 CPUs, 8 GB.</p></div>
+<div style="display:flex;flex-direction:column;gap:8px;background:#FDFCF9;border:1px solid #E2DDD2;border-radius:16px;padding:24px"><h3 style="font-size:28px;font-weight:600;color:#16202E">Port</h3><p style="font-size:24px;line-height:1.35">A numbered door: 443 is HTTPS, 5432 Postgres.</p></div>
+<div style="display:flex;flex-direction:column;gap:8px;background:#FDFCF9;border:1px solid #E2DDD2;border-radius:16px;padding:24px"><h3 style="font-size:28px;font-weight:600;color:#16202E">Reverse proxy</h3><p style="font-size:24px;line-height:1.35">A front server (nginx) passing requests to apps.</p></div>
+<div style="display:flex;flex-direction:column;gap:8px;background:#FDFCF9;border:1px solid #E2DDD2;border-radius:16px;padding:24px"><h3 style="font-size:28px;font-weight:600;color:#16202E">Certificate</h3><p style="font-size:24px;line-height:1.35">Signed proof of identity that makes HTTPS work.</p></div>
+<div style="display:flex;flex-direction:column;gap:8px;background:#FDFCF9;border:1px solid #E2DDD2;border-radius:16px;padding:24px"><h3 style="font-size:28px;font-weight:600;color:#16202E">Host header</h3><p style="font-size:24px;line-height:1.35">The part of a request naming the site asked for.</p></div>
+</div>
+<aside>Keep this slide handy when reading Cloudflare, certbot or nginx documentation; these twelve words cover almost everything in this deck.</aside>
+</section>
+
+<section id="recap" data-transition="fade" style="background:#0E1622;color:#BFC9D9;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;justify-content:center;gap:40px">
+<p style="font-size:24px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#7FA2FF">Recap in one breath</p>
+<p style="font-size:44px;line-height:1.45;color:#E4E9F2"><span style="color:#F2A541">DNS</span> turns leelagarden.com.np into 169.58.157.28. The <span style="color:#F2A541">firewall</span> lets HTTPS in. <span style="color:#F2A541">nginx</span> proves who it is with a Let's Encrypt certificate and routes by name. The <span style="color:#F2A541">renderer</span> asks the <span style="color:#F2A541">API</span> which site it is, the API reads the published version from <span style="color:#F2A541">Postgres</span>, and the page flies back, with photos straight from <span style="color:#F2A541">R2</span>.</p>
+<aside>If you can say this paragraph in your own words, you understand the whole system. Each highlighted word is one stop on the journey, and each had its own slide in this deck.</aside>
+</section>
+
+</div>
+<div id="notes"></div>
+<div id="bar"><button id="prev" aria-label="Previous slide">←</button><span id="count"></span><button id="next" aria-label="Next slide">→</button><button id="nb">Notes (N)</button><button id="fs">Full screen (F)</button></div>
+<script>
+var S=[].slice.call(document.querySelectorAll('#stage > section')),i=0,notes=false,stage=document.getElementById('stage'),nEl=document.getElementById('notes');
+function fit(){var k=Math.min(innerWidth/1920,innerHeight/1080);stage.style.transform='scale('+k+') translate(-50%,-50%)';}
+function show(n){i=Math.max(0,Math.min(S.length-1,n));S.forEach(function(s,j){s.classList.toggle('on',j===i);});
+document.getElementById('count').textContent=(i+1)+' / '+S.length;var a=S[i].querySelector('aside');nEl.textContent=a?a.textContent:'No notes for this slide.';nEl.style.display=notes?'block':'none';
+try{history.replaceState(null,'','#'+S[i].id);}catch(e){}}
+addEventListener('resize',fit);
+addEventListener('keydown',function(e){if(['ArrowRight','PageDown',' '].indexOf(e.key)>=0){show(i+1);e.preventDefault();}else if(['ArrowLeft','PageUp'].indexOf(e.key)>=0)show(i-1);else if(e.key==='Home')show(0);else if(e.key==='End')show(S.length-1);else if(e.key==='n'||e.key==='N'){notes=!notes;show(i);}else if(e.key==='f'||e.key==='F'){document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen();}});
+document.getElementById('prev').onclick=function(){show(i-1);};document.getElementById('next').onclick=function(){show(i+1);};
+document.getElementById('nb').onclick=function(){notes=!notes;show(i);};document.getElementById('fs').onclick=function(){document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen();};
+var start=S.findIndex(function(s){return '#'+s.id===location.hash;});fit();show(start>0?start:0);
+</script>
+</body></html>

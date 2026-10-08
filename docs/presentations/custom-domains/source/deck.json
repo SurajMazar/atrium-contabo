@@ -1,0 +1,22 @@
+{
+  "v": 4,
+  "createdOnFiles": { "v": 1, "at": "2026-10-07T12:00:00Z" },
+  "lists": "css",
+  "title": "How Custom Domains Work",
+  "order": ["cover", "map", "dns-what", "dns-chain", "records", "dns-gotchas", "verify", "why-txt", "firewall", "nginx", "https", "ssl-badge", "renderer", "journey", "admin", "rc-flow", "rc-bugs", "rc-debug", "checklist", "glossary", "recap"],
+  "sections": {
+    "big-picture": { "description": "The whole journey from pressing Enter to a finished page.", "start": "cover" },
+    "dns": { "description": "DNS: how the name leelagarden.com.np becomes the address 169.58.157.28.", "start": "dns-what" },
+    "verification": { "description": "What the Verify button checks and why the TXT record exists.", "start": "verify" },
+    "server": { "description": "On the VPS: the firewall, nginx and the HTTPS certificate.", "start": "firewall" },
+    "page": { "description": "How the renderer, API and Postgres turn a name into a page.", "start": "renderer" },
+    "together": { "description": "The full trip and the admin domain.", "start": "journey" },
+    "recaptcha": { "description": "Case study: how reCAPTCHA works and how the broken contact form was fixed.", "start": "rc-flow" },
+    "wrap-up": { "description": "A checklist for the next domain, a cheat sheet and a recap.", "start": "checklist" }
+  },
+  "faces": {
+    "ibm-plex-sans": { "family": "IBM Plex Sans", "href": "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" },
+    "jetbrains-mono": { "family": "JetBrains Mono", "href": "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" }
+  },
+  "designSystems": []
+}

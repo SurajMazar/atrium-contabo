@@ -1,0 +1,56 @@
+<section id="map" data-transition="fade" style="background:#F6F4EF;color:#4A5568;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:48px">
+<div style="display:flex;flex-direction:column;gap:12px">
+<p style="font-size:24px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#2F5BD8">The big picture</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#16202E">Six stops between Enter and a finished page</h2>
+</div>
+<x-embed style="position:absolute;left:128px;top:296px;width:1664px;height:640px"><!doctype html><html><head><meta charset="utf-8"><style>
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:transparent;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;color:#16202E;overflow:hidden}
+.lane{position:absolute;top:0;height:300px;border:2px dashed #CFC8BA;border-radius:24px}
+.lane p{margin:0;position:absolute;top:16px;left:24px;font-size:24px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:#5F6878}
+.b{position:absolute;top:84px;width:220px;height:180px;border-radius:20px;background:#FDFCF9;border:2px solid #DCD6CA;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:12px;transition:transform .35s,border-color .35s,box-shadow .35s}
+.b b{font-size:30px}
+.b i{font-style:normal;font-size:24px;color:#5A6474;margin-top:8px;line-height:1.25}
+.b.on{border-color:#2F5BD8;box-shadow:0 0 0 8px rgba(76,125,255,.22);transform:translateY(-8px)}
+.rail{position:absolute;left:136px;width:1373px;top:360px;height:4px;background:#DCD6CA;border-radius:2px}
+.dot{position:absolute;top:346px;left:136px;width:32px;height:32px;margin-left:-16px;border-radius:50%;background:#2F5BD8;box-shadow:0 0 0 10px rgba(76,125,255,.25);transition:left .9s cubic-bezier(.6,0,.3,1),background .3s}
+.dot.back{background:#E08A1E;box-shadow:0 0 0 10px rgba(242,165,65,.3)}
+.cap{position:absolute;left:0;right:0;top:420px;text-align:center;font-size:34px;line-height:1.35;padding:0 120px;transition:opacity .25s}
+.n{display:inline-block;width:52px;height:52px;line-height:52px;border-radius:26px;background:#16202E;color:#F6F4EF;font-weight:700;margin-right:14px;font-size:28px;text-align:center}
+.dots{position:absolute;left:0;right:0;top:590px;text-align:center}
+.dots span{display:inline-block;width:14px;height:14px;border-radius:7px;background:#D5CFC3;margin:0 6px}
+.dots span.on{background:#2F5BD8}
+</style></head><body>
+<div class="lane" style="left:0;width:520px"><p>On the internet</p></div>
+<div class="lane" style="left:560px;width:1104px"><p>Your VPS · 169.58.157.28</p></div>
+<div class="b" id="b0" style="left:26px"><b>Browser</b><i>the visitor's Chrome</i></div>
+<div class="b" id="b1" style="left:274px"><b>DNS</b><i>Cloudflare</i></div>
+<div class="b" id="b2" style="left:605px"><b>nginx</b><i>front door, HTTPS</i></div>
+<div class="b" id="b3" style="left:870px"><b>Renderer</b><i>draws websites</i></div>
+<div class="b" id="b4" style="left:1134px"><b>API</b><i>the brain</i></div>
+<div class="b" id="b5" style="left:1399px"><b>Postgres</b><i>the database</i></div>
+<div class="rail"></div>
+<div class="dot" id="dot"></div>
+<div class="cap" id="cap"></div>
+<div class="dots" id="dots"></div>
+<script>
+var C=[136,384,715,980,1244,1509];
+var S=[[0,"You type leelagarden.com.np and press Enter."],[1,"The browser asks DNS for the address. Cloudflare answers: 169.58.157.28."],[2,"The browser connects to that address. nginx shows its certificate and sets up HTTPS."],[3,"nginx hands the request to the renderer, the app that draws websites."],[4,"The renderer asks the API which website this is and what has been published."],[5,"The API reads the published version of the site from Postgres."],[0,"The finished page travels back the same way, and it appears on screen."]];
+var dots=document.getElementById('dots'),cap=document.getElementById('cap'),dot=document.getElementById('dot');
+for(var k=0;k<S.length;k++){dots.appendChild(document.createElement('span'));}
+var i=0;
+function show(){
+  var s=S[i];
+  for(var j=0;j<6;j++){document.getElementById('b'+j).className='b'+(j===s[0]?' on':'');}
+  dot.style.left=C[s[0]]+'px';
+  dot.className='dot'+(i===S.length-1?' back':'');
+  cap.style.opacity=0;
+  setTimeout(function(){cap.innerHTML='<span class="n">'+(i+1)+'</span>'+s[1];cap.style.opacity=1;},250);
+  var d=dots.children;for(var m=0;m<d.length;m++){d[m].className=m===i?'on':'';}
+}
+show();
+setInterval(function(){i=(i+1)%S.length;show();},3200);
+</script>
+</body></html></x-embed>
+<aside>Watch the dot: it is one request. Blue is the trip out, orange is the page coming back. The first two stops happen on the public internet; the other four all run on your one Contabo VPS at 169.58.157.28. nginx, the renderer, the API and Postgres are separate programs on that machine. In the PDF or PowerPoint export this slide becomes a still picture.</aside>
+</section>

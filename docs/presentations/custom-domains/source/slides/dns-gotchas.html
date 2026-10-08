@@ -1,0 +1,14 @@
+<section id="dns-gotchas" data-transition="fade" style="background:#F6F4EF;color:#4A5568;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:48px">
+<div style="display:flex;flex-direction:column;gap:12px">
+<p style="font-size:24px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#2F5BD8">DNS · lessons from launch day</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#16202E">Why it “didn't work” for a while</h2>
+</div>
+<table style="width:1664px;font-size:24px;line-height:1.4;color:#2B3443">
+<tr style="background:#E9E5DC"><th style="width:30%;text-align:left">What you saw</th><th style="width:40%;text-align:left">Why</th><th style="width:30%;text-align:left">The fix</th></tr>
+<tr><td>Some visitors got errors or an old page</td><td>An old Cloudflare zone in another account still answered for leelagarden.com.np</td><td>Delete the old zone. Only the one using the registrar's nameservers (eugene and kara) counts</td></tr>
+<tr><td>“Could not resolve host” for admin.leelagarden.com.np</td><td>Your router remembered “this does not exist” from before the record was added</td><td>Wait out the TTL, or use 1.1.1.1 as your DNS</td></tr>
+<tr><td>Odd HTTPS errors with the orange cloud on</td><td>Proxied mode puts Cloudflare between visitors and nginx, with its own certificate and rules</td><td>Keep the record grey: “DNS only”</td></tr>
+<tr><td>Verify said “not pointing”</td><td>The VPS's own resolver had stale answers, and Atrium misread .com.np as a subdomain</td><td>VPS switched to 1.1.1.1 and 9.9.9.9; Atrium's code fixed</td></tr>
+</table>
+<aside>The big lesson: DNS has memory everywhere. Every resolver caches answers, including "this name does not exist" (negative caching), so after a change different people can see different results for a while. And two Cloudflare zones for the same domain can both exist; only the one whose nameservers are listed at the registrar is real, but resolvers that cached the old nameservers keep asking the old zone until their cache expires. When something looks inconsistent, check with dig against 1.1.1.1 and 8.8.8.8 before changing anything.</aside>
+</section>

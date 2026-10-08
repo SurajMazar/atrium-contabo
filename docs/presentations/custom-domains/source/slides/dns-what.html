@@ -1,0 +1,29 @@
+<section id="dns-what" data-transition="fade" style="background:#0E1622;color:#BFC9D9;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:48px">
+<div style="display:flex;flex-direction:column;gap:12px">
+<p style="font-size:24px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#7FA2FF">DNS · part 1</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#F6F4EF">DNS is the internet's contacts app</h2>
+</div>
+<div style="display:flex;flex-direction:row;gap:64px;align-items:center">
+<p style="flex:1;font-size:36px;line-height:1.4;color:#E4E9F2">Computers find each other by number, an <b>IP address</b>. People remember names. <span style="color:#F2A541">DNS turns the name into the number.</span></p>
+<div style="width:640px;display:flex;flex-direction:column;align-items:center;gap:16px;background:#172235;border:1px solid #26344D;border-radius:20px;padding:36px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:40px;color:#F6F4EF">leelagarden.com.np</p>
+<x-shape kind="arrow-down" style="width:32px;height:64px;background:#F2A541"></x-shape>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:48px;font-weight:600;color:#F2A541">169.58.157.28</p>
+</div>
+</div>
+<div style="display:flex;flex-direction:row;gap:32px">
+<div style="flex:1;display:flex;flex-direction:column;gap:12px;background:#172235;border:1px solid #26344D;border-radius:20px;padding:32px">
+<h3 style="font-size:30px;font-weight:600;color:#F6F4EF">Registrar</h3>
+<p style="font-size:24px;line-height:1.4">Where the name was bought: the .np registry. It records which <b>nameservers</b> are in charge. Yours: eugene and kara.ns.cloudflare.com.</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:12px;background:#172235;border:1px solid #F2A541;border-radius:20px;padding:32px">
+<h3 style="font-size:30px;font-weight:600;color:#F6F4EF">Nameservers · Cloudflare</h3>
+<p style="font-size:24px;line-height:1.4">Hold your <b>records</b>, the actual answers, such as “leelagarden.com.np is at 169.58.157.28”. You edit them in Cloudflare.</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:12px;background:#172235;border:1px solid #26344D;border-radius:20px;padding:32px">
+<h3 style="font-size:30px;font-weight:600;color:#F6F4EF">Resolver</h3>
+<p style="font-size:24px;line-height:1.4">Does the asking for the visitor: their router, Google (8.8.8.8) or Cloudflare (1.1.1.1). It remembers answers for a while, the <b>TTL</b>.</p>
+</div>
+</div>
+<aside>Three different parties are involved, and mixing them up is the source of most DNS confusion. The registrar is only consulted to find out WHO holds the records (the nameservers). Cloudflare holds the records themselves. Resolvers ask on the visitor's behalf and cache what they hear. When you change a record in Cloudflare, resolvers that cached the old answer keep using it until its TTL runs out.</aside>
+</section>

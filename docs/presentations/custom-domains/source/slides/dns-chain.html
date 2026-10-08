@@ -1,0 +1,31 @@
+<section id="dns-chain" data-transition="fade" style="background:#F6F4EF;color:#4A5568;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:48px">
+<div style="display:flex;flex-direction:column;gap:12px">
+<p style="font-size:24px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#2F5BD8">DNS · part 2</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#16202E">One lookup, step by step</h2>
+</div>
+<!-- Browser 128,470,320,150  Resolver 640,470,320,150  Registry 1472,300,320,150  Cloudflare 1472,640,320,150 -->
+<div style="position:absolute;left:128px;top:470px;width:320px;height:150px;display:flex;flex-direction:column;justify-content:center;gap:6px;background:#FDFCF9;border:2px solid #DCD6CA;border-radius:20px;padding:24px">
+<h3 style="font-size:30px;font-weight:600;color:#16202E">Browser</h3>
+<p style="font-size:24px">wants leelagarden.com.np</p>
+</div>
+<div style="position:absolute;left:640px;top:470px;width:320px;height:150px;display:flex;flex-direction:column;justify-content:center;gap:6px;background:#FDFCF9;border:2px solid #DCD6CA;border-radius:20px;padding:24px">
+<h3 style="font-size:30px;font-weight:600;color:#16202E">Resolver</h3>
+<p style="font-size:24px">router, 1.1.1.1 or 8.8.8.8</p>
+</div>
+<div data-build-in="fade 1" style="position:absolute;left:1472px;top:300px;width:320px;height:150px;display:flex;flex-direction:column;justify-content:center;gap:6px;background:#FDFCF9;border:2px solid #DCD6CA;border-radius:20px;padding:24px">
+<h3 style="font-size:30px;font-weight:600;color:#16202E">.np registry</h3>
+<p style="font-size:24px">knows who's in charge</p>
+</div>
+<div data-build-in="fade 2" style="position:absolute;left:1472px;top:640px;width:320px;height:150px;display:flex;flex-direction:column;justify-content:center;gap:6px;background:#FFF6E8;border:2px solid #E08A1E;border-radius:20px;padding:24px">
+<h3 style="font-size:30px;font-weight:600;color:#16202E">Cloudflare</h3>
+<p style="font-size:24px">holds your records</p>
+</div>
+<x-connector x1="448" y1="545" x2="640" y2="545" style="color:#2F5BD8;border-width:3px"></x-connector>
+<x-connector data-build-in="fade 1" x1="800" y1="470" x2="1472" y2="375" route="vh" style="color:#2F5BD8;border-width:3px"></x-connector>
+<x-connector data-build-in="fade 2" x1="800" y1="620" x2="1472" y2="715" route="vh" style="color:#E08A1E;border-width:3px"></x-connector>
+<p style="position:absolute;left:520px;top:490px;width:48px;font-size:28px;font-weight:700;color:#2F5BD8;text-align:center">①</p>
+<p data-build-in="fade 1" style="position:absolute;left:820px;top:296px;width:620px;font-size:24px;line-height:1.4;color:#2B3443"><b>②</b> “Who answers for leelagarden.com.np?” The registry: “ask Cloudflare (eugene and kara)”.</p>
+<p data-build-in="fade 2" style="position:absolute;left:820px;top:727px;width:620px;font-size:24px;line-height:1.4;color:#2B3443"><b>③</b> “What is the A record?” Cloudflare: “169.58.157.28”.</p>
+<p data-build-in="fade 3" style="position:absolute;left:128px;top:660px;width:620px;font-size:24px;line-height:1.4;color:#2B3443"><b>①</b> The browser asks a resolver. <b>④</b> The resolver hands back 169.58.157.28 and remembers it for the TTL, so the next visit skips the lookup.</p>
+<aside>In Present mode click to reveal the steps. 1: the browser asks a resolver. 2: the resolver asks the .np registry who is in charge of the name; the registry points to Cloudflare's nameservers eugene and kara. 3: the resolver asks Cloudflare for the A record and gets 169.58.157.28. 4: the answer goes back to the browser and is cached. All of this usually takes a few milliseconds, and most visits skip it entirely because the answer is already cached.</aside>
+</section>

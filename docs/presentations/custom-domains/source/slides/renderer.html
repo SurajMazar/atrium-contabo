@@ -1,0 +1,33 @@
+<section id="renderer" data-transition="fade" style="background:#F6F4EF;color:#4A5568;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
+<div style="display:flex;flex-direction:column;gap:12px">
+<p style="font-size:24px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#2F5BD8">Building the page</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#16202E">The renderer: from a name to a page</h2>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:24px">
+<div style="display:flex;flex-direction:column;gap:14px;background:#FDFCF9;border:1px solid #E2DDD2;border-radius:20px;padding:30px">
+<p style="font-size:24px;font-weight:600;color:#2F5BD8">1 · nginx</p>
+<h3 style="font-size:30px;font-weight:600;line-height:1.2;color:#16202E">Hands it over</h3>
+<p style="font-size:24px;line-height:1.4">The request reaches the renderer (port 3001) with the website's name attached, in the <b>Host header</b>.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:14px;background:#FDFCF9;border:1px solid #E2DDD2;border-radius:20px;padding:30px">
+<p style="font-size:24px;font-weight:600;color:#2F5BD8">2 · API</p>
+<h3 style="font-size:30px;font-weight:600;line-height:1.2;color:#16202E">Which website?</h3>
+<p style="font-size:24px;line-height:1.4">The API matches the name to a verified custom domain, or to a platform address (leela-garden is the site's slug).</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:14px;background:#FDFCF9;border:1px solid #E2DDD2;border-radius:20px;padding:30px">
+<p style="font-size:24px;font-weight:600;color:#2F5BD8">3 · Postgres</p>
+<h3 style="font-size:30px;font-weight:600;line-height:1.2;color:#16202E">What's published?</h3>
+<p style="font-size:24px;line-height:1.4">The API reads the last <b>published</b> version: pages, theme, text, images. Drafts never leak.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:14px;background:#FDFCF9;border:2px solid #2F5BD8;border-radius:20px;padding:30px">
+<p style="font-size:24px;font-weight:600;color:#2F5BD8">4 · Renderer</p>
+<h3 style="font-size:30px;font-weight:600;line-height:1.2;color:#16202E">Draw and remember</h3>
+<p style="font-size:24px;line-height:1.4">It builds the HTML and keeps a cached copy, so the next visitor gets it instantly. Publishing clears the cache.</p>
+</div>
+</div>
+<div style="display:flex;flex-direction:column;gap:8px;background:#FFF6E8;border-left:6px solid #E08A1E;border-radius:12px;padding:28px 32px">
+<p style="font-size:24px;font-weight:600;color:#9A5A0B">About your setup today</p>
+<p style="font-size:26px;line-height:1.45;color:#2B3443">nginx tells the renderer “this is leela-garden.sites.surajthapa247.com.np” instead of passing leelagarden.com.np through. Both lead to the same website. Passing the real name through later would let Atrium apply its own primary-domain and redirect rules.</p>
+</div>
+<aside>The renderer is a Next.js app that can draw any Atrium website; the name in the request decides which one. It asks the API at /v1/public/sites/resolve?host=... and gets back a snapshot of the last published version. It caches the result, so a busy site barely touches the database. When you click Publish, Atrium tells the renderer to forget its copy, and the next visitor sees the new version.</aside>
+</section>

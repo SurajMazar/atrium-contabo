@@ -1,0 +1,35 @@
+<section id="rc-bugs" data-transition="fade" style="background:#0E1622;color:#BFC9D9;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
+<div style="display:flex;flex-direction:column;gap:12px">
+<p style="font-size:24px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#7FA2FF">Case study · reCAPTCHA</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#F6F4EF">Three things were wrong, one after another</h2>
+</div>
+<div style="display:flex;flex-direction:row;gap:32px">
+<div style="flex:1;display:flex;flex-direction:column;gap:14px;background:#172235;border:1px solid #26344D;border-radius:20px;padding:32px">
+<h3 style="font-size:30px;font-weight:600;color:#F6F4EF"><span style="color:#F2A541">1</span> Not published</h3>
+<p style="font-size:24px;font-weight:600;color:#8A97AD">Why</p>
+<p style="font-size:24px;line-height:1.4">reCAPTCHA was switched on in the draft, but visitors get the published version, where it was still off.</p>
+<p style="font-size:24px;font-weight:600;color:#8A97AD">Fix</p>
+<p style="font-size:24px;line-height:1.4;color:#E4E9F2">Publish the website.</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:14px;background:#172235;border:1px solid #26344D;border-radius:20px;padding:32px">
+<h3 style="font-size:30px;font-weight:600;color:#F6F4EF"><span style="color:#F2A541">2</span> Site not allowed</h3>
+<p style="font-size:24px;font-weight:600;color:#8A97AD">Why</p>
+<p style="font-size:24px;line-height:1.4">Atrium accepts tokens only from listed names, matched exactly. The .sites address wasn't listed.</p>
+<p style="font-size:24px;font-weight:600;color:#8A97AD">Fix</p>
+<p style="font-size:24px;line-height:1.4;color:#E4E9F2">Add this to Atrium's Allowed hostnames:</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#7FA2FF">*.sites.surajthapa247.com.np</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:14px;background:#172235;border:2px solid #F2A541;border-radius:20px;padding:32px">
+<h3 style="font-size:30px;font-weight:600;color:#F6F4EF"><span style="color:#F2A541">3</span> A hidden space</h3>
+<p style="font-size:24px;font-weight:600;color:#8A97AD">Why</p>
+<p style="font-size:24px;line-height:1.4">The pasted site key ended in a space. Google received <span style="color:#F2A541">…9lE%20</span>, refused the key and never gave a token.</p>
+<p style="font-size:24px;font-weight:600;color:#8A97AD">Fix</p>
+<p style="font-size:24px;line-height:1.4;color:#E4E9F2">Trim it, clear the cached page, and make Atrium trim keys from now on.</p>
+</div>
+</div>
+<div style="display:flex;flex-direction:column;gap:8px;background:#172235;border-left:6px solid #7FA2FF;border-radius:12px;padding:24px 32px">
+<p style="font-size:24px;font-weight:600;color:#7FA2FF">Two lists, two jobs</p>
+<p style="font-size:24px;line-height:1.4;color:#E4E9F2"><b>Google's console:</b> surajthapa247.com.np and leelagarden.com.np. Subdomains are included; wildcards are rejected. <b>Atrium:</b> matches exactly, so it needs the *.sites wildcard.</p>
+</div>
+<aside>Each problem hid the next one. Until the site was published, there was no reCAPTCHA on the page at all. Once it was there, submissions from the .sites address would have been refused because Atrium's allow-list did not include it. And even then, Google refused to issue any token because the site key had a trailing space: %20 is how a space looks inside a web address. That last one is invisible on screen, which is why it took the longest. The code fix (commit 1af7b6f) trims spaces from the site key, secret key and hostnames whenever they are saved.</aside>
+</section>

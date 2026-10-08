@@ -1,0 +1,19 @@
+<section id="ssl-badge" data-transition="fade" style="background:#0E1622;color:#BFC9D9;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:48px">
+<div style="display:flex;flex-direction:column;gap:12px">
+<p style="font-size:24px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#F2A541">One honest caveat</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#F6F4EF">“SSL Active” in the dashboard is a label, not the certificate</h2>
+</div>
+<div style="display:flex;flex-direction:row;gap:32px">
+<div style="flex:1;display:flex;flex-direction:column;gap:16px;background:#172235;border:1px solid #26344D;border-radius:20px;padding:36px">
+<h3 style="font-size:32px;font-weight:600;color:#7FA2FF">What the dashboard knows</h3>
+<p style="font-size:26px;line-height:1.45">DNS is right: the TXT matches and the A record points at 169.58.157.28. Atrium then marks SSL “Active”, because it was built for an edge server (Caddy) that issues certificates on its own.</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:16px;background:#172235;border:1px solid #F2A541;border-radius:20px;padding:36px">
+<h3 style="font-size:32px;font-weight:600;color:#F2A541">What actually serves HTTPS</h3>
+<p style="font-size:26px;line-height:1.45">On your VPS it is nginx, with the certificate certbot issued. I added the certificate and the nginx rules by hand:</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#E4E9F2">/etc/letsencrypt/live/leelagarden</p>
+</div>
+</div>
+<p style="font-size:28px;line-height:1.45;color:#E4E9F2">So each new client domain still needs its nginx rules and a certificate on the server. That can be automated later, for example with Caddy's on-demand certificates or a small script.</p>
+<aside>Atrium's code assumes an edge like Caddy with on-demand TLS: it would ask Atrium "is this domain allowed?" and issue a certificate automatically the first time a visitor arrives. Your production setup uses nginx and certbot instead, because you asked for the app only. The platform's own subdomains (anything.sites.surajthapa247.com.np) can share one wildcard certificate once a Cloudflare API token is placed on the server; client domains like leelagarden.com.np need their own certificate each.</aside>
+</section>

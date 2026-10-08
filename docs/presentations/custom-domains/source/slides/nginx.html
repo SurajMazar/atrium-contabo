@@ -1,0 +1,36 @@
+<section id="nginx" data-transition="fade" style="background:#0E1622;color:#BFC9D9;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
+<div style="display:flex;flex-direction:column;gap:12px">
+<p style="font-size:24px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#7FA2FF">The server</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#F6F4EF">nginx: the receptionist who reads the name</h2>
+</div>
+<p style="font-size:28px;line-height:1.4">Many sites share one IP address. nginx reads which name the visitor asked for and follows the matching rule.</p>
+<div style="display:flex;flex-direction:column;gap:16px">
+<div style="display:flex;flex-direction:row;align-items:center;gap:32px">
+<p style="width:700px;font-family:'JetBrains Mono', 'Courier New', monospace;font-size:26px;color:#E4E9F2;background:#172235;border:1px solid #26344D;border-radius:12px;padding:16px 24px">http://leelagarden.com.np</p>
+<x-shape kind="arrow-right" style="width:64px;height:32px;background:#7FA2FF"></x-shape>
+<p style="flex:1;font-size:26px;color:#BFC9D9">Redirect to https://, the secure version</p>
+</div>
+<div style="display:flex;flex-direction:row;align-items:center;gap:32px">
+<p style="width:700px;font-family:'JetBrains Mono', 'Courier New', monospace;font-size:26px;color:#E4E9F2;background:#172235;border:1px solid #26344D;border-radius:12px;padding:16px 24px">https://www.leelagarden.com.np</p>
+<x-shape kind="arrow-right" style="width:64px;height:32px;background:#7FA2FF"></x-shape>
+<p style="flex:1;font-size:26px;color:#BFC9D9">Redirect to https://leelagarden.com.np</p>
+</div>
+<div style="display:flex;flex-direction:row;align-items:center;gap:32px">
+<p style="width:700px;font-family:'JetBrains Mono', 'Courier New', monospace;font-size:26px;color:#F6F4EF;background:#172235;border:2px solid #F2A541;border-radius:12px;padding:16px 24px">https://leelagarden.com.np</p>
+<x-shape kind="arrow-right" style="width:64px;height:32px;background:#F2A541"></x-shape>
+<p style="flex:1;font-size:26px;color:#F6F4EF"><b>Renderer</b> · 127.0.0.1:3001, the website</p>
+</div>
+<div style="display:flex;flex-direction:row;align-items:center;gap:32px">
+<p style="width:700px;font-family:'JetBrains Mono', 'Courier New', monospace;font-size:26px;color:#E4E9F2;background:#172235;border:1px solid #26344D;border-radius:12px;padding:16px 24px">https://admin.leelagarden.com.np</p>
+<x-shape kind="arrow-right" style="width:64px;height:32px;background:#7FA2FF"></x-shape>
+<p style="flex:1;font-size:26px;color:#BFC9D9"><b>Admin app</b> · 127.0.0.1:3000, the dashboard</p>
+</div>
+<div style="display:flex;flex-direction:row;align-items:center;gap:32px">
+<p style="width:700px;font-family:'JetBrains Mono', 'Courier New', monospace;font-size:26px;color:#E4E9F2;background:#172235;border:1px solid #26344D;border-radius:12px;padding:16px 24px">https://api.sites.surajthapa247.com.np</p>
+<x-shape kind="arrow-right" style="width:64px;height:32px;background:#7FA2FF"></x-shape>
+<p style="flex:1;font-size:26px;color:#BFC9D9"><b>API</b> · 127.0.0.1:4000</p>
+</div>
+</div>
+<p style="font-size:24px;color:#8A97AD">The rules for this domain live in /etc/nginx/atrium-domains/leelagarden.conf on the VPS.</p>
+<aside>nginx is a reverse proxy: it is the only program facing the internet, and it forwards each request to the right app behind it. With HTTPS it learns the requested name at the very start of the connection (that is called SNI), so it can also pick the right certificate. Plain http and www both get a 301 redirect, which tells browsers and Google that https://leelagarden.com.np is the one true address.</aside>
+</section>

@@ -1,0 +1,41 @@
+<section id="journey" data-transition="fade" style="background:#0E1622;color:#BFC9D9;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:48px">
+<div style="display:flex;flex-direction:column;gap:12px">
+<p style="font-size:24px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#7FA2FF">Putting it together</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#F6F4EF">A first visit, from Enter to photos</h2>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:24px">
+<div style="display:flex;flex-direction:column;gap:10px;background:#172235;border:1px solid #26344D;border-radius:20px;padding:28px">
+<h3 style="font-size:28px;font-weight:600;color:#F6F4EF"><span style="color:#F2A541">1</span> DNS lookup</h3>
+<p style="font-size:24px;line-height:1.4">A cached answer, or a quick ask to Cloudflare: 169.58.157.28.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:10px;background:#172235;border:1px solid #26344D;border-radius:20px;padding:28px">
+<h3 style="font-size:28px;font-weight:600;color:#F6F4EF"><span style="color:#F2A541">2</span> Knock on the door</h3>
+<p style="font-size:24px;line-height:1.4">Connect to port 443. The firewall lets it through.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:10px;background:#172235;border:1px solid #26344D;border-radius:20px;padding:28px">
+<h3 style="font-size:28px;font-weight:600;color:#F6F4EF"><span style="color:#F2A541">3</span> Handshake</h3>
+<p style="font-size:24px;line-height:1.4">nginx shows the certificate; the browser checks it and shows the padlock.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:10px;background:#172235;border:1px solid #26344D;border-radius:20px;padding:28px">
+<h3 style="font-size:28px;font-weight:600;color:#F6F4EF"><span style="color:#F2A541">4</span> Route by name</h3>
+<p style="font-size:24px;line-height:1.4">nginx matches leelagarden.com.np and passes it to the renderer.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:10px;background:#172235;border:1px solid #26344D;border-radius:20px;padding:28px">
+<h3 style="font-size:28px;font-weight:600;color:#F6F4EF"><span style="color:#F2A541">5</span> Cache or build</h3>
+<p style="font-size:24px;line-height:1.4">Cached? Sent at once. If not: renderer, API, Postgres, then cached.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:10px;background:#172235;border:1px solid #26344D;border-radius:20px;padding:28px">
+<h3 style="font-size:28px;font-weight:600;color:#F6F4EF"><span style="color:#F2A541">6</span> HTML arrives</h3>
+<p style="font-size:24px;line-height:1.4">The browser then fetches CSS, scripts and fonts from the same server.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:10px;background:#172235;border:1px solid #26344D;border-radius:20px;padding:28px">
+<h3 style="font-size:28px;font-weight:600;color:#F6F4EF"><span style="color:#F2A541">7</span> Photos from R2</h3>
+<p style="font-size:24px;line-height:1.4">Images come straight from Cloudflare R2 storage, so they never load your VPS.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:10px;background:#172235;border:1px solid #26344D;border-radius:20px;padding:28px">
+<h3 style="font-size:28px;font-weight:600;color:#F6F4EF"><span style="color:#F2A541">8</span> Contact form</h3>
+<p style="font-size:24px;line-height:1.4">reCAPTCHA gives a token; the API checks it with Google, then saves the message.</p>
+</div>
+</div>
+<aside>This is the full sequence for someone visiting for the first time. Steps 1 to 6 bring the page; most of them take a few milliseconds each. Step 7 is why you set up R2: photos are the heaviest part of a page, and they are served by Cloudflare from media.sites.surajthapa247.com.np, not by your 7-dollar VPS. Step 8 only happens when someone submits the contact form.</aside>
+</section>

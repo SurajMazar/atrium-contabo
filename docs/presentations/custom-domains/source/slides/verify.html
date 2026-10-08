@@ -1,0 +1,29 @@
+<section id="verify" data-transition="fade" style="background:#0E1622;color:#BFC9D9;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:48px">
+<div style="display:flex;flex-direction:column;gap:12px">
+<p style="font-size:24px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#7FA2FF">Verification</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#F6F4EF">What the Verify button checks</h2>
+</div>
+<div style="display:flex;flex-direction:row;gap:48px">
+<div style="width:720px;display:flex;flex-direction:column;gap:24px">
+<div style="display:flex;flex-direction:column;gap:12px;background:#172235;border:1px solid #26344D;border-radius:20px;padding:32px">
+<h3 style="font-size:32px;font-weight:600;color:#7FA2FF">Check 1 · Ownership</h3>
+<p style="font-size:26px;line-height:1.4">Look up the TXT record at _atrium-verify.leelagarden.com.np. Does it match this domain's code?</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:12px;background:#172235;border:1px solid #26344D;border-radius:20px;padding:32px">
+<h3 style="font-size:32px;font-weight:600;color:#F2A541">Check 2 · Pointing</h3>
+<p style="font-size:26px;line-height:1.4">Look up the A records for leelagarden.com.np. Is 169.58.157.28 one of them? A CNAME to the platform address also counts.</p>
+</div>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:24px">
+<table style="font-size:26px;line-height:1.4;color:#E4E9F2">
+<tr style="background:#1E2B42"><th style="width:28%;text-align:left">TXT matches</th><th style="width:30%;text-align:left">Points here</th><th style="width:42%;text-align:left">DNS shows</th></tr>
+<tr><td>No</td><td>No</td><td>Unverified</td></tr>
+<tr><td>Yes</td><td>No</td><td>Not pointing</td></tr>
+<tr><td>No</td><td>Yes</td><td>Ownership pending</td></tr>
+<tr style="background:#173326"><td>Yes</td><td>Yes</td><td>Valid, and Status: Active</td></tr>
+</table>
+<p style="font-size:24px;line-height:1.4;color:#8A97AD">Each click runs both lookups again, live. That is the “Checked: just now” on your screen.</p>
+</div>
+</div>
+<aside>Verify does two independent DNS lookups from the server. Ownership: the TXT record must contain exactly the code Atrium generated for this domain. Pointing: the domain's A records must include the server's address, 169.58.157.28 (or, for a subdomain, a CNAME to the platform address). Only when both pass does the domain become Active, and the first time that happens Atrium records the verification date and announces a domain.verified event.</aside>
+</section>

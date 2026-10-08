@@ -1,0 +1,25 @@
+<section id="admin" data-transition="fade" style="background:#F6F4EF;color:#4A5568;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:48px">
+<div style="display:flex;flex-direction:column;gap:12px">
+<p style="font-size:24px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#2F5BD8">Same trip, different door</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#16202E">admin.leelagarden.com.np</h2>
+</div>
+<div style="display:flex;flex-direction:row;gap:32px">
+<div style="flex:1;display:flex;flex-direction:column;gap:14px;background:#FDFCF9;border:1px solid #E2DDD2;border-radius:20px;padding:36px">
+<p style="font-size:24px;font-weight:600;color:#2F5BD8">1</p>
+<h3 style="font-size:32px;font-weight:600;color:#16202E">DNS and nginx</h3>
+<p style="font-size:26px;line-height:1.45">Its A record points to the same VPS. nginx sends this name to the admin app (port 3000), with its own certificate.</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:14px;background:#FDFCF9;border:1px solid #E2DDD2;border-radius:20px;padding:36px">
+<p style="font-size:24px;font-weight:600;color:#2F5BD8">2</p>
+<h3 style="font-size:32px;font-weight:600;color:#16202E">Branding by name</h3>
+<p style="font-size:26px;line-height:1.45">The sign-in page asks the API who owns this hostname. It is saved as Leela Garden's admin domain, so the page shows Leela Garden's name and logo.</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:14px;background:#FDFCF9;border:1px solid #E2DDD2;border-radius:20px;padding:36px">
+<p style="font-size:24px;font-weight:600;color:#2F5BD8">3</p>
+<h3 style="font-size:32px;font-weight:600;color:#16202E">Trusted for sign-in</h3>
+<p style="font-size:26px;line-height:1.45">Because it is a saved admin domain, the API accepts sign-ins from it automatically. New accounts come by invitation only.</p>
+</div>
+</div>
+<p style="font-size:26px;line-height:1.45">Set it as a super admin: <b>Organizations</b>, the organization's menu, <b>Admin domain…</b></p>
+<aside>The admin domain follows the same path as the website up to nginx; nginx then sends it to the dashboard app instead of the renderer. The dashboard reads the hostname in the browser and asks the API for branding, which is how one dashboard can look like Leela Garden on admin.leelagarden.com.np and like Atrium on admin.sites.surajthapa247.com.np. Browsers block sign-ins from unknown sites, so the API keeps a list of trusted addresses; saved admin domains are added to it automatically, within a minute.</aside>
+</section>

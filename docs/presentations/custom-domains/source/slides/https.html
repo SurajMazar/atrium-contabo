@@ -1,0 +1,35 @@
+<section id="https" data-transition="fade" style="background:#F6F4EF;color:#4A5568;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:48px">
+<div style="display:flex;flex-direction:column;gap:12px">
+<p style="font-size:24px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#2F5BD8">The server</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#16202E">HTTPS: how the padlock was earned</h2>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:24px">
+<div style="display:flex;flex-direction:column;gap:16px;background:#FDFCF9;border:1px solid #E2DDD2;border-radius:20px;padding:32px">
+<p style="width:56px;height:56px;border-radius:28px;background:#16202E;color:#F6F4EF;font-size:28px;font-weight:700;line-height:2;text-align:center">1</p>
+<p style="font-size:24px;line-height:1.4;color:#2B3443"><b>certbot</b>, on the VPS, asks <b>Let's Encrypt</b> for a certificate for leelagarden.com.np.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:16px;background:#FDFCF9;border:1px solid #E2DDD2;border-radius:20px;padding:32px">
+<p style="width:56px;height:56px;border-radius:28px;background:#16202E;color:#F6F4EF;font-size:28px;font-weight:700;line-height:2;text-align:center">2</p>
+<p style="font-size:24px;line-height:1.4;color:#2B3443">Let's Encrypt replies: “prove it. Put this random file under /.well-known/ on that domain.”</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:16px;background:#FDFCF9;border:1px solid #E2DDD2;border-radius:20px;padding:32px">
+<p style="width:56px;height:56px;border-radius:28px;background:#16202E;color:#F6F4EF;font-size:28px;font-weight:700;line-height:2;text-align:center">3</p>
+<p style="font-size:24px;line-height:1.4;color:#2B3443">It fetches the file over port 80. DNS sends it to your VPS, and nginx serves the file.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:16px;background:#FDFCF9;border:2px solid #2F5BD8;border-radius:20px;padding:32px">
+<p style="width:56px;height:56px;border-radius:28px;background:#2F5BD8;color:#F6F4EF;font-size:28px;font-weight:700;line-height:2;text-align:center">4</p>
+<p style="font-size:24px;line-height:1.4;color:#2B3443">The file matches, so the certificate is issued. It lasts <b>90 days</b>; certbot renews it automatically.</p>
+</div>
+</div>
+<div style="display:flex;flex-direction:row;gap:32px">
+<div style="flex:1;display:flex;flex-direction:row;gap:20px;align-items:center;background:#E9E5DC;border-radius:20px;padding:28px 32px">
+<x-icon name="Lock" style="color:#2F5BD8;width:44px;height:44px"></x-icon>
+<p style="font-size:26px;line-height:1.4;color:#2B3443"><b>Privacy:</b> nobody on the café Wi-Fi can read or change the page.</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:row;gap:20px;align-items:center;background:#E9E5DC;border-radius:20px;padding:28px 32px">
+<x-icon name="Verified" style="color:#2F5BD8;width:44px;height:44px"></x-icon>
+<p style="font-size:26px;line-height:1.4;color:#2B3443"><b>Identity:</b> the certificate proves this server really is leelagarden.com.np.</p>
+</div>
+</div>
+<aside>A certificate is a signed statement: "the holder of this key is leelagarden.com.np". Browsers trust Let's Encrypt's signature, so they trust the certificate. To issue it, Let's Encrypt needs proof you control the domain, and the simplest proof is serving a file it asks for on that domain (the HTTP-01 challenge). That is why port 80 stays open and why the DNS must already point at the VPS before a certificate can be issued. Your certificate files are in /etc/letsencrypt/live/leelagarden on the server.</aside>
+</section>

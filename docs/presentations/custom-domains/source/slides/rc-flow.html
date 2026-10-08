@@ -1,0 +1,56 @@
+<section id="rc-flow" data-transition="fade" style="background:#F6F4EF;color:#4A5568;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:48px">
+<div style="display:flex;flex-direction:column;gap:12px">
+<p style="font-size:24px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#2F5BD8">Case study · reCAPTCHA</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#16202E">How the contact form tells humans from bots</h2>
+</div>
+<x-embed style="position:absolute;left:128px;top:296px;width:1664px;height:640px"><!doctype html><html><head><meta charset="utf-8"><style>
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:transparent;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;color:#16202E;overflow:hidden}
+.lane{position:absolute;top:0;height:300px;border:2px dashed #CFC8BA;border-radius:24px}
+.lane p{margin:0;position:absolute;top:16px;left:24px;font-size:24px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:#5F6878}
+.b{position:absolute;top:84px;width:260px;height:180px;border-radius:20px;background:#FDFCF9;border:2px solid #DCD6CA;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:12px;transition:transform .35s,border-color .35s,box-shadow .35s}
+.b b{font-size:30px}
+.b i{font-style:normal;font-size:24px;color:#5A6474;margin-top:8px;line-height:1.25}
+.b.on{border-color:#2F5BD8;box-shadow:0 0 0 8px rgba(76,125,255,.22);transform:translateY(-8px)}
+.b.g.on{border-color:#E08A1E;box-shadow:0 0 0 8px rgba(242,165,65,.28)}
+.rail{position:absolute;left:200px;width:1264px;top:360px;height:4px;background:#DCD6CA;border-radius:2px}
+.dot{position:absolute;top:346px;left:200px;width:32px;height:32px;margin-left:-16px;border-radius:50%;background:#2F5BD8;box-shadow:0 0 0 10px rgba(76,125,255,.25);transition:left .9s cubic-bezier(.6,0,.3,1),background .3s}
+.dot.g{background:#E08A1E;box-shadow:0 0 0 10px rgba(242,165,65,.3)}
+.dot.ok{background:#2E9E62;box-shadow:0 0 0 10px rgba(46,158,98,.28)}
+.cap{position:absolute;left:0;right:0;top:420px;text-align:center;font-size:34px;line-height:1.35;padding:0 120px;transition:opacity .25s}
+.n{display:inline-block;width:52px;height:52px;line-height:52px;border-radius:26px;background:#16202E;color:#F6F4EF;font-weight:700;margin-right:14px;font-size:28px;text-align:center}
+.dots{position:absolute;left:0;right:0;top:590px;text-align:center}
+.dots span{display:inline-block;width:14px;height:14px;border-radius:7px;background:#D5CFC3;margin:0 6px}
+.dots span.on{background:#2F5BD8}
+</style></head><body>
+<div class="lane" style="left:0;width:800px"><p>On the internet</p></div>
+<div class="lane" style="left:864px;width:800px"><p>Your VPS</p></div>
+<div class="b" id="b0" style="left:70px"><b>Browser</b><i>the contact page</i></div>
+<div class="b g" id="b1" style="left:470px"><b>Google</b><i>reCAPTCHA v3</i></div>
+<div class="b" id="b2" style="left:934px"><b>API</b><i>checks and decides</i></div>
+<div class="b" id="b3" style="left:1334px"><b>Postgres</b><i>saves the message</i></div>
+<div class="rail"></div>
+<div class="dot" id="dot"></div>
+<div class="cap" id="cap"></div>
+<div class="dots" id="dots"></div>
+<script>
+var C=[200,600,1064,1464];
+var S=[[0,"The visitor clicks into the form. The page loads Google's script with your site key.",""],[1,"Google quietly watches how the visitor behaves and hands the browser a token.","g"],[2,"The form sends the message together with the token to the API.",""],[1,"The API asks Google, using the secret key: is this token real, how human is it (0 to 1), and which site made it?","g"],[2,"The API checks that the site is on the allowed list and the score is at least 0.5.",""],[3,"Passed: the message is saved, and the visitor sees a thank-you message.","ok"]];
+var dots=document.getElementById('dots'),cap=document.getElementById('cap'),dot=document.getElementById('dot');
+for(var k=0;k<S.length;k++){dots.appendChild(document.createElement('span'));}
+var i=0;
+function show(){
+  var s=S[i];
+  for(var j=0;j<4;j++){var el=document.getElementById('b'+j);el.className=el.className.replace(/ on/g,'')+(j===s[0]?' on':'');}
+  dot.style.left=C[s[0]]+'px';
+  dot.className='dot'+(s[2]?' '+s[2]:'');
+  cap.style.opacity=0;
+  setTimeout(function(){cap.innerHTML='<span class="n">'+(i+1)+'</span>'+s[1];cap.style.opacity=1;},250);
+  var d=dots.children;for(var m=0;m<d.length;m++){d[m].className=m===i?'on':'';}
+}
+show();
+setInterval(function(){i=(i+1)%S.length;show();},3600);
+</script>
+</body></html></x-embed>
+<aside>reCAPTCHA v3 is invisible: there is no checkbox. It uses two keys. The site key is public and goes into the page so Google's script knows which account it is working for. The secret key stays on the server and is only used by the API when it asks Google whether a token is genuine. Google's answer includes a score from 0 (bot) to 1 (human) and the hostname the token was made on; Atrium rejects scores under 0.5 and hostnames that aren't allowed. If any link in this chain breaks, the form refuses the message.</aside>
+</section>

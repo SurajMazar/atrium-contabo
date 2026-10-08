@@ -1,0 +1,46 @@
+<section id="records" data-transition="fade" style="background:#0E1622;color:#BFC9D9;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:48px">
+<div style="display:flex;flex-direction:column;gap:12px">
+<p style="font-size:24px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#7FA2FF">Your Domains page</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#F6F4EF">The two records, explained</h2>
+</div>
+<div style="display:flex;flex-direction:row;gap:32px">
+<div style="flex:1;display:flex;flex-direction:column;gap:24px;background:#172235;border:1px solid #26344D;border-radius:20px;padding:36px">
+<div style="display:flex;flex-direction:row;align-items:center;gap:20px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:28px;font-weight:600;color:#0E1622;background:#F2A541;border-radius:10px;padding:4px 18px">A</p>
+<h3 style="font-size:36px;font-weight:600;color:#F6F4EF">Where the site lives</h3>
+</div>
+<div style="display:flex;flex-direction:column;gap:4px">
+<p style="font-size:24px;color:#8A97AD">Name</p>
+<p style="font-size:28px;color:#E4E9F2"><span style="color:#F2A541">@</span>, the root itself: leelagarden.com.np</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:4px">
+<p style="font-size:24px;color:#8A97AD">Value</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:28px;color:#F2A541">169.58.157.28</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:4px">
+<p style="font-size:24px;color:#8A97AD">Who uses it</p>
+<p style="font-size:28px;color:#E4E9F2">Every visitor's browser, to find your VPS</p>
+</div>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:24px;background:#172235;border:1px solid #26344D;border-radius:20px;padding:36px">
+<div style="display:flex;flex-direction:row;align-items:center;gap:20px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:28px;font-weight:600;color:#0E1622;background:#7FA2FF;border-radius:10px;padding:4px 18px">TXT</p>
+<h3 style="font-size:36px;font-weight:600;color:#F6F4EF">Proof that you own it</h3>
+</div>
+<div style="display:flex;flex-direction:column;gap:4px">
+<p style="font-size:24px;color:#8A97AD">Name</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:26px;color:#7FA2FF">_atrium-verify.leelagarden.com.np</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:4px">
+<p style="font-size:24px;color:#8A97AD">Value</p>
+<p style="font-size:28px;color:#E4E9F2"><span style="color:#7FA2FF">atrium-verify=jBqc0F…</span>, a random code made for this domain</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:4px">
+<p style="font-size:24px;color:#8A97AD">Who uses it</p>
+<p style="font-size:28px;color:#E4E9F2">Only Atrium's Verify button. Visitors never see it.</p>
+</div>
+</div>
+</div>
+<p style="font-size:26px;line-height:1.45;color:#BFC9D9">A root domain needs an <b>A record</b> (a number). Subdomains such as www can use a <b>CNAME</b> (a nickname pointing at another name). In Cloudflare keep the cloud <b>grey, “DNS only”</b>, so visitors reach nginx directly.</p>
+<aside>The @ sign is DNS shorthand for "the domain itself", with nothing in front. The A record is the one that actually sends visitors to your server. The TXT record does nothing for visitors; it is a note that only someone who controls the domain's DNS could have written, which is why Atrium uses it as proof of ownership. Root domains cannot use a CNAME by the DNS rules, which is why Atrium asks for an A record here. Grey cloud matters: with the orange cloud, visitors talk to Cloudflare instead of nginx, and certificate checks behave differently.</aside>
+</section>

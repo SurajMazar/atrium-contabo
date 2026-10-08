@@ -1,0 +1,33 @@
+<section id="checklist" data-transition="fade" style="background:#0E1622;color:#BFC9D9;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:48px">
+<div style="display:flex;flex-direction:column;gap:12px">
+<p style="font-size:24px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#7FA2FF">Your playbook</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#F6F4EF">Connecting the next client's domain</h2>
+</div>
+<div style="display:flex;flex-direction:column;gap:14px">
+<div style="display:flex;flex-direction:row;align-items:center;gap:24px;background:#172235;border-radius:16px;padding:18px 28px">
+<p style="width:52px;height:52px;border-radius:26px;background:#2F5BD8;color:#F6F4EF;font-size:26px;font-weight:700;line-height:2;text-align:center">1</p>
+<p style="flex:1;font-size:28px;line-height:1.4;color:#E4E9F2"><b>In Atrium:</b> Website, Domains, Add domain (for example clientsite.com).</p>
+</div>
+<div style="display:flex;flex-direction:row;align-items:center;gap:24px;background:#172235;border-radius:16px;padding:18px 28px">
+<p style="width:52px;height:52px;border-radius:26px;background:#2F5BD8;color:#F6F4EF;font-size:26px;font-weight:700;line-height:2;text-align:center">2</p>
+<p style="flex:1;font-size:28px;line-height:1.4;color:#E4E9F2"><b>In the client's DNS:</b> the A record (@ to 169.58.157.28) and the TXT record Atrium shows. Grey cloud.</p>
+</div>
+<div style="display:flex;flex-direction:row;align-items:center;gap:24px;background:#172235;border-radius:16px;padding:18px 28px">
+<p style="width:52px;height:52px;border-radius:26px;background:#2F5BD8;color:#F6F4EF;font-size:26px;font-weight:700;line-height:2;text-align:center">3</p>
+<p style="flex:1;font-size:28px;line-height:1.4;color:#E4E9F2"><b>Wait a few minutes,</b> then click Verify until it shows Active and Valid.</p>
+</div>
+<div style="display:flex;flex-direction:row;align-items:center;gap:24px;background:#172235;border:2px solid #F2A541;border-radius:16px;padding:18px 28px">
+<p style="width:52px;height:52px;border-radius:26px;background:#F2A541;color:#0E1622;font-size:26px;font-weight:700;line-height:2;text-align:center">4</p>
+<p style="flex:1;font-size:28px;line-height:1.4;color:#E4E9F2"><b>On the server:</b> add the nginx rules and issue the certificate with certbot. Ask me, or we script it.</p>
+</div>
+<div style="display:flex;flex-direction:row;align-items:center;gap:24px;background:#172235;border-radius:16px;padding:18px 28px">
+<p style="width:52px;height:52px;border-radius:26px;background:#2F5BD8;color:#F6F4EF;font-size:26px;font-weight:700;line-height:2;text-align:center">5</p>
+<p style="flex:1;font-size:28px;line-height:1.4;color:#E4E9F2"><b>Test:</b> open https://clientsite.com in a private window and check the padlock.</p>
+</div>
+<div style="display:flex;flex-direction:row;align-items:center;gap:24px;background:#172235;border-radius:16px;padding:18px 28px">
+<p style="width:52px;height:52px;border-radius:26px;background:#2F5BD8;color:#F6F4EF;font-size:26px;font-weight:700;line-height:2;text-align:center">6</p>
+<p style="flex:1;font-size:28px;line-height:1.4;color:#E4E9F2"><b>Want www too?</b> Add a www record and include it in the certificate; nginx redirects it to the root.</p>
+</div>
+</div>
+<aside>Steps 1 to 3 happen in dashboards and need no server access. Step 4 is the manual one today, highlighted in orange: until certificates are automated, every new client domain needs a server change. Step 5: a private window avoids your browser's own cache. If Verify keeps failing, check the records with an online DNS lookup tool against 1.1.1.1 and 8.8.8.8 first.</aside>
+</section>
