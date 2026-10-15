@@ -1,10 +1,10 @@
 'use client';
 
 import type { WebsiteSummary } from '@atrium/sdk';
-import { cn, Kbd } from '@atrium/ui';
+import { cn, Kbd, Spinner } from '@atrium/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, ExternalLink, Globe, Plus, Search, ShieldCheck } from 'lucide-react';
-import Link from 'next/link';
+import Link, { useLinkStatus } from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { useApi } from '@/lib/api';
@@ -28,6 +28,12 @@ function isActive(pathname: string, item: NavItem) {
   return pathname === item.href || pathname.startsWith(`${item.href}/`);
 }
 
+/** Shown on the clicked link until its route responds (before the route's loading state is prefetched). */
+function PendingHint() {
+  const { pending } = useLinkStatus();
+  return pending ? <Spinner className="ml-auto size-3 shrink-0 text-fg-subtle" label="Opening" /> : null;
+}
+
 function NavLink({ item, pathname, onNavigate, prefetchFn }: { item: NavItem; pathname: string; onNavigate?: () => void; prefetchFn?: () => void }) {
   const active = isActive(pathname, item);
   const Icon = item.icon;
@@ -45,6 +51,7 @@ function NavLink({ item, pathname, onNavigate, prefetchFn }: { item: NavItem; pa
       <Icon className={cn('size-4 shrink-0', active ? 'text-fg' : 'text-fg-subtle group-hover:text-fg-muted')} strokeWidth={1.5} />
       <span className="truncate">{item.label}</span>
       {item.external && <ExternalLink className="ml-auto size-3 text-fg-subtle opacity-0 group-hover:opacity-100" strokeWidth={1.5} />}
+      <PendingHint />
     </Link>
   );
 }
@@ -178,6 +185,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
                     >
                       <span className={cn('size-1.5 shrink-0 rounded-full', w.status === 'PUBLISHED' ? 'bg-success' : 'bg-fg-subtle/60')} aria-hidden />
                       <span className="truncate">{w.name}</span>
+                      <PendingHint />
                     </Link>
                   ))}
             </div>

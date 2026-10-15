@@ -1,12 +1,13 @@
 'use client';
 
 import { AtriumApiError } from '@atrium/sdk';
-import { Button, EmptyState, ErrorState, Skeleton } from '@atrium/ui';
+import { Button, EmptyState, ErrorState } from '@atrium/ui';
 import { useQuery } from '@tanstack/react-query';
 import { Globe, Lock } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, type ReactNode } from 'react';
 import { Page } from '@/components/common/page';
+import { PageSkeleton } from '@/components/common/page-skeleton';
 import { useApi } from '@/lib/api';
 import { qk } from '@/lib/query-keys';
 import { useSession } from '@/lib/session';
@@ -49,17 +50,7 @@ export function WebsiteBoundary({ websiteId, children }: { websiteId: string; ch
   }
 
   if (q.isPending) {
-    return (
-      <Page>
-        <Skeleton className="h-6 w-48" />
-        <Skeleton className="mt-2 h-4 w-72" />
-        <div className="mt-8 grid gap-3 sm:grid-cols-3">
-          <Skeleton className="h-20" />
-          <Skeleton className="h-20" />
-          <Skeleton className="h-20" />
-        </div>
-      </Page>
-    );
+    return <PageSkeleton />;
   }
 
   return <WebsiteContextProvider value={{ websiteId, website: q.data, organizationId: q.data?.organizationId, isLoading: q.isPending }}>{children}</WebsiteContextProvider>;

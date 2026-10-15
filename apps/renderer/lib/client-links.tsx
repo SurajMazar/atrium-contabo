@@ -8,6 +8,8 @@ const FILE_EXT = /\.(xml|txt|pdf|zip|jpe?g|png|webp|avif|gif|svg|ico|mp4|webm|mp
 const SHOW_BAR_AFTER_MS = 120;
 /** A navigation still pending after this falls back to a normal page load. */
 const HARD_NAVIGATION_AFTER_MS = 12_000;
+/** Links preloaded as they scroll into view, per page (hover/focus/touch preloading has no cap). */
+const MAX_VIEWPORT_PREFETCHES = 16;
 
 const CSS = `
 #a-navbar{position:fixed;inset:0 0 auto 0;z-index:2147483646;height:3px;pointer-events:none;opacity:0;transition:opacity .2s ease .1s}
@@ -36,6 +38,8 @@ function barEl(): HTMLElement {
     el.setAttribute('aria-hidden', 'true');
     el.appendChild(document.createElement('span'));
     document.body.appendChild(el);
+    // Commit the empty bar first, so the first navigation animates from zero too.
+    void el.offsetWidth;
   }
   return el;
 }
@@ -64,6 +68,12 @@ function clearPendingFeedback() {
   document.querySelectorAll('[data-a-nav-pending]').forEach((el) => el.removeAttribute('data-a-nav-pending'));
 }
 
+/** Visitors who asked to save data, or are on a 2G-class connection, only get intent-based preloading. */
+function constrainedConnection(): boolean {
+  const c = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
+  return !!c && (c.saveData === true || /(^|-)2g$/.test(c.effectiveType ?? ''));
+}
+
 /**
  * SPA-style navigation for server-rendered sites. Components render plain <a>
  * tags (renderer-core is framework-agnostic and also runs in the editor canvas),
@@ -74,8 +84,9 @@ function clearPendingFeedback() {
  * Feedback while the next page loads: the clicked link dims and the cursor shows progress at once;
  * a slim bar in the site's primary colour appears if loading takes a moment (`progressBar`).
  *
- * `cachePages` (website settings → Page loading): routes are preloaded on hover/focus/touch and for
- * header links when idle, and every visited or preloaded page stays in the browser's router cache
+ * `cachePages` (website settings → Page loading): routes are preloaded on hover/focus/touch, for
+ * header links when idle and for links as they scroll into view (phones have no hover, so this is what
+ * makes taps instant on slow networks), and every visited or preloaded page stays in the browser's router cache
  * until the visitor reloads (next.config `staleTimes.static`). Off: nothing is preloaded, so each
  * click fetches the latest page from the server.
  */
@@ -161,6 +172,27 @@ export function ClientLinks({ cachePages = true, progressBar = true }: { cachePa
     document.addEventListener('focusin', onIntent);
     document.addEventListener('touchstart', onIntent, { passive: true });
 
+    // Preload links the visitor can see, a few at a time, while they read.
+    let viewportBudget = MAX_VIEWPORT_PREFETCHES;
+    const observer =
+      cachePages && typeof IntersectionObserver !== 'undefined' && !constrainedConnection()
+        ? new IntersectionObserver(
+            (entries) => {
+              for (const entry of entries) {
+                if (!entry.isIntersecting) continue;
+                observer?.unobserve(entry.target);
+                const href = internalHref(entry.target as HTMLAnchorElement);
+                if (!href || viewportBudget <= 0) continue;
+                const before = prefetched.size;
+                prefetch(href);
+                if (prefetched.size > before) viewportBudget -= 1;
+              }
+              if (viewportBudget <= 0) observer?.disconnect();
+            },
+            { rootMargin: '200px 0px' },
+          )
+        : null;
+
     // Warm the routes visitors are most likely to open next.
     const ric = (window as Window & { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback ?? ((cb: () => void) => window.setTimeout(cb, 1500));
     const handle = cachePages
@@ -171,6 +203,7 @@ export function ClientLinks({ cachePages = true, progressBar = true }: { cachePa
             const href = internalHref(a);
             if (href) prefetch(href);
           });
+          if (observer) document.querySelectorAll<HTMLAnchorElement>('a[href]').forEach((a) => observer.observe(a));
         })
       : undefined;
 
@@ -179,6 +212,7 @@ export function ClientLinks({ cachePages = true, progressBar = true }: { cachePa
       document.removeEventListener('mouseover', onIntent);
       document.removeEventListener('focusin', onIntent);
       document.removeEventListener('touchstart', onIntent);
+      observer?.disconnect();
       if (handle !== undefined) (window as Window & { cancelIdleCallback?: (h: number) => void }).cancelIdleCallback?.(handle as number);
     };
   }, [router, cachePages, progressBar]);
