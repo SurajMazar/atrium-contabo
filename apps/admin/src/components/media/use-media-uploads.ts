@@ -109,6 +109,9 @@ export function useMediaUploads({ organizationId, websiteId, folderId, onUploade
           error: tooBig ? `Larger than ${maxSizeMb} MB` : badType ? 'File type not allowed here' : undefined,
         };
       });
+      // pump() reads itemsRef synchronously, but React may run the setItems updater later: update the
+      // ref first, or the queued job finds no item and is dropped (the upload then stays "queued").
+      itemsRef.current = [...created, ...itemsRef.current];
       setItems((prev) => {
         const next = [...created, ...prev];
         itemsRef.current = next;
