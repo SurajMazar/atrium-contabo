@@ -1,6 +1,6 @@
 'use client';
 
-import type { Animation, ThemeTokens } from '@atrium/schema';
+import { pagePath, type Animation, type ThemeTokens } from '@atrium/schema';
 import { useEffect } from 'react';
 import { getNode } from '../actions';
 import { bumpCanvasEpoch, useDocumentStore } from '../store/document';
@@ -49,7 +49,32 @@ export async function playNodeAnimation(nodeId: string, override?: Animation) {
   }, Math.min(8000, total));
 }
 
-/** "Play animations" toggle: run every animation on the page inside the canvas. */
+/**
+ * Site scripts for the live preview: only `necessary` ones (site UI), never analytics or marketing.
+ * Scripts see the page path on `<html data-atrium-path>`: the canvas document itself is about:srcdoc.
+ */
+function injectSiteScripts(doc: Document) {
+  const def = useDocumentStore.getState().definition;
+  const page = def?.pages.find((p) => p.id === useDocumentStore.getState().pageId) ?? def?.pages[0];
+  if (!def || !page) return;
+  doc.documentElement.setAttribute('data-atrium-path', page.isHomepage ? '/' : pagePath(page.slug));
+  for (const s of def.settings.scripts) {
+    if (s.enabled === false || s.consentCategory !== 'necessary' || !(s.code || s.src)) continue;
+    if (doc.querySelector(`script[data-atrium-script="${s.id}"]`)) continue;
+    const el = doc.createElement('script');
+    el.dataset.atriumScript = s.id;
+    if (s.src) {
+      el.src = s.src;
+      el.async = s.async ?? true;
+    } else el.text = s.code ?? '';
+    (s.placement === 'head' ? doc.head : doc.body).appendChild(el);
+  }
+}
+
+/**
+ * "Live preview" toggle: show the page as it is published. Runs the page's animations and the site's
+ * necessary scripts in the canvas; turning it off replaces the canvas document so editing starts clean.
+ */
 export function usePlayAnimations() {
   const play = useViewportStore((s) => s.playAnimations);
   const pageId = useDocumentStore((s) => s.pageId);
@@ -64,6 +89,9 @@ export function usePlayAnimations() {
     const t = window.setTimeout(async () => {
       const theme = useDocumentStore.getState().definition?.theme;
       if (!theme) return;
+      injectSiteScripts(doc);
+      // Motion "Off" means the published site runs no presets; the preview matches it.
+      if (theme.motion.intensity === 'none') return;
       const { gsap, ScrollTrigger, initAnimations } = await loadRuntime();
       if (cancelled) return;
       doc.querySelectorAll('[data-a-anim-done]').forEach((e) => e.removeAttribute('data-a-anim-done'));
@@ -80,9 +108,12 @@ export function usePlayAnimations() {
     };
   }, [play, doc, win, pageId, epoch]);
 
-  // Turning playback off restores the untouched DOM.
+  // Turning the preview off restores the untouched DOM in a fresh document.
   useEffect(() => {
     if (!play) return;
-    return () => bumpCanvasEpoch();
+    return () => {
+      useViewportStore.setState((s) => ({ frameKey: s.frameKey + 1 }));
+      bumpCanvasEpoch();
+    };
   }, [play]);
 }

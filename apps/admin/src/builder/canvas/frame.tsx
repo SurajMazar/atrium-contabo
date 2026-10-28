@@ -39,6 +39,8 @@ function ensureStyle(doc: Document, id: string): HTMLStyleElement {
 export function CanvasFrame({ width, height }: { width: number; height: number }) {
   const ref = useRef<HTMLIFrameElement>(null);
   const [mount, setMount] = useState<HTMLElement | null>(null);
+  // A new key replaces the iframe, so nothing a live preview ran (site scripts, their listeners) survives.
+  const frameKey = useViewportStore((s) => s.frameKey);
 
   useEffect(() => {
     const iframe = ref.current;
@@ -60,15 +62,17 @@ export function CanvasFrame({ width, height }: { width: number; height: number }
     iframe.addEventListener('load', setup);
     return () => {
       iframe.removeEventListener('load', setup);
+      setMount(null);
       useCanvasDom.setState({ frame: null, doc: null, win: null, mount: null });
     };
-  }, []);
+  }, [frameKey]);
 
   useCanvasInteractions();
 
   return (
     <>
       <iframe
+        key={frameKey}
         ref={ref}
         title="Page canvas"
         srcDoc={BLANK_DOC}

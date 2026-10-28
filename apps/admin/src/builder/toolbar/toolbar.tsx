@@ -201,8 +201,8 @@ export function Toolbar() {
       <div className="flex min-w-0 flex-1 items-center justify-center gap-1">
         <DeviceSwitcher />
         <ZoomMenu />
-        <Tip content={play ? 'Stop animations' : 'Play animations in the canvas'}>
-          <Btn size="sm" variant="ghost" active={play} className="w-7 px-0" aria-label="Play animations" onClick={() => useViewportStore.setState({ playAnimations: !play })}>
+        <Tip content={play ? 'Back to editing' : 'Live preview: the page as published, with animations and site scripts'}>
+          <Btn size="sm" variant="ghost" active={play} className="w-7 px-0" aria-label="Live preview" onClick={() => useViewportStore.setState({ playAnimations: !play })}>
             <Play />
           </Btn>
         </Tip>

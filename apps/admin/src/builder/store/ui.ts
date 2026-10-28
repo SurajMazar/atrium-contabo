@@ -34,6 +34,8 @@ export interface ViewportState {
   /** Computed zoom when zoom === 'fit' (set by the canvas). */
   fitZoom: number;
   playAnimations: boolean;
+  /** Bumped to replace the canvas iframe with a fresh document (drops scripts the live preview ran). */
+  frameKey: number;
 }
 
 export const useViewportStore = create<ViewportState>()(() => ({
@@ -42,6 +44,7 @@ export const useViewportStore = create<ViewportState>()(() => ({
   zoom: 'fit',
   fitZoom: 1,
   playAnimations: false,
+  frameKey: 0,
 }));
 
 export function setDevice(device: DeviceId) {
