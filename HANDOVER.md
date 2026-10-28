@@ -57,6 +57,7 @@ pnpm install
 | `https://api.sites.surajthapa247.com.np` | API (4000) | `/v1/health` |
 | `https://<slug>.sites.surajthapa247.com.np` | renderer (3001) | Platform address of every site. Today: `leela-garden`, `vilasa-by-leela` |
 | `https://leelagarden.com.np` (+ `www` → 301 to the root) | renderer | Client's custom domain, verified Active in Atrium |
+| `https://peacegloryresort.com` (+ `www` → 301 to the root) | renderer | Site `peace-glory-resort`. Connected 2026-10-28 with a Host override; **not yet added/verified in Atrium**, so canonical/sitemap URLs still use the platform address (see open items) |
 | `https://admin.leelagarden.com.np` | admin | Leela Garden's branded sign-in (organization admin domain) |
 | `https://media.sites.surajthapa247.com.np` | Cloudflare R2 bucket `leelagarden` | Leela Garden's media (organization storage provider) |
 
@@ -84,8 +85,8 @@ themselves.
 | Backups | `/etc/cron.daily/atrium-db-backup` runs `pg_dump -Fc` to `/var/backups/atrium/atrium-YYYY-MM-DD.dump` and keeps 14 days. **Backups stay on the same disk; nothing is off-site yet** |
 | Image cleanup | `/etc/cron.d/atrium-image-cleanup` runs at 03:30 (`/usr/local/sbin/atrium-image-cleanup`, `KEEP=3` per service, never removes in-use images). Log: `/var/log/atrium-image-cleanup.log` |
 | DNS resolver | Netplan nameservers set to `1.1.1.1` and `9.9.9.9`; cloud-init network config is disabled. Backup: `/root/50-cloud-init.yaml.bak`. This replaced Contabo's resolver, which had stale answers |
-| nginx | Main site file `/etc/nginx/sites-available/atrium.conf` (upstreams `atrium_admin/api/renderer`). Custom domains in `/etc/nginx/atrium-domains/{leelagarden,leelagarden-admin}.conf`. TLS 1.2/1.3 set in `nginx.conf` |
-| Certificates (certbot, webroot `/var/www/letsencrypt`) | `atrium`: sites, admin.sites, api.sites, leela-garden.sites, vilasa-by-leela.sites (expires 2027-01-05; auto-renew). `leelagarden`: root and www. `leelagarden-admin`: admin.leelagarden.com.np. Renewal hook `renewal-hooks/deploy/reload-nginx.sh` |
+| nginx | Main site file `/etc/nginx/sites-available/atrium.conf` (upstreams `atrium_admin/api/renderer`). Custom domains in `/etc/nginx/atrium-domains/{leelagarden,leelagarden-admin,peacegloryresort}.conf`. TLS 1.2/1.3 set in `nginx.conf` |
+| Certificates (certbot, webroot `/var/www/letsencrypt`) | `atrium`: sites, admin.sites, api.sites, leela-garden.sites, vilasa-by-leela.sites, peace-glory-resort.sites (renewed 2026-10-28; auto-renew). `leelagarden`: root and www. `peacegloryresort`: root and www (expires 2027-01-26). `leelagarden-admin`: admin.leelagarden.com.np. Renewal hook `renewal-hooks/deploy/reload-nginx.sh` |
 
 **Important:** nginx currently sends `leelagarden.com.np` to the renderer with
 `Host: leela-garden.sites.surajthapa247.com.np` (a Host override). Switching that to pass-through was
@@ -292,3 +293,10 @@ REQUIRE_DB=1 pnpm turbo run test --filter=@atrium/api   # 133 API tests, all pas
    template), so client domains need no manual server work.
 10. **Pricing guidance discussed:** about NPR 12–15k per site per year; tiers Basic 6–9k, Business
     15–25k, Premium 35–50k. VPS capacity: about 50–100 typical sites, about 200 with media on R2.
+
+11. **peacegloryresort.com: finish in Atrium.** Website `peace-glory-resort` → Domains → add
+    `peacegloryresort.com` (primary), add the TXT record it shows in Cloudflare (zone in the user's
+    account, DNS only), Verify. Then in `/etc/nginx/atrium-domains/peacegloryresort.conf` replace the two
+    `proxy_set_header` lines with `Host $host` / `X-Forwarded-Host $host` and reload nginx, so canonical,
+    sitemap and robots use the custom domain (with the override, robots.txt would turn to `Disallow: /`
+    once a primary domain exists).
