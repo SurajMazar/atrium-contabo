@@ -121,6 +121,10 @@ export class WebsitesService {
     return this.get(id, new Set());
   }
 
+  async hostnames(id: string) {
+    return (await this.db.domain.findMany({ where: { websiteId: id }, select: { hostname: true } })).map((d) => d.hostname);
+  }
+
   async remove(id: string, user: AuthUser) {
     const site = await this.db.website.update({ where: { id }, data: { deletedAt: new Date(), status: 'ARCHIVED', slug: `deleted-${id}` } });
     await this.db.domain.deleteMany({ where: { websiteId: id } });

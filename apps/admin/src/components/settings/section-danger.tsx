@@ -33,13 +33,13 @@ export function DangerSection({ websiteId }: { websiteId: string }) {
 
   return (
     <div>
-      <SectionHeading title="Danger zone" description="Irreversible actions for this website." />
+      <SectionHeading title="Danger zone" description="Destructive actions for this website." />
       <section className="rounded-lg border border-danger/30 bg-surface">
         <div className="flex flex-wrap items-center gap-4 px-4 py-4">
           <div className="min-w-0 flex-1">
             <h3 className="text-sm font-semibold text-fg">Delete this website</h3>
             <p className="mt-0.5 text-sm text-fg-muted">
-              Permanently removes pages, forms, submissions, versions and deployments. Connected domains stop serving the site. This cannot be undone.
+              Moves the website to the organization's Trash and frees its address. Connected domains are disconnected and stop serving the site. You can restore it, or delete it permanently, from Trash.
             </p>
           </div>
           <RequirePermission permission="website.delete" websiteId={websiteId}>
@@ -55,7 +55,7 @@ export function DangerSection({ websiteId }: { websiteId: string }) {
           onOpenChange={setOpen}
           tone="danger"
           title={`Delete ${website.name}?`}
-          description="Everything in this website will be deleted, including form submissions. Consider exporting a copy first."
+          description="The website moves to Trash and its domains are disconnected. Deleting it permanently from Trash also removes its pages, form submissions and media."
           confirmText={website.slug}
           confirmLabel="Delete website"
           onConfirm={remove}

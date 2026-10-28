@@ -12,6 +12,7 @@ import { PublishingService } from '../publishing/publishing.service';
 import { TemplatesService } from '../templates/templates.service';
 import { DraftService } from './draft.service';
 import { ExportService } from './export.service';
+import { TrashService } from './trash.service';
 import { WebsitesService } from './websites.service';
 import { BundleAssetsService } from './bundle-assets.service';
 
@@ -37,6 +38,7 @@ export class WebsitesController {
     private readonly publishing: PublishingService,
     private readonly access: AccessService,
     private readonly bundleAssets: BundleAssetsService,
+    private readonly trash: TrashService,
   ) {}
 
   @Access('website.read', 'organization', 'orgId')
@@ -85,8 +87,30 @@ export class WebsitesController {
   @Access('website.delete', 'website', 'id')
   @HttpCode(204)
   @Delete('websites/:id')
-  remove(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.websites.remove(id, user);
+  async remove(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    // Deleting removes the domain rows, so read the hostnames first: the renderer must drop this site's
+    // cached pages for them too, or a deleted site keeps being served from cache.
+    const hosts = await this.websites.hostnames(id);
+    await this.websites.remove(id, user);
+    await this.publishing.revalidate(id, hosts);
+  }
+
+  @Access('website.delete', 'organization', 'orgId')
+  @Get('organizations/:orgId/trash/websites')
+  trashList(@Param('orgId') orgId: string) {
+    return this.trash.list(orgId);
+  }
+
+  @Access('website.delete', 'organization', 'orgId')
+  @Post('organizations/:orgId/trash/websites/:id/restore')
+  restore(@Param('orgId') orgId: string, @Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.trash.restore(orgId, id, user);
+  }
+
+  @Access('website.delete', 'organization', 'orgId')
+  @Delete('organizations/:orgId/trash/websites/:id')
+  purge(@Param('orgId') orgId: string, @Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.trash.purge(orgId, id, user);
   }
 
   @Access('website.read', 'website', 'id')

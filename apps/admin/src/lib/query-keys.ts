@@ -19,6 +19,7 @@ export const qk = {
   roles: (orgId: string) => ['org', orgId, 'roles'] as const,
   auditLogs: (orgId: string, query?: Q) => ['org', orgId, 'audit', query ?? {}] as const,
   websites: (orgId: string) => ['org', orgId, 'websites'] as const,
+  trash: (orgId: string) => ['org', orgId, 'trash'] as const,
   media: (orgId: string, query?: Q) => ['org', orgId, 'media', query ?? {}] as const,
   mediaAll: (orgId: string) => ['org', orgId, 'media'] as const,
   mediaFolders: (orgId: string, websiteId?: string) => ['org', orgId, 'media-folders', websiteId ?? null] as const,

@@ -99,6 +99,23 @@ export interface WebsiteSummary {
   updatedAt: string;
   thumbnailUrl: string | null;
 }
+/** A soft-deleted website, listed in the organization's trash until it is restored or purged. */
+export interface TrashedWebsite {
+  id: ID;
+  name: string;
+  thumbnailUrl: string | null;
+  deletedAt: string;
+  pages: number;
+  submissions: number;
+  media: number;
+  mediaBytes: number;
+}
+/** Media still referenced by another website or the organization is kept (moved), the rest deleted. */
+export interface PurgeResult {
+  mediaDeleted: number;
+  mediaKept: number;
+  filesRemoved: number;
+}
 export interface Website extends WebsiteSummary {
   permissions: string[];
   deploymentProvider: string | null;

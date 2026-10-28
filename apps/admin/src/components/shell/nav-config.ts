@@ -21,6 +21,7 @@ import {
   Settings,
   ShieldCheck,
   Users,
+  Trash2,
   Webhook,
   ListChecks,
 } from 'lucide-react';
@@ -66,6 +67,7 @@ export function orgNav(orgId: string): NavItem[] {
     { label: 'Integrations', href: `${b}/integrations`, icon: Plug, permission: 'integration.manage' },
     { label: 'Webhooks', href: `${b}/webhooks`, icon: Webhook, permission: 'webhook.manage' },
     { label: 'Audit log', href: `${b}/audit`, icon: ListChecks, permission: 'audit.read' },
+    { label: 'Trash', href: `${b}/trash`, icon: Trash2, permission: 'website.delete' },
     { label: 'Branding', href: `${b}/branding`, icon: Palette, permission: 'organization.update' },
     { label: 'Usage & billing', href: `${b}/usage`, icon: Gauge },
     { label: 'Settings', href: `${b}/settings`, icon: Settings, permission: 'organization.update' },

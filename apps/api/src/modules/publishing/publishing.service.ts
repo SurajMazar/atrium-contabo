@@ -122,9 +122,10 @@ export class PublishingService {
   }
 
   /** Tell renderers to drop cached pages for this site. Best effort. */
-  async revalidate(websiteId: string) {
+  async revalidate(websiteId: string, extraHostnames: string[] = []) {
     try {
-      const hosts = (await this.db.domain.findMany({ where: { websiteId }, select: { hostname: true } })).map((d) => `host:${d.hostname}`);
+      const hostnames = (await this.db.domain.findMany({ where: { websiteId }, select: { hostname: true } })).map((d) => d.hostname);
+      const hosts = [...new Set([...hostnames, ...extraHostnames])].map((h) => `host:${h}`);
       const res = await fetch(`${env().RENDERER_URL.replace(/\/$/, '')}/api/revalidate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Renderer-Secret': env().RENDERER_SECRET },
