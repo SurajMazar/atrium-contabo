@@ -186,6 +186,16 @@ const SiteRoot = memo(function SiteRoot({ definition, page, playAnimations, webs
     if (link.href !== fontsUrl) link.href = fontsUrl;
   }, [doc, fontsUrl]);
 
+  // The published site puts the root attributes on <body> (renderer layout), and site CSS is written
+  // against that (`body.atrium-site …`); mirror them so custom CSS applies in the canvas too.
+  useEffect(() => {
+    if (!doc) return;
+    const body = doc.body;
+    body.classList.add('atrium-site');
+    body.setAttribute('data-mode', ctx.mode);
+    body.setAttribute('data-color-scheme', ctx.theme.colorScheme);
+  }, [doc, ctx.mode, ctx.theme.colorScheme]);
+
   // Let overlays re-measure after each commit.
   useEffect(() => {
     useCanvasDom.setState((s) => ({ renderTick: s.renderTick + 1 }));
