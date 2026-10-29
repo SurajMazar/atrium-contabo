@@ -1,6 +1,6 @@
 import type { ComponentRegistry } from '@atrium/component-registry';
 import type {
-  CollectionDefinition, CollectionItem, FormDefinition, GlobalSection, LinkValue, Node, PageDocument, ResolvedLink,
+  CollectionDefinition, CollectionItem, FormDefinition, GlobalSection, LinkValue, MediaManifest, MediaVariantInfo, Node, PageDocument, ResolvedLink,
   SiteSettings, SiteSnapshot, TemplateScope, ThemeTokens, WebsiteDefinition,
 } from '@atrium/schema';
 import type { ComponentType, ReactNode } from 'react';
@@ -8,12 +8,7 @@ import type { ComponentType, ReactNode } from 'react';
 export type RenderMode = 'live' | 'preview' | 'editor';
 
 /** Responsive image variants for a media-library asset (optional manifest supplied by the host). */
-export interface MediaVariantInfo {
-  width?: number;
-  height?: number;
-  blurDataUrl?: string;
-  variants: Array<{ width: number; url: string; format?: string }>;
-}
+export type { MediaVariantInfo } from '@atrium/schema';
 
 export interface RenderOptions {
   definition: WebsiteDefinition;
@@ -30,7 +25,7 @@ export interface RenderOptions {
   domain?: string;
   editor?: { playAnimations?: boolean; showEmptyPlaceholders?: boolean };
   /** Optional: media-library variants keyed by mediaId (or by src) for srcset generation. */
-  media?: Record<string, MediaVariantInfo>;
+  media?: MediaManifest;
   /** Override "now" (scheduling, upcoming events). */
   now?: Date;
 }

@@ -60,7 +60,7 @@ function ctxFor(req: SiteRequest, page: PageDocument, locale: string, collection
       collectionItem,
       basePath: req.basePath,
       domain: req.snapshot.primaryDomain ?? req.host,
-      media: (req.snapshot as unknown as { media?: Parameters<typeof createRenderContext>[0]['media'] }).media,
+      media: req.snapshot.media,
     },
     page,
   );

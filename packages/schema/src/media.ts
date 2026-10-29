@@ -14,3 +14,16 @@ export const MediaRefSchema = z.object({
   poster: OptionalSafeMediaUrlSchema,
 });
 export type MediaRef = z.infer<typeof MediaRefSchema>;
+
+/** Responsive variants of one media-library asset, as shipped to renderers for srcset generation. */
+export const MediaVariantInfoSchema = z.object({
+  width: z.number().optional(),
+  height: z.number().optional(),
+  blurDataUrl: OptionalSafeMediaUrlSchema,
+  variants: z.array(z.object({ width: z.number().int().positive(), url: SafeMediaUrlSchema, format: z.string().optional() })),
+});
+export type MediaVariantInfo = z.infer<typeof MediaVariantInfoSchema>;
+
+/** Variants keyed by `mediaId` (MediaRef objects) or by the media URL (bare string references). */
+export const MediaManifestSchema = z.record(z.string(), MediaVariantInfoSchema);
+export type MediaManifest = z.infer<typeof MediaManifestSchema>;

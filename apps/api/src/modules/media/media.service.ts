@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { MediaManifest } from '@atrium/schema';
 import { createHash, randomBytes } from 'node:crypto';
 import { env } from '../../config/env';
 import { resolveUploadType, safeFilenameStem, sanitizeSvg } from '../../common/file-safety';
@@ -9,6 +10,7 @@ import { PrismaService } from '../../common/prisma.service';
 import { QueueService } from '../../common/queue.service';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { ResolverService } from '../providers/resolver.service';
+import { collectMediaRefs, manifestEntry, mediaKeyFromUrl } from './media-manifest';
 
 export interface UploadFile {
   originalname: string;
@@ -80,6 +82,32 @@ export class MediaService {
     const hasMore = rows.length > q.limit;
     const items = await Promise.all((hasMore ? rows.slice(0, q.limit) : rows).map((m) => this.dto(m)));
     return { items, nextCursor: hasMore ? items[items.length - 1]!.id : null, total: await this.db.media.count({ where: where as never }) };
+  }
+
+  /**
+   * Responsive variants of the organization's media a site definition references, for renderers'
+   * srcset: keyed by `mediaId` for MediaRef objects and by URL for bare string references.
+   */
+  async manifestFor(orgId: string, definition: unknown): Promise<MediaManifest> {
+    const refs = collectMediaRefs(definition);
+    const keys = [...refs.urls].map((u) => mediaKeyFromUrl(u, orgId)).filter((k): k is string => !!k);
+    if (!refs.ids.size && !keys.length) return {};
+    const rows = await this.db.media.findMany({
+      where: { organizationId: orgId, deletedAt: null, OR: [{ id: { in: [...refs.ids] } }, { key: { in: keys } }] },
+      select: { id: true, key: true, storageProviderId: true, width: true, height: true, variants: true },
+    });
+    const storages = new Map<string | null, Promise<{ getPublicUrl(key: string): string }>>();
+    const manifest: MediaManifest = {};
+    for (const m of rows) {
+      if (!storages.has(m.storageProviderId)) storages.set(m.storageProviderId, this.resolver.resolver.storage({ organizationId: orgId, providerId: m.storageProviderId }));
+      const storage = await storages.get(m.storageProviderId)!;
+      const entry = manifestEntry(m, (k) => storage.getPublicUrl(k));
+      if (!entry) continue;
+      if (refs.ids.has(m.id)) manifest[m.id] = entry;
+      const url = storage.getPublicUrl(m.key);
+      if (refs.urls.has(url)) manifest[url] = entry;
+    }
+    return manifest;
   }
 
   /** Object key: tenant prefix + random component + slugged name + the DETECTED extension (never the client's). */

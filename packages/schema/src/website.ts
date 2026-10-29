@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { safeUrlSchema } from './safe-url';
 import { CollectionDefinitionSchema } from './collections';
 import { FormDefinitionSchema } from './forms';
+import { MediaManifestSchema } from './media';
 import { NavigationSchema } from './navigation';
 import { NodeInputSchema, NodeSchema } from './node';
 import { PageDocumentSchema, PageInputSchema } from './page';
@@ -82,5 +83,7 @@ export const SiteSnapshotSchema = z.object({
       analytics: z.boolean().default(false),
     })
     .default({ captcha: {}, analytics: false }),
+  /** Responsive variants of the media-library assets the definition references (resolved live, like `runtime`). */
+  media: MediaManifestSchema.optional(),
 });
 export type SiteSnapshot = z.infer<typeof SiteSnapshotSchema>;

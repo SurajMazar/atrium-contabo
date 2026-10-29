@@ -68,8 +68,10 @@ export class PublicService {
     // rotating a captcha integration takes effect without republishing (the API verifies tokens
     // with the live integration too, so page and API always agree).
     const runtime = await this.publishing.runtimeFor(site.id, site.organizationId, snapshot.definition);
-    const runtimeTag = sha(JSON.stringify(runtime)).slice(0, 8);
-    return { ...snapshot, runtime, etag: `"${v.checksum.slice(0, 32)}-${v.number}-${runtimeTag}"` };
+    // Media variants are live too: images processed after the publish get their srcset without one.
+    const media = await this.publishing.mediaFor(site.organizationId, snapshot.definition);
+    const liveTag = sha(JSON.stringify([runtime, media])).slice(0, 8);
+    return { ...snapshot, runtime, media, etag: `"${v.checksum.slice(0, 32)}-${v.number}-${liveTag}"` };
   }
 
   /**

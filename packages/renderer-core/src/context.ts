@@ -23,7 +23,12 @@ function createImageHelpers(media: RenderOptions['media']): ImageHelpers {
       if (!src) return undefined;
       const known = info(src, mediaId);
       if (known?.variants?.length) {
-        return [...known.variants].sort((a, b) => a.width - b.width).map((v) => `${v.url} ${v.width}w`).join(', ');
+        // One candidate per width (duplicate descriptors are invalid): WebP wherever it exists, since
+        // every browser decodes it; the original covers widths beyond the largest variant.
+        const byWidth = new Map<number, string>();
+        for (const v of known.variants) if (!byWidth.has(v.width) || v.format === 'webp') byWidth.set(v.width, v.url);
+        if (known.width && known.width > Math.max(...byWidth.keys())) byWidth.set(known.width, src);
+        return [...byWidth].sort(([a], [b]) => a - b).map(([w, url]) => `${url} ${w}w`).join(', ');
       }
       if (isParamResizable(src)) return RESPONSIVE_WIDTHS.map((w) => `${withWidth(src, w)} ${w}w`).join(', ');
       return undefined;

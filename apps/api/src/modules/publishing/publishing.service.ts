@@ -12,6 +12,7 @@ import { QueueService } from '../../common/queue.service';
 import { hashToken, randomToken } from '../../common/tokens';
 import { DraftService } from '../websites/draft.service';
 import { DeploymentsService } from '../deployments/deployments.service';
+import { MediaService } from '../media/media.service';
 import { SecretsService } from '../../common/secrets.service';
 import { RedisService } from '../../common/redis.service';
 
@@ -29,6 +30,7 @@ export class PublishingService {
     private readonly deployments: DeploymentsService,
     private readonly secrets: SecretsService,
     private readonly redis: RedisService,
+    private readonly media: MediaService,
   ) {}
 
   private get db() {
@@ -56,6 +58,14 @@ export class PublishingService {
     return { captcha, analytics };
   }
 
+  /**
+   * Responsive image variants for the media the definition references. Resolved when serving, not
+   * frozen at publish: variants the worker finishes after a publish (or an import) are picked up.
+   */
+  mediaFor(organizationId: string, def: WebsiteDefinition): Promise<SiteSnapshot['media']> {
+    return this.media.manifestFor(organizationId, def);
+  }
+
   async primaryDomain(websiteId: string) {
     // Canonical URLs only ever point at domains the customer has proven they own.
     return (await this.db.domain.findFirst({ where: { websiteId, isPrimary: true, verifiedAt: { not: null }, status: 'active' } }))?.hostname;
@@ -69,7 +79,8 @@ export class PublishingService {
       const versionId = opts.versionId ?? site.publishedVersionId;
       if (!versionId) throw notFound('Published version');
       const v = await this.db.websiteVersion.findUniqueOrThrow({ where: { id: versionId } });
-      return v.snapshot as unknown as SiteSnapshot;
+      const snapshot = v.snapshot as unknown as SiteSnapshot;
+      return { ...snapshot, media: await this.mediaFor(site.organizationId, snapshot.definition) };
     }
     const { definition } = await this.drafts.load(websiteId);
     const def = opts.preview ? { ...definition, pages: definition.pages.filter((p) => p.status !== 'archived') } : toPublishedDefinition(definition);
@@ -82,6 +93,7 @@ export class PublishingService {
       primaryDomain: await this.primaryDomain(websiteId),
       definition: def,
       runtime: await this.runtimeFor(websiteId, site.organizationId, def),
+      media: await this.mediaFor(site.organizationId, def),
     });
   }
 
