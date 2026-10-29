@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import {
-  ArrowLeft, Check, ChevronDown, Command, Eye, FileText, Home, Laptop, Monitor, PanelLeft, PanelRight, Play, Redo2, Rocket, Search, Smartphone, Tablet, Undo2,
+  ArrowLeft, Braces, Check, ChevronDown, Command, Eye, FileText, Home, Laptop, Monitor, PanelLeft, PanelRight, Play, Redo2, Rocket, Search, Smartphone, Tablet, Undo2,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -18,6 +18,7 @@ import { redo, undo, useDocumentStore } from '../store/document';
 import { useEditorStore, usePerms } from '../store/editor';
 import { selectFrameWidth, selectZoom, setCustomWidth, setDevice, setZoom, useUiStore, useViewportStore } from '../store/ui';
 import { Btn, IconBtn, Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger, NumberInput, Popover, PopoverClose, PopoverContent, PopoverTrigger, SearchInput, Tip } from '../ui/primitives';
+import { canvasScripts } from '../canvas/site-scripts/use-site-scripts';
 import { SaveIndicator } from './save-indicator';
 
 const DEVICE_ICON = { monitor: Monitor, laptop: Laptop, tablet: Tablet, smartphone: Smartphone } as const;
@@ -178,6 +179,20 @@ function HistoryButtons() {
   );
 }
 
+/** Shown when the site has scripts the canvas mirrors: switch between the published look and the bare Atrium page. */
+function SiteScriptsToggle() {
+  const has = useDocumentStore((s) => canvasScripts(s.definition).length > 0);
+  const on = useViewportStore((s) => s.siteScripts);
+  if (!has) return null;
+  return (
+    <Tip content={on ? 'Site scripts shown: the canvas includes what the site’s scripts build on the published page. Click to see the page without them.' : 'Site scripts hidden: click to show what they build on the published page.'}>
+      <Btn size="sm" variant="ghost" active={on} className="w-7 px-0" aria-label="Show site scripts" aria-pressed={on} onClick={() => useViewportStore.setState({ siteScripts: !on })}>
+        <Braces />
+      </Btn>
+    </Tip>
+  );
+}
+
 export function Toolbar() {
   const perms = usePerms();
   const websiteId = useEditorStore((s) => s.websiteId);
@@ -201,11 +216,12 @@ export function Toolbar() {
       <div className="flex min-w-0 flex-1 items-center justify-center gap-1">
         <DeviceSwitcher />
         <ZoomMenu />
-        <Tip content={play ? 'Back to editing' : 'Live preview: the page as published, with animations and site scripts'}>
+        <Tip content={play ? 'Back to editing' : 'Live preview: play the page’s animations as published'}>
           <Btn size="sm" variant="ghost" active={play} className="w-7 px-0" aria-label="Live preview" onClick={() => useViewportStore.setState({ playAnimations: !play })}>
             <Play />
           </Btn>
         </Tip>
+        <SiteScriptsToggle />
       </div>
       <Tip content="Command palette" shortcut={`${MOD}K`}>
         <Btn size="sm" variant="ghost" className="w-7 px-0 lg:w-auto lg:px-2" onClick={() => useUiStore.setState({ paletteOpen: true })}>

@@ -34,7 +34,9 @@ export interface ViewportState {
   /** Computed zoom when zoom === 'fit' (set by the canvas). */
   fitZoom: number;
   playAnimations: boolean;
-  /** Bumped to replace the canvas iframe with a fresh document (drops scripts the live preview ran). */
+  /** Show what the site's scripts build (mirrored from a sandbox, see canvas/site-scripts). */
+  siteScripts: boolean;
+  /** Bumped to replace the canvas iframe with a fresh document (drops what the live preview's animations did). */
   frameKey: number;
 }
 
@@ -44,6 +46,7 @@ export const useViewportStore = create<ViewportState>()(() => ({
   zoom: 'fit',
   fitZoom: 1,
   playAnimations: false,
+  siteScripts: true,
   frameKey: 0,
 }));
 

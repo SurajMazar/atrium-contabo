@@ -9,15 +9,27 @@ export interface CanvasDomState {
   mount: HTMLElement | null;
   /** Bumped after each canvas render commit so overlays can re-measure. */
   renderTick: number;
+  /** What site scripts built is mirrored into the canvas (see site-scripts/use-site-scripts.ts). */
+  scriptMirror: 'off' | 'pending' | 'on';
 }
 
-export const useCanvasDom = create<CanvasDomState>()(() => ({ frame: null, doc: null, win: null, mount: null, renderTick: 0 }));
+export const useCanvasDom = create<CanvasDomState>()(() => ({ frame: null, doc: null, win: null, mount: null, renderTick: 0, scriptMirror: 'off' }));
 
+/** Element for a node: its own element, or a site-script stand-in (`data-atrium-for`) when only that is rendered. */
 export function nodeElement(id: string | null | undefined): HTMLElement | null {
   if (!id) return null;
   const doc = useCanvasDom.getState().doc;
   if (!doc) return null;
-  return doc.querySelector<HTMLElement>(`[data-node-id="${CSS.escape(id)}"]`);
+  const q = CSS.escape(id);
+  const all = doc.querySelectorAll<HTMLElement>(`[data-node-id="${q}"],[data-atrium-for="${q}"]`);
+  if (all.length <= 1) return all[0] ?? null;
+  for (const el of Array.from(all)) if (el.getClientRects().length) return el;
+  return all[0]!;
+}
+
+/** Node id an element stands for: its own `data-node-id`, or the node a site-script stand-in replaces. */
+export function nodeIdOf(el: Element): string | null {
+  return el.getAttribute('data-node-id') ?? el.getAttribute('data-atrium-for');
 }
 
 export function scrollNodeIntoView(id: string) {

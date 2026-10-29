@@ -3,14 +3,15 @@
 import { createRenderContext, getSiteCss, PageView, siteRootAttrs } from '@atrium/renderer-core';
 import { googleFontsUrl } from '@atrium/design-tokens';
 import type { PageDocument, WebsiteDefinition } from '@atrium/schema';
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type HTMLAttributes } from 'react';
+import { Component, memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useAiStore } from '../ai/store';
-import { useDocumentStore } from '../store/document';
+import { bumpCanvasEpoch, useDocumentStore } from '../store/document';
 import { useEditorStore } from '../store/editor';
 import { useViewportStore } from '../store/ui';
 import { EDITOR_CHROME_CSS, useCanvasDom } from './dom';
 import { useCanvasInteractions } from './interactions';
+import { useSiteScriptMirror } from './site-scripts/use-site-scripts';
 
 const BLANK_DOC = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body></body></html>';
 
@@ -39,7 +40,7 @@ function ensureStyle(doc: Document, id: string): HTMLStyleElement {
 export function CanvasFrame({ width, height }: { width: number; height: number }) {
   const ref = useRef<HTMLIFrameElement>(null);
   const [mount, setMount] = useState<HTMLElement | null>(null);
-  // A new key replaces the iframe, so nothing a live preview ran (site scripts, their listeners) survives.
+  // A new key replaces the iframe, so nothing the live preview's animations did survives.
   const frameKey = useViewportStore((s) => s.frameKey);
 
   useEffect(() => {
@@ -68,6 +69,7 @@ export function CanvasFrame({ width, height }: { width: number; height: number }
   }, [frameKey]);
 
   useCanvasInteractions();
+  useSiteScriptMirror();
 
   return (
     <>
@@ -111,9 +113,33 @@ function CanvasContent({ mount }: { mount: HTMLElement }) {
 
   if (!definition || !page) return null;
   return createPortal(
-    <SiteRoot key={epoch} definition={definition} page={page} playAnimations={playAnimations} websiteId={websiteId ?? undefined} />,
+    <CanvasErrorBoundary key={epoch}>
+      <SiteRoot definition={definition} page={page} playAnimations={playAnimations} websiteId={websiteId ?? undefined} />
+    </CanvasErrorBoundary>,
     mount,
   );
+}
+
+let lastRecovery = 0;
+/**
+ * React owns the canvas DOM, but the site-script mirror (and inline editing) also change it. If a
+ * commit trips over such a change, remount the page instead of taking the editor down.
+ */
+class CanvasErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch(error: unknown) {
+    console.warn('[builder] canvas render failed, remounting the page', error);
+    if (Date.now() - lastRecovery > 3000) {
+      lastRecovery = Date.now();
+      bumpCanvasEpoch();
+    }
+  }
+  render() {
+    return this.state.failed ? <p style={{ font: '13px system-ui, sans-serif', padding: 24, color: '#666' }}>This page could not be shown in the canvas.</p> : this.props.children;
+  }
 }
 
 /**
@@ -186,25 +212,22 @@ const SiteRoot = memo(function SiteRoot({ definition, page, playAnimations, webs
     if (link.href !== fontsUrl) link.href = fontsUrl;
   }, [doc, fontsUrl]);
 
-  // The published site puts the root attributes on <body> (renderer layout), and site CSS is written
-  // against that (`body.atrium-site …`); mirror them so custom CSS applies in the canvas too.
-  useEffect(() => {
+  // The published site puts the root attributes on <body> only (renderer layout), and site CSS is written
+  // against that (`body.atrium-site …`, variables set on body). A second `.atrium-site` element inside
+  // would re-apply the theme's defaults below body and undo such overrides, so the page renders straight
+  // into the mount, like the published body. Before paint: the theme CSS is scoped to `.atrium-site`.
+  useLayoutEffect(() => {
     if (!doc) return;
     const body = doc.body;
-    body.classList.add('atrium-site');
-    body.setAttribute('data-mode', ctx.mode);
-    body.setAttribute('data-color-scheme', ctx.theme.colorScheme);
-  }, [doc, ctx.mode, ctx.theme.colorScheme]);
+    const { className, ...attrs } = siteRootAttrs(ctx);
+    body.classList.add(...String(className).split(' ').filter(Boolean));
+    for (const [name, value] of Object.entries(attrs)) body.setAttribute(name, value);
+  }, [doc, ctx]);
 
   // Let overlays re-measure after each commit.
   useEffect(() => {
     useCanvasDom.setState((s) => ({ renderTick: s.renderTick + 1 }));
   });
 
-  const rootAttrs = siteRootAttrs(ctx) as HTMLAttributes<HTMLDivElement>;
-  return (
-    <div {...rootAttrs}>
-      <PageView ctx={ctx} page={page} />
-    </div>
-  );
+  return <PageView ctx={ctx} page={page} />;
 });

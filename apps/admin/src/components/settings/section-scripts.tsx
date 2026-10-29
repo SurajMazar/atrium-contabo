@@ -34,7 +34,7 @@ const PLACEMENTS: Array<{ value: Placement; label: string; description: string }
   { value: 'body-end', label: 'Body end', description: 'Before </body>, after content' },
 ];
 const CONSENT: Array<{ value: Consent; label: string; description: string }> = [
-  { value: 'necessary', label: 'Necessary', description: 'Always runs' },
+  { value: 'necessary', label: 'Necessary', description: 'Always runs. Inline code also shapes the editor canvas (run in a sandbox)' },
   { value: 'analytics', label: 'Analytics', description: 'Runs after analytics consent' },
   { value: 'marketing', label: 'Marketing', description: 'Runs after marketing consent' },
   { value: 'preferences', label: 'Preferences', description: 'Runs after preferences consent' },

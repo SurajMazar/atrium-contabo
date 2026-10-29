@@ -26,9 +26,11 @@ interface Measured {
   selected: Box | null;
   padding: [number, number, number, number] | null;
   indicator: Box | null;
+  /** The selected node is in the canvas but not rendered (e.g. a site script hides it on the published page). */
+  hidden: boolean;
 }
 
-const EMPTY: Measured = { hover: null, selected: null, padding: null, indicator: null };
+const EMPTY: Measured = { hover: null, selected: null, padding: null, indicator: null, hidden: false };
 
 function boxOf(el: HTMLElement | null, zoom: number): Box | null {
   if (!el) return null;
@@ -66,13 +68,15 @@ export const CanvasOverlay = memo(function CanvasOverlay() {
       selected: boxOf(sel, zoom),
       padding: null,
       indicator: indicator?.refId ? boxOf(nodeElement(indicator.refId), zoom) : null,
+      hidden: false,
     };
+    next.hidden = !!sel && !next.selected;
     if (sel && next.selected) {
       const cs = win.getComputedStyle(sel);
       next.padding = [cs.paddingTop, cs.paddingRight, cs.paddingBottom, cs.paddingLeft].map((v) => (parseFloat(v) || 0) * zoom) as Measured['padding'];
     }
     setM((prev) =>
-      sameBox(prev.hover, next.hover) && sameBox(prev.selected, next.selected) && sameBox(prev.indicator, next.indicator) && String(prev.padding) === String(next.padding) ? prev : next,
+      sameBox(prev.hover, next.hover) && sameBox(prev.selected, next.selected) && sameBox(prev.indicator, next.indicator) && String(prev.padding) === String(next.padding) && prev.hidden === next.hidden ? prev : next,
     );
   }, [doc, win, hoveredId, selectedId, indicator, zoom]);
 
@@ -118,9 +122,27 @@ export const CanvasOverlay = memo(function CanvasOverlay() {
         </>
       )}
       {indicator && <DropIndicator box={m.indicator} position={indicator.position} axis={indicator.axis} label={indicator.label} />}
+      {m.hidden && selectedId && !dragging && <HiddenNotice />}
     </div>
   );
 });
+
+/** The selection exists but is not rendered: say why, and offer the page without the site's scripts. */
+function HiddenNotice() {
+  const mirror = useCanvasDom((s) => s.scriptMirror);
+  const scripts = useViewportStore((s) => s.siteScripts);
+  const byScripts = scripts && mirror !== 'off';
+  return (
+    <div className="pointer-events-auto absolute left-1/2 top-2 flex max-w-[90%] -translate-x-1/2 items-center gap-2 rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs text-fg-muted shadow-md">
+      <span>{byScripts ? 'This element is not shown on the published page: the site’s scripts hide or replace it.' : 'This element is not visible at this width.'}</span>
+      {byScripts && (
+        <button type="button" className="shrink-0 font-medium text-fg underline-offset-2 hover:underline" onClick={() => useViewportStore.setState({ siteScripts: false })}>
+          Show without site scripts
+        </button>
+      )}
+    </div>
+  );
+}
 
 const pos = (b: Box): CSSProperties => ({ top: b.top, left: b.left, width: b.width, height: b.height });
 

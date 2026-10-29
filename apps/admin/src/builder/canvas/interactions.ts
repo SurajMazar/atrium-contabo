@@ -11,7 +11,7 @@ import { handleEditorKeyDown, isEditableTarget } from '../shortcuts';
 import { useDocumentStore } from '../store/document';
 import { canEdit } from '../store/editor';
 import { endDrag, hover, select, selectZoom, setZoom, useDragStore, useSelectionStore, useUiStore, useViewportStore, type DragPayload } from '../store/ui';
-import { useCanvasDom } from './dom';
+import { nodeIdOf, useCanvasDom } from './dom';
 import { finishInlineEdit, isInlineEditing, startInlineEdit } from './inline-edit';
 
 const accepts = makeAccepts(registry);
@@ -29,7 +29,7 @@ export function currentIndex(): Map<string, NodeMeta> {
 function closestNode(target: EventTarget | null): HTMLElement | null {
   const el = target as Element | null;
   if (!el || typeof (el as Element).closest !== 'function') return null;
-  return el.closest<HTMLElement>('[data-node-id]');
+  return el.closest<HTMLElement>('[data-node-id],[data-atrium-for]');
 }
 
 /** Nearest selectable (not locked) node element for an event target. */
@@ -37,9 +37,9 @@ function selectableNode(target: EventTarget | null): { el: HTMLElement; id: stri
   const index = currentIndex();
   let el = closestNode(target);
   while (el) {
-    const id = el.getAttribute('data-node-id')!;
-    const meta = index.get(id);
-    if (meta && !meta.locked) return { el, id };
+    const id = nodeIdOf(el);
+    const meta = id ? index.get(id) : undefined;
+    if (id && meta && !meta.locked) return { el, id };
     el = closestNode(el.parentElement);
   }
   return null;
@@ -90,7 +90,7 @@ export function computeCanvasDrop(payload: DragPayload, targetEl: Element, x: nu
   const candidates: DropCandidate[] = [];
   let el = closestNode(targetEl);
   while (el) {
-    const id = el.getAttribute('data-node-id')!;
+    const id = nodeIdOf(el) ?? '';
     const meta = index.get(id);
     if (meta && meta.target === pageId) {
       const r = el.getBoundingClientRect();
@@ -185,7 +185,7 @@ export function useCanvasInteractions() {
       const editEl = t?.closest?.<HTMLElement>('[data-edit-prop]');
       if (!editEl) return;
       const owner = closestNode(editEl);
-      const id = owner?.getAttribute('data-node-id');
+      const id = owner ? nodeIdOf(owner) : null;
       if (!id) return;
       const meta = currentIndex().get(id);
       if (!meta || meta.locked) return;

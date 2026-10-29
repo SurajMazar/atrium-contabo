@@ -113,6 +113,9 @@ cross-origin` for media).
   iframes only from an allow-list of hosts (YouTube, Vimeo, Google Maps, Spotify, SoundCloud, Calendly,
   OpenStreetMap, Google Docs, Airtable, Microsoft Forms).
 - Custom CSS, scripts and head code require the `code.manage` permission and are audited.
+- Site scripts never run on the admin origin. The builder canvas (same-origin with the admin) shows what
+  they build by running them in an opaque-origin sandbox iframe and replaying their DOM changes as
+  sanitized, inert markup; see [SITE-SCRIPTS.md](SITE-SCRIPTS.md). Third-party embeds stay placeholders there.
 - Node props are validated against the component's zod schema; unknown props are dropped.
 
 ## Uploads

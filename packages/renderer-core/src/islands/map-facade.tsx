@@ -18,11 +18,13 @@ export interface MapFacadeProps {
 
 /** Click-to-load map: a lightweight placeholder that swaps to the provider iframe on demand. */
 export function MapFacade({ embedUrl, title, height = 'md', rounded = 'sm', facade = true, facadeImage, openUrl, address, editor }: MapFacadeProps) {
-  const [loaded, setLoaded] = useState(!facade && !editor);
+  // Without a facade the published page shows the provider's map straight away; so does the builder
+  // (a cross-origin frame, inert there: the canvas keeps clicks for selecting).
+  const [loaded, setLoaded] = useState(!facade);
   return (
     <div className={`a-map a-map--${height} a-r-${rounded}`}>
       {loaded ? (
-        <iframe className="a-map__frame" src={sanitizeUrl(embedUrl, 'https')} title={title} loading="lazy" referrerPolicy="no-referrer-when-downgrade" allowFullScreen />
+        <iframe className="a-map__frame" src={sanitizeUrl(embedUrl, 'https')} title={title} loading="lazy" referrerPolicy="no-referrer-when-downgrade" allowFullScreen {...(editor ? { tabIndex: -1, style: { pointerEvents: 'none' as const } } : {})} />
       ) : (
         <div className="a-map__facade">
           {facadeImage?.src ? <img src={facadeImage.src} alt={facadeImage.alt ?? ''} className="a-map__img" loading="lazy" decoding="async" /> : <div className="a-map__pattern" aria-hidden="true" />}

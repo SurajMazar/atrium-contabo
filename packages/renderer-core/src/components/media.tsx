@@ -140,7 +140,9 @@ export function GalleryRenderer(rp: RenderProps) {
   const variant = rp.variant ?? 'editorial';
   const images = galleryImages(ctx, props);
   const cols = Number(props.columns ?? 3);
-  const lightbox = props.lightbox !== false && ctx.mode !== 'editor';
+  // Same markup in the builder as on the published page (site CSS and scripts target it); the canvas
+  // swallows clicks, and the lightbox itself is disabled there.
+  const lightbox = props.lightbox !== false;
   const showCaptions = !!props.showCaptions;
   const item = (img: GalleryItem, i: number, opts: { aspect?: string; sizes: string; className?: string }) => {
     const inner = (
@@ -186,7 +188,7 @@ export function GalleryRenderer(rp: RenderProps) {
   return (
     <Section rp={rp} labelled>
       <Intro ctx={ctx} props={props} nodeId={node.id} />
-      {lightbox && images.length ? <Lightbox images={lbImages} label="Gallery viewer">{body}</Lightbox> : body}
+      {lightbox && images.length ? <Lightbox images={lbImages} label="Gallery viewer" disabled={ctx.mode === 'editor'}>{body}</Lightbox> : body}
     </Section>
   );
 }
