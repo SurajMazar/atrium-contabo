@@ -6,6 +6,7 @@ import {
   Banner,
   Button,
   ConfirmDialog,
+  CopyField,
   Dialog,
   DialogBody,
   DialogContent,
@@ -22,6 +23,7 @@ import {
   IconButton,
   Input,
   PageHeader,
+  RadioGroup,
   StatusDot,
   Table,
   TableContainer,
@@ -33,7 +35,7 @@ import {
   toast,
 } from '@atrium/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { MoreHorizontal, ShieldCheck, ShieldOff, Trash2, UserCheck, UserX, Users } from 'lucide-react';
+import { Check, KeyRound, MailCheck, MoreHorizontal, ShieldCheck, ShieldOff, Trash2, UserCheck, UserX, Users } from 'lucide-react';
 import { useState } from 'react';
 import { Page } from '@/components/common/page';
 import { errorMessage, useApi } from '@/lib/api';
@@ -49,6 +51,7 @@ interface AdminUser {
   email: string;
   isSuperAdmin: boolean;
   mfaEnabled: boolean;
+  emailVerified: boolean;
   disabled: boolean;
   organizations: number | null;
   lastLoginAt: string | null;
@@ -63,6 +66,7 @@ function toUser(r: Row): AdminUser {
     email: str(r.email),
     isSuperAdmin: bool(r.isSuperAdmin),
     mfaEnabled: bool(r.mfaEnabled),
+    emailVerified: bool(r.emailVerified),
     disabled: bool(r.disabled) || !!r.disabledAt,
     organizations: numOrNull(r.organizations ?? r.memberships),
     lastLoginAt: strOrNull(r.lastLoginAt),
@@ -71,7 +75,7 @@ function toUser(r: Row): AdminUser {
   };
 }
 
-type Action = { user: AdminUser; kind: 'disable' | 'enable' | 'grant' | 'revoke' };
+type Action = { user: AdminUser; kind: 'disable' | 'enable' | 'grant' | 'revoke' | 'verify' };
 
 export function AdminUsers() {
   const api = useApi();
@@ -82,10 +86,11 @@ export function AdminUsers() {
   const list = useAdminList<Row>('users', { search: debounced || undefined }, (q) => api.admin.users(q));
   const [action, setAction] = useState<Action | null>(null);
   const [deleting, setDeleting] = useState<AdminUser | null>(null);
+  const [settingPassword, setSettingPassword] = useState<AdminUser | null>(null);
   const users = list.items.map(toUser).filter((u) => u.id);
 
   const update = useMutation({
-    mutationFn: ({ id, body }: { id: string; body: { disabled?: boolean; isSuperAdmin?: boolean } }) => api.admin.updateUser(id, body),
+    mutationFn: ({ id, body }: { id: string; body: { disabled?: boolean; isSuperAdmin?: boolean; emailVerified?: true } }) => api.admin.updateUser(id, body),
     onMutate: async ({ id, body }) => {
       await qc.cancelQueries({ queryKey: list.key });
       const prev = qc.getQueryData<AdminPages<Row>>(list.key);
@@ -99,6 +104,7 @@ export function AdminUsers() {
     onSuccess: (_r, { body }) => {
       if (body.disabled !== undefined) toast.success(body.disabled ? 'User disabled and signed out' : 'User enabled');
       else if (body.isSuperAdmin !== undefined) toast.success(body.isSuperAdmin ? 'Super admin granted' : 'Super admin revoked');
+      else if (body.emailVerified) toast.success('Email marked as confirmed');
     },
     onSettled: () => void qc.invalidateQueries({ queryKey: adminPrefix('users') }),
   });
@@ -108,6 +114,7 @@ export function AdminUsers() {
     enable: { title: (u) => `Enable ${u.name || u.email}?`, description: 'They will be able to sign in again.', label: 'Enable user', danger: false },
     grant: { title: (u) => `Make ${u.name || u.email} a super admin?`, description: 'Super admins can view and change every organization, user and platform setting.', label: 'Grant super admin', danger: true },
     revoke: { title: (u) => `Revoke super admin from ${u.name || u.email}?`, description: 'They keep their organization memberships but lose platform administration.', label: 'Revoke', danger: true },
+    verify: { title: (u) => `Mark ${u.email} as confirmed?`, description: 'Do this only if you know this person owns the address. They can then accept invitations without clicking a confirmation link.', label: 'Mark as confirmed', danger: false },
   };
 
   return (
@@ -159,7 +166,10 @@ export function AdminUsers() {
                               {u.isSuperAdmin && <Badge tone="accent">Super admin</Badge>}
                               {self && <Badge tone="outline">You</Badge>}
                             </div>
-                            <div className="truncate text-xs text-fg-muted">{u.email}</div>
+                            <div className="flex min-w-0 items-center gap-1.5">
+                              <span className="truncate text-xs text-fg-muted">{u.email}</span>
+                              {!u.emailVerified && <Badge tone="warning">Email unconfirmed</Badge>}
+                            </div>
                           </div>
                         </div>
                       </TD>
@@ -191,6 +201,14 @@ export function AdminUsers() {
                             ) : (
                               <DropdownMenuItem icon={<ShieldCheck />} onSelect={() => setAction({ user: u, kind: 'grant' })}>
                                 Make super admin
+                              </DropdownMenuItem>
+                            )}
+                            <DropdownMenuItem icon={<KeyRound />} disabled={self} onSelect={() => setSettingPassword(u)}>
+                              Set password…
+                            </DropdownMenuItem>
+                            {!u.emailVerified && (
+                              <DropdownMenuItem icon={<MailCheck />} onSelect={() => setAction({ user: u, kind: 'verify' })}>
+                                Mark email as confirmed
                               </DropdownMenuItem>
                             )}
                             <DropdownMenuSeparator />
@@ -228,12 +246,115 @@ export function AdminUsers() {
         confirmLabel={action ? copy[action.kind].label : 'Confirm'}
         onConfirm={() => {
           if (!action) return;
-          const body = action.kind === 'disable' ? { disabled: true } : action.kind === 'enable' ? { disabled: false } : { isSuperAdmin: action.kind === 'grant' };
+          const body = action.kind === 'verify' ? { emailVerified: true as const } : action.kind === 'disable' ? { disabled: true } : action.kind === 'enable' ? { disabled: false } : { isSuperAdmin: action.kind === 'grant' };
           return update.mutateAsync({ id: action.user.id, body });
         }}
       />
+      <SetPasswordDialog user={settingPassword} onClose={() => setSettingPassword(null)} />
       <DeleteUserDialog user={deleting} onClose={() => setDeleting(null)} onDeleted={() => void qc.invalidateQueries({ queryKey: adminPrefix('users') })} />
     </Page>
+  );
+}
+
+/**
+ * Set a password for someone: generated (shown once) or typed. They are signed out everywhere and
+ * must choose their own at the next sign-in, because you now know this one.
+ */
+function SetPasswordDialog({ user, onClose }: { user: AdminUser | null; onClose: () => void }) {
+  const api = useApi();
+  const [mode, setMode] = useState<'generate' | 'type'>('generate');
+  const [typed, setTyped] = useState('');
+  const [error, setError] = useState<string>();
+  const [done, setDone] = useState<{ password?: string } | null>(null);
+  const set = useMutation({
+    mutationFn: () => api.admin.setUserPassword(user!.id, mode === 'type' ? typed : undefined),
+    onSuccess: (r) => {
+      setDone({ password: r.password });
+      toast.success(`New password set for ${user?.email}`);
+    },
+    onError: (err) => setError(errorMessage(err, 'Could not set the password')),
+  });
+  const close = () => {
+    setMode('generate');
+    setTyped('');
+    setError(undefined);
+    setDone(null);
+    onClose();
+  };
+  const canSubmit = mode === 'generate' || typed.length > 0;
+  return (
+    <Dialog open={!!user} onOpenChange={(o) => !o && !set.isPending && close()}>
+      <DialogContent size="sm">
+        {done ? (
+          <>
+            <DialogHeader title="Password set" description={`${user?.email} has been signed out everywhere and must choose a new password at the next sign-in.`} />
+            <DialogBody className="space-y-3">
+              {done.password ? (
+                <>
+                  <Field label="Password">
+                    <CopyField value={done.password} label="Password" />
+                  </Field>
+                  <Banner tone="warning">This password is shown only once. Share it securely.</Banner>
+                </>
+              ) : (
+                <p className="text-sm text-fg-muted">Share the password you typed with them securely.</p>
+              )}
+            </DialogBody>
+            <DialogFooter>
+              <Button size="sm" variant="primary" leadingIcon={<Check />} onClick={close}>
+                Done
+              </Button>
+            </DialogFooter>
+          </>
+        ) : (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (canSubmit) set.mutate();
+            }}
+            className="flex min-h-0 flex-col"
+          >
+            <DialogHeader title={`Set a password for ${user?.name || user?.email}?`} description="They are signed out everywhere and must choose their own password at the next sign-in." />
+            <DialogBody className="space-y-4">
+              {error && <Banner tone="danger">{error}</Banner>}
+              <RadioGroup
+                value={mode}
+                onValueChange={(v) => {
+                  setMode(v as 'generate' | 'type');
+                  setError(undefined);
+                }}
+                options={[
+                  { value: 'generate', label: 'Generate a password', description: 'Shown to you once' },
+                  { value: 'type', label: 'Type a password' },
+                ]}
+              />
+              {mode === 'type' && (
+                <Field label="New password" help="At least 10 characters, mixing upper and lower case letters, numbers and symbols.">
+                  <Input
+                    type="password"
+                    value={typed}
+                    onChange={(e) => {
+                      setTyped(e.target.value);
+                      setError(undefined);
+                    }}
+                    maxLength={200}
+                    autoComplete="new-password"
+                  />
+                </Field>
+              )}
+            </DialogBody>
+            <DialogFooter>
+              <Button size="sm" variant="ghost" type="button" onClick={close} disabled={set.isPending}>
+                Cancel
+              </Button>
+              <Button size="sm" variant="primary" type="submit" loading={set.isPending} disabled={!canSubmit}>
+                Set password
+              </Button>
+            </DialogFooter>
+          </form>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 

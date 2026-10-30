@@ -181,18 +181,49 @@ export class AdminController {
       where: q.search ? { OR: [{ email: { contains: q.search, mode: 'insensitive' } }, { name: { contains: q.search, mode: 'insensitive' } }] } : {},
       include: { _count: { select: { memberships: true } } }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: limit + 1, ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}),
     });
-    const items = rows.slice(0, limit).map((u) => ({ id: u.id, email: u.email, name: u.name, isSuperAdmin: u.isSuperAdmin, mfaEnabled: u.mfaEnabled, disabled: !!u.disabledAt, organizations: u._count.memberships, lastLoginAt: u.lastLoginAt?.toISOString() ?? null, createdAt: u.createdAt.toISOString() }));
+    const items = rows.slice(0, limit).map((u) => ({ id: u.id, email: u.email, name: u.name, isSuperAdmin: u.isSuperAdmin, mfaEnabled: u.mfaEnabled, emailVerified: !!u.emailVerifiedAt, disabled: !!u.disabledAt, organizations: u._count.memberships, lastLoginAt: u.lastLoginAt?.toISOString() ?? null, createdAt: u.createdAt.toISOString() }));
     return { items, nextCursor: rows.length > limit ? items[items.length - 1]!.id : null };
   }
 
+  /**
+   * `emailVerified: true` confirms an address on the person's behalf — for someone whose
+   * confirmation email never arrived, so they can accept invitations. It only ever sets the flag
+   * (an already-confirmed address keeps its original time) and is audited like every change here.
+   */
   @Patch('users/:id')
-  async updateUser(@Req() req: AppRequest, @Param('id') id: string, @Body(new ZodBody(z.object({ disabled: z.boolean().optional(), isSuperAdmin: z.boolean().optional() }))) b: { disabled?: boolean; isSuperAdmin?: boolean }, @CurrentUser() user: AuthUser) {
+  async updateUser(@Req() req: AppRequest, @Param('id') id: string, @Body(new ZodBody(z.object({ disabled: z.boolean().optional(), isSuperAdmin: z.boolean().optional(), emailVerified: z.literal(true).optional() }))) b: { disabled?: boolean; isSuperAdmin?: boolean; emailVerified?: true }, @CurrentUser() user: AuthUser) {
     if (id === user.id && (b.disabled || b.isSuperAdmin === false)) throw badRequest('You cannot remove your own access');
     if (b.isSuperAdmin === false || b.disabled) await this.assertNotLastSuperAdmin(id);
-    const u = await this.db.user.update({ where: { id }, data: { disabledAt: b.disabled === undefined ? undefined : b.disabled ? new Date() : null, isSuperAdmin: b.isSuperAdmin } });
+    const current = b.emailVerified ? await this.db.user.findUnique({ where: { id }, select: { emailVerifiedAt: true } }) : null;
+    if (b.emailVerified && !current) throw notFound('User');
+    const u = await this.db.user.update({ where: { id }, data: { disabledAt: b.disabled === undefined ? undefined : b.disabled ? new Date() : null, isSuperAdmin: b.isSuperAdmin, emailVerifiedAt: b.emailVerified && !current?.emailVerifiedAt ? new Date() : undefined } });
     if (b.disabled) await this.db.session.updateMany({ where: { userId: id, revokedAt: null }, data: { revokedAt: new Date() } });
     await this.audit.log({ actor: user, action: 'platform.user_updated', resourceType: 'user', resourceId: id, summary: `Super admin ${user.name} updated ${u.email}`, metadata: b, req });
-    return { id: u.id, disabled: !!u.disabledAt, isSuperAdmin: u.isSuperAdmin };
+    return { id: u.id, disabled: !!u.disabledAt, isSuperAdmin: u.isSuperAdmin, emailVerified: !!u.emailVerifiedAt };
+  }
+
+  /**
+   * Set someone's password: the one typed, or a generated one returned once. As with accounts an
+   * admin creates, the admin knows it, so the person must choose their own at the next sign-in;
+   * every session is signed out and pending reset links stop working. Your own password is changed
+   * from account settings, where the current one is checked.
+   */
+  @Post('users/:id/password')
+  async setUserPassword(@Req() req: AppRequest, @Param('id') id: string, @Body(new ZodBody(z.object({ password: z.string().min(1).max(200).optional() }))) b: { password?: string }, @CurrentUser() user: AuthUser) {
+    if (id === user.id) throw badRequest('Change your own password from your account settings');
+    const target = await this.db.user.findUnique({ where: { id }, select: { email: true } });
+    if (!target) throw notFound('User');
+    const password = b.password ?? generatePassword();
+    assertPasswordStrength(password);
+    const now = new Date();
+    await this.db.$transaction([
+      this.db.user.update({ where: { id }, data: { passwordHash: await argon2.hash(password, { type: argon2.argon2id }), passwordChangeRequired: true } }),
+      this.db.userToken.updateMany({ where: { userId: id, type: 'PASSWORD_RESET', usedAt: null }, data: { usedAt: now } }),
+      this.db.session.updateMany({ where: { userId: id, revokedAt: null }, data: { revokedAt: now } }),
+    ]);
+    await this.audit.log({ actor: user, action: 'platform.user_password_set', resourceType: 'user', resourceId: id, summary: `Super admin ${user.name} set a new password for ${target.email}`, req });
+    // Never echo a password the admin typed.
+    return { id, ...(b.password ? {} : { password }) };
   }
 
   /** The platform always keeps at least one active super admin. */

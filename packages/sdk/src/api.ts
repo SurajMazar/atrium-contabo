@@ -243,8 +243,9 @@ export function createAtriumClient(opts: AtriumClientOptions) {
         http.post<{ mode: 'created' | 'invited'; email: string; password?: string }>(`/admin/organizations/${orgId}/members`, body),
       updateOrganization: (id: string, body: { name?: string; planKey?: string; suspended?: boolean; featureFlags?: Record<string, boolean>; adminHostname?: string | null; analyticsEnabled?: boolean }) => http.patch<Record<string, unknown>>(`/admin/organizations/${id}`, body),
       users: (query: { search?: string; cursor?: string } = {}) => http.get<T.List<Record<string, unknown>>>('/admin/users', q(query)),
-      updateUser: (id: string, body: { disabled?: boolean; isSuperAdmin?: boolean }) => http.patch<Record<string, unknown>>(`/admin/users/${id}`, body),
+      updateUser: (id: string, body: { disabled?: boolean; isSuperAdmin?: boolean; emailVerified?: true }) => http.patch<Record<string, unknown>>(`/admin/users/${id}`, body),
       /** Permanently delete an account; `confirmEmail` must repeat its email address. */
+      setUserPassword: (id: string, password?: string) => http.post<{ id: string; password?: string }>(`/admin/users/${id}/password`, password ? { password } : {}),
       deleteUser: (id: string, confirmEmail: string) => http.delete(`/admin/users/${id}`, { body: { confirmEmail } }),
       deleteOrganization: (id: string, confirmSlug: string) => http.delete(`/admin/organizations/${id}`, { body: { confirmSlug } }),
       websites: (query: { search?: string; cursor?: string } = {}) => http.get<T.List<Record<string, unknown>>>('/admin/websites', q(query)),
